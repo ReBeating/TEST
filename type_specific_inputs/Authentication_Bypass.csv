@@ -1,0 +1,11 @@
+repo,vul_id,fixed_commit_sha
+apache/httpd,CVE-2022-31813,956f708b094698ac9ad570d640d4f30eb0df7305
+curl/curl,CVE-2022-22576,852aa5ad351ea53e5f01d2f44b5b4370c2bf5425
+curl/curl,CVE-2023-27535,8f4608468b890dce2dad9f91d5607ee7e9c1aba1
+curl/curl,CVE-2023-27536,cb49e67303dbafbab1cebf4086e3ec15b7d56ee5
+curl/curl,CVE-2023-27538,af369db4d3833272b8ed443f7fcc2e757a0872eb
+torvalds/linux,CVE-2020-10135,3ca44c16b0dcc764b641ee4ac226909f5c421aa3
+torvalds/linux,CVE-2020-26139,a8c4d76a8dd4fb9666fc8919a703d85fb8f44ed8
+torvalds/linux,CVE-2020-26541,56c5812623f95313f6a46fbf0beee7fa17c68bbf
+torvalds/linux,CVE-2020-26555,6d19628f539fccf899298ff02ee4c73e4bf6df3f
+torvalds/linux,CVE-2022-21505,543ce63b664e2c2f9533d089a4664b559c3e6b5b

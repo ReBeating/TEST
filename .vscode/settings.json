@@ -1,0 +1,40 @@
+{
+    "python.languageServer": "None",
+    
+    // 排除文件监控，避免 VSCode 监控大量文件变化
+    "files.watcherExclude": {
+        "**/outputs*/**": true,
+        "**/databases/**": true,
+        "**/outputs/**": true,
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/**": true,
+        "**/__pycache__/**": true,
+        "**/*.pyc": true
+    },
+    
+    // 排除搜索，提升搜索性能
+    "search.exclude": {
+        "**/outputs*/**": true,
+        "**/databases/**": true,
+        "**/outputs/**": true,
+        "**/__pycache__/**": true,
+        "**/*.pyc": true
+    },
+    
+    // 排除文件资源管理器显示，减少文件树加载
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true
+    },
+    
+    // Python 分析排除，避免 Pylance 分析大量数据文件
+    "python.analysis.exclude": [
+        "**/outputs*/**",
+        "**/databases/**",
+        "**/outputs/**"
+    ],
+    
+    // 限制文件监控数量
+    "files.watcherExclude.maxFiles": 8192
+}

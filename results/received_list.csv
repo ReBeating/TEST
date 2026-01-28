@@ -1,0 +1,15 @@
+repo,vul_id,fixed_commit_sha,target_file_path,target_func_name,received_vul_id
+torvalds/linux,CVE-2021-46994,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/hi311x.c,hi3110_can_probe,CVE-2025-40107
+torvalds/linux,CVE-2021-46994,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/hi311x.c,hi3110_stop,CVE-2025-40107
+torvalds/linux,CVE-2021-46994,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/hi311x.c,hi3110_open,CVE-2025-40107
+torvalds/linux,CVE-2021-46994,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/hi311x.c,hi3110_can_remove,CVE-2025-40107
+torvalds/linux,CVE-2021-46986,bb9c74a5bd1462499fe5ccb1e3c5ac40dcfa9139,drivers/usb/cdns3/cdnsp-gadget.c,__cdnsp_gadget_init,CVE-2025-40314
+torvalds/linux,CVE-2021-46986,bb9c74a5bd1462499fe5ccb1e3c5ac40dcfa9139,drivers/usb/cdns3/cdnsp-gadget.c,cdnsp_gadget_exit,CVE-2025-40314
+torvalds/linux,CVE-2015-4036,59c816c1f24df0204e01851431d3bab3eb76719c,drivers/usb/gadget/function/f_tcm.c,usbg_make_tpg,CVE-2025-68750
+radareorg/radare2,CVE-2022-1649,a5aafb99c3965259c84ddcf45a91144bf7eb4cf1,libr/bin/p/bin_xnu_kernelcache.c,rebase_buffer_fixup,CVE-2025-70411
+FreeRDP/FreeRDP,CVE-2020-11098,c0fd449ec0870b050d350d6d844b1ea6dad4bc7d,libfreerdp/cache/glyph.c,glyph_cache_get,CVE-2025-70412
+gpac/gpac,CVE-2020-19488,6170024568f4dda310e98ef7508477b425c58d09,src/isomedia/box_code_apple.c,ilst_box_read,CVE-2025-70413
+gpac/gpac,CVE-2023-5520,5692dc729491805e0e5f55c21d50ba1e6b19e88e,src/filters/reframe_truehd.c,truehd_process,CVE-2025-70414
+LibreDWG/libredwg,OSV-2022-1251,119ef50a0b1ef395defa5ee453acd5d3c158c638,src/out_json.c,json_tables_write,CVE-2025-70415
+radareorg/radare2,CVE-2022-0523,35482cb760db10f87a62569e2f8872dbd95e9269,libr/bin/format/pyc/marshal.c,get_dict_object,CVE-2025-70417
+FreeRDP/FreeRDP,CVE-2024-32661,71e463e31b4d69f4022d36bfc814592f56600793,libfreerdp/core/info.c,rdp_write_logon_info_v2,CVE-2026-23948

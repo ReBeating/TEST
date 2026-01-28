@@ -1,0 +1,4 @@
+repo,vul_id,fixed_commit_sha
+torvalds/linux,CVE-2020-16166,f227e3ec3b5cad859ad15666874405e8c1bbc1d4
+torvalds/linux,CVE-2020-36516,23f57406b82de51809d5812afd96f210f8b627f3
+torvalds/linux,CVE-2022-48629,a680b1832ced3b5fa7c93484248fd221ea0d614b

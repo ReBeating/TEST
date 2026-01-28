@@ -1,0 +1,6 @@
+REPO_DIR_PATH = '/data/cyf/repos'
+DATABASE_DIR_PATH = './databases'
+OUTPUT_DIR_PATH = './outputs'
+BENCHMARK_DICT_PATH = 'inputs/1day_vul_dict.json'
+BENCHMARK_VUL_PATH = 'inputs/1day_vul_list.csv'
+VUL_METADATA_PATH = 'inputs/vul_metadata.json'

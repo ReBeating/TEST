@@ -1,0 +1,2 @@
+repo,vul_id,fixed_commit_sha,target_file_path,target_func_name
+FreeRDP/FreeRDP,CVE-2024-32661,71e463e31b4d69f4022d36bfc814592f56600793,libfreerdp/core/info.c,rdp_write_logon_info_v2

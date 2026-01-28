@@ -1,0 +1,5 @@
+repo,vul_id,fixed_commit_sha
+ImageMagick/ImageMagick,CVE-2022-32546,f221ea0fa3171f0f4fdf74ac9d81b203b9534c23
+LibreDWG/libredwg,OSV-2023-748,b01634c896c29bb3a778daeef9e13ef115995610
+curl/curl,CVE-2021-22946,364f174724ef115c63d5e5dc1d3342c8a43b1cca
+torvalds/linux,CVE-2024-26809,b0e256f3dd2ba6532f37c5c22e07cb07a36031ee

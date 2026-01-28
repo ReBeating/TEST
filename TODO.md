@@ -1,0 +1,12 @@
+1. 第一步应该强制要求验证mapping的正确性
+2. judge应该强制检查漏洞类型是否一致，如果不一致，则认为是不匹配的
+3. 如果最后结果大于5条，就全舍弃
+4. 不要用confidence了
+5. 把source/sink相关术语换成origin/impact
+
+
+那么实现round2，
+red验证cons和reach，blue反驳cons和reach，验证defense
+reach其实就是参考phase2的逻辑，构建从origin到impact的path，这也是一个验证cons的过程，需要看path和原漏洞的逻辑是否一致，origin和impact是否合理
+然后这个阶段blue需要验证defense，要显式的说明所有的defense是否已经检查，已经检查的指出是存在防御还是不存在防御，没检查的说明是没有检查的目标还是还没检查
+然后我发现现在agent更喜欢调用read_file，需要增加一条说明，尽量获取整个symbol进行分析（这样只需要获取一次，减少调用），除非需要细致的分析特定代码片段，才需要用read_file

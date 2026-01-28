@@ -1,0 +1,11 @@
+**/__pycache__/
+**/*.pyc
+*databases*/**
+outputs*/**
+inputs*/**
+.gitignore
+.env
+references*/**
+paper*/**
+results*/**
+scripts*/**
