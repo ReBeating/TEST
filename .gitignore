@@ -7,5 +7,5 @@ inputs*/**
 .env
 references*/**
 paper*/**
-results*/**
-scripts*/**
+# results*/**
+# scripts*/**

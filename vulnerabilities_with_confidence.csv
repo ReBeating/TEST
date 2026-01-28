@@ -1,0 +1,636 @@
+repo,vul_id,file_path,confidence_locations
+FFmpeg/FFmpeg,CVE-2020-22015,outputs/results/FFmpeg/FFmpeg/CVE-2020-22015_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+FFmpeg/FFmpeg,CVE-2020-22017,outputs/results/FFmpeg/FFmpeg/CVE-2020-22017_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2020-22021,outputs/results/FFmpeg/FFmpeg/CVE-2020-22021_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+FFmpeg/FFmpeg,CVE-2020-22022,outputs/results/FFmpeg/FFmpeg/CVE-2020-22022_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-22030,outputs/results/FFmpeg/FFmpeg/CVE-2020-22030_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2020-22039,outputs/results/FFmpeg/FFmpeg/CVE-2020-22039_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+FFmpeg/FFmpeg,CVE-2020-22042,outputs/results/FFmpeg/FFmpeg/CVE-2020-22042_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2020-22043,outputs/results/FFmpeg/FFmpeg/CVE-2020-22043_repo_findings.json,[0]; [1]; [2]; ... and 49 more
+FFmpeg/FFmpeg,CVE-2020-22054,outputs/results/FFmpeg/FFmpeg/CVE-2020-22054_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+FFmpeg/FFmpeg,CVE-2020-35965,outputs/results/FFmpeg/FFmpeg/CVE-2020-35965_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+FFmpeg/FFmpeg,CVE-2021-38090,outputs/results/FFmpeg/FFmpeg/CVE-2021-38090_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+FFmpeg/FFmpeg,CVE-2022-3109,outputs/results/FFmpeg/FFmpeg/CVE-2022-3109_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+FFmpeg/FFmpeg,CVE-2022-3341,outputs/results/FFmpeg/FFmpeg/CVE-2022-3341_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+ImageMagick/ImageMagick,CVE-2020-19667,outputs/results/ImageMagick/ImageMagick/CVE-2020-19667_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+ImageMagick/ImageMagick,CVE-2020-25674,outputs/results/ImageMagick/ImageMagick/CVE-2020-25674_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+ImageMagick/ImageMagick,CVE-2020-27751,outputs/results/ImageMagick/ImageMagick/CVE-2020-27751_repo_findings.json,[0]; [1]
+ImageMagick/ImageMagick,CVE-2020-27753,outputs/results/ImageMagick/ImageMagick/CVE-2020-27753_repo_findings.json,[0]; [1]; [2]; ... and 62 more
+ImageMagick/ImageMagick,CVE-2020-27760,outputs/results/ImageMagick/ImageMagick/CVE-2020-27760_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2020-27761,outputs/results/ImageMagick/ImageMagick/CVE-2020-27761_repo_findings.json,[0]
+ImageMagick/ImageMagick,CVE-2020-27762,outputs/results/ImageMagick/ImageMagick/CVE-2020-27762_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+ImageMagick/ImageMagick,CVE-2020-27765,outputs/results/ImageMagick/ImageMagick/CVE-2020-27765_repo_findings.json,[0]; [1]
+ImageMagick/ImageMagick,CVE-2020-27768,outputs/results/ImageMagick/ImageMagick/CVE-2020-27768_repo_findings.json,[0]; [1]; [2]; ... and 12 more
+ImageMagick/ImageMagick,CVE-2020-27769,outputs/results/ImageMagick/ImageMagick/CVE-2020-27769_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2021-20241,outputs/results/ImageMagick/ImageMagick/CVE-2021-20241_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2021-20244,outputs/results/ImageMagick/ImageMagick/CVE-2021-20244_repo_findings.json,[0]
+ImageMagick/ImageMagick,CVE-2021-20311,outputs/results/ImageMagick/ImageMagick/CVE-2021-20311_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+ImageMagick/ImageMagick,CVE-2021-20313,outputs/results/ImageMagick/ImageMagick/CVE-2021-20313_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+ImageMagick/ImageMagick,CVE-2021-3574,outputs/results/ImageMagick/ImageMagick/CVE-2021-3574_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2021-3610,outputs/results/ImageMagick/ImageMagick/CVE-2021-3610_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+ImageMagick/ImageMagick,CVE-2021-39212,outputs/results/ImageMagick/ImageMagick/CVE-2021-39212_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+ImageMagick/ImageMagick,CVE-2021-4219,outputs/results/ImageMagick/ImageMagick/CVE-2021-4219_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2022-1114,outputs/results/ImageMagick/ImageMagick/CVE-2022-1114_repo_findings.json,[0]
+ImageMagick/ImageMagick,CVE-2022-32545,outputs/results/ImageMagick/ImageMagick/CVE-2022-32545_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+ImageMagick/ImageMagick,CVE-2023-34474,outputs/results/ImageMagick/ImageMagick/CVE-2023-34474_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+ImageMagick/ImageMagick,CVE-2023-34475,outputs/results/ImageMagick/ImageMagick/CVE-2023-34475_repo_findings.json,[0]; [1]; [2]; ... and 12 more
+ImageMagick/ImageMagick,CVE-2023-3745,outputs/results/ImageMagick/ImageMagick/CVE-2023-3745_repo_findings.json,[0]; [1]
+apache/httpd,CVE-2020-11985,outputs/results/apache/httpd/CVE-2020-11985_repo_findings.json,[0]
+apache/httpd,CVE-2021-40438,outputs/results/apache/httpd/CVE-2021-40438_repo_findings.json,[0]; [1]; [2]
+apache/httpd,CVE-2022-31813,outputs/results/apache/httpd/CVE-2022-31813_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+curl/curl,CVE-2020-8169,outputs/results/curl/curl/CVE-2020-8169_repo_findings.json,[0]
+curl/curl,CVE-2020-8284,outputs/results/curl/curl/CVE-2020-8284_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+curl/curl,CVE-2020-8285,outputs/results/curl/curl/CVE-2020-8285_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+curl/curl,CVE-2021-22898,outputs/results/curl/curl/CVE-2021-22898_repo_findings.json,[0]; [1]; [2]
+curl/curl,CVE-2021-22901,outputs/results/curl/curl/CVE-2021-22901_repo_findings.json,[0]; [1]; [2]; ... and 17 more
+curl/curl,CVE-2021-22922,outputs/results/curl/curl/CVE-2021-22922_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+curl/curl,CVE-2021-22923,outputs/results/curl/curl/CVE-2021-22923_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+curl/curl,CVE-2021-22924,outputs/results/curl/curl/CVE-2021-22924_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+curl/curl,CVE-2021-22925,outputs/results/curl/curl/CVE-2021-22925_repo_findings.json,[0]; [1]
+curl/curl,CVE-2021-22947,outputs/results/curl/curl/CVE-2021-22947_repo_findings.json,[0]; [1]
+curl/curl,CVE-2022-22576,outputs/results/curl/curl/CVE-2022-22576_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+curl/curl,CVE-2022-27774,outputs/results/curl/curl/CVE-2022-27774_repo_findings.json,[0]; [1]
+curl/curl,CVE-2022-27776,outputs/results/curl/curl/CVE-2022-27776_repo_findings.json,[0]
+curl/curl,CVE-2022-27780,outputs/results/curl/curl/CVE-2022-27780_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+curl/curl,CVE-2022-27782,outputs/results/curl/curl/CVE-2022-27782_repo_findings.json,[0]; [1]
+curl/curl,CVE-2022-32207,outputs/results/curl/curl/CVE-2022-32207_repo_findings.json,[0]; [1]
+curl/curl,CVE-2022-32208,outputs/results/curl/curl/CVE-2022-32208_repo_findings.json,[0]
+curl/curl,CVE-2022-35260,outputs/results/curl/curl/CVE-2022-35260_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+curl/curl,CVE-2022-42915,outputs/results/curl/curl/CVE-2022-42915_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+curl/curl,CVE-2022-42916,outputs/results/curl/curl/CVE-2022-42916_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+curl/curl,CVE-2022-43551,outputs/results/curl/curl/CVE-2022-43551_repo_findings.json,[0]
+curl/curl,CVE-2023-23915,outputs/results/curl/curl/CVE-2023-23915_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+curl/curl,CVE-2023-27533,outputs/results/curl/curl/CVE-2023-27533_repo_findings.json,[0]
+curl/curl,CVE-2023-27534,outputs/results/curl/curl/CVE-2023-27534_repo_findings.json,[0]; [1]
+curl/curl,CVE-2023-27536,outputs/results/curl/curl/CVE-2023-27536_repo_findings.json,[0]; [1]; [2]
+curl/curl,CVE-2023-28319,outputs/results/curl/curl/CVE-2023-28319_repo_findings.json,[0]
+curl/curl,CVE-2023-38039,outputs/results/curl/curl/CVE-2023-38039_repo_findings.json,[0]; [1]
+curl/curl,CVE-2023-38546,outputs/results/curl/curl/CVE-2023-38546_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+curl/curl,CVE-2023-46218,outputs/results/curl/curl/CVE-2023-46218_repo_findings.json,[0]
+curl/curl,CVE-2023-46219,outputs/results/curl/curl/CVE-2023-46219_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+curl/curl,CVE-2024-2004,outputs/results/curl/curl/CVE-2024-2004_repo_findings.json,[0]; [1]; [2]
+curl/curl,CVE-2024-2398,outputs/results/curl/curl/CVE-2024-2398_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+curl/curl,CVE-2024-8096,outputs/results/curl/curl/CVE-2024-8096_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2020-0009,outputs/results/torvalds/linux/CVE-2020-0009_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-0041,outputs/results/torvalds/linux/CVE-2020-0041_repo_findings.json,[0]
+torvalds/linux,CVE-2020-0067,outputs/results/torvalds/linux/CVE-2020-0067_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-0255,outputs/results/torvalds/linux/CVE-2020-0255_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-0404,outputs/results/torvalds/linux/CVE-2020-0404_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-0423,outputs/results/torvalds/linux/CVE-2020-0423_repo_findings.json,[0]
+torvalds/linux,CVE-2020-0427,outputs/results/torvalds/linux/CVE-2020-0427_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2020-0429,outputs/results/torvalds/linux/CVE-2020-0429_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2020-0431,outputs/results/torvalds/linux/CVE-2020-0431_repo_findings.json,[0]
+torvalds/linux,CVE-2020-0433,outputs/results/torvalds/linux/CVE-2020-0433_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2020-0444,outputs/results/torvalds/linux/CVE-2020-0444_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2020-0465,outputs/results/torvalds/linux/CVE-2020-0465_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2020-10690,outputs/results/torvalds/linux/CVE-2020-10690_repo_findings.json,[0]; [1]; [2]; ... and 10 more
+torvalds/linux,CVE-2020-10720,outputs/results/torvalds/linux/CVE-2020-10720_repo_findings.json,[0]
+torvalds/linux,CVE-2020-10732,outputs/results/torvalds/linux/CVE-2020-10732_repo_findings.json,[0]
+torvalds/linux,CVE-2020-10742,outputs/results/torvalds/linux/CVE-2020-10742_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-10767,outputs/results/torvalds/linux/CVE-2020-10767_repo_findings.json,[0]; [1]; [2]; ... and 19 more
+torvalds/linux,CVE-2020-11494,outputs/results/torvalds/linux/CVE-2020-11494_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-12114,outputs/results/torvalds/linux/CVE-2020-12114_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-12362,outputs/results/torvalds/linux/CVE-2020-12362_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2020-12655,outputs/results/torvalds/linux/CVE-2020-12655_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2020-12656,outputs/results/torvalds/linux/CVE-2020-12656_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2020-12659,outputs/results/torvalds/linux/CVE-2020-12659_repo_findings.json,[0]
+torvalds/linux,CVE-2020-12768,outputs/results/torvalds/linux/CVE-2020-12768_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2020-12769,outputs/results/torvalds/linux/CVE-2020-12769_repo_findings.json,[0]; [1]; [2]; ... and 14 more
+torvalds/linux,CVE-2020-12771,outputs/results/torvalds/linux/CVE-2020-12771_repo_findings.json,[0]; [1]; [2]; ... and 27 more
+torvalds/linux,CVE-2020-12826,outputs/results/torvalds/linux/CVE-2020-12826_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-12888,outputs/results/torvalds/linux/CVE-2020-12888_repo_findings.json,[0]; [1]; [2]; ... and 70 more
+torvalds/linux,CVE-2020-14305,outputs/results/torvalds/linux/CVE-2020-14305_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+torvalds/linux,CVE-2020-14314,outputs/results/torvalds/linux/CVE-2020-14314_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-14351,outputs/results/torvalds/linux/CVE-2020-14351_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2020-14381,outputs/results/torvalds/linux/CVE-2020-14381_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+torvalds/linux,CVE-2020-14416,outputs/results/torvalds/linux/CVE-2020-14416_repo_findings.json,[0]; [1]; [2]; ... and 17 more
+torvalds/linux,CVE-2020-15436,outputs/results/torvalds/linux/CVE-2020-15436_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+torvalds/linux,CVE-2020-15437,outputs/results/torvalds/linux/CVE-2020-15437_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-15852,outputs/results/torvalds/linux/CVE-2020-15852_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2020-16120,outputs/results/torvalds/linux/CVE-2020-16120_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2020-24586,outputs/results/torvalds/linux/CVE-2020-24586_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-24588,outputs/results/torvalds/linux/CVE-2020-24588_repo_findings.json,[0]
+torvalds/linux,CVE-2020-25285,outputs/results/torvalds/linux/CVE-2020-25285_repo_findings.json,[0]; [1]; [2]; ... and 17 more
+torvalds/linux,CVE-2020-25645,outputs/results/torvalds/linux/CVE-2020-25645_repo_findings.json,[0]; [1]; [2]; ... and 21 more
+torvalds/linux,CVE-2020-25673,outputs/results/torvalds/linux/CVE-2020-25673_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2020-26139,outputs/results/torvalds/linux/CVE-2020-26139_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-26141,outputs/results/torvalds/linux/CVE-2020-26141_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2020-26147,outputs/results/torvalds/linux/CVE-2020-26147_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-26555,outputs/results/torvalds/linux/CVE-2020-26555_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-27066,outputs/results/torvalds/linux/CVE-2020-27066_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-27170,outputs/results/torvalds/linux/CVE-2020-27170_repo_findings.json,[0]
+torvalds/linux,CVE-2020-27418,outputs/results/torvalds/linux/CVE-2020-27418_repo_findings.json,[0]
+torvalds/linux,CVE-2020-27777,outputs/results/torvalds/linux/CVE-2020-27777_repo_findings.json,[0]
+torvalds/linux,CVE-2020-28097,outputs/results/torvalds/linux/CVE-2020-28097_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+torvalds/linux,CVE-2020-28374,outputs/results/torvalds/linux/CVE-2020-28374_repo_findings.json,[0]
+torvalds/linux,CVE-2020-29569,outputs/results/torvalds/linux/CVE-2020-29569_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2020-35508,outputs/results/torvalds/linux/CVE-2020-35508_repo_findings.json,[0]
+torvalds/linux,CVE-2020-35513,outputs/results/torvalds/linux/CVE-2020-35513_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+torvalds/linux,CVE-2020-35519,outputs/results/torvalds/linux/CVE-2020-35519_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-36312,outputs/results/torvalds/linux/CVE-2020-36312_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2020-36691,outputs/results/torvalds/linux/CVE-2020-36691_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2020-36784,outputs/results/torvalds/linux/CVE-2020-36784_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2020-8428,outputs/results/torvalds/linux/CVE-2020-8428_repo_findings.json,[0]
+torvalds/linux,CVE-2021-0512,outputs/results/torvalds/linux/CVE-2021-0512_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-0605,outputs/results/torvalds/linux/CVE-2021-0605_repo_findings.json,[0]
+torvalds/linux,CVE-2021-0707,outputs/results/torvalds/linux/CVE-2021-0707_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2021-20261,outputs/results/torvalds/linux/CVE-2021-20261_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+torvalds/linux,CVE-2021-20292,outputs/results/torvalds/linux/CVE-2021-20292_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+torvalds/linux,CVE-2021-20317,outputs/results/torvalds/linux/CVE-2021-20317_repo_findings.json,[0]; [1]; [2]; ... and 13 more
+torvalds/linux,CVE-2021-20320,outputs/results/torvalds/linux/CVE-2021-20320_repo_findings.json,[0]; [1]; [2]; ... and 38 more
+torvalds/linux,CVE-2021-22543,outputs/results/torvalds/linux/CVE-2021-22543_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-26931,outputs/results/torvalds/linux/CVE-2021-26931_repo_findings.json,[0]
+torvalds/linux,CVE-2021-28711,outputs/results/torvalds/linux/CVE-2021-28711_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2021-28964,outputs/results/torvalds/linux/CVE-2021-28964_repo_findings.json,[0]
+torvalds/linux,CVE-2021-29155,outputs/results/torvalds/linux/CVE-2021-29155_repo_findings.json,[0]
+torvalds/linux,CVE-2021-29264,outputs/results/torvalds/linux/CVE-2021-29264_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2021-31916,outputs/results/torvalds/linux/CVE-2021-31916_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-33655,outputs/results/torvalds/linux/CVE-2021-33655_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-33656,outputs/results/torvalds/linux/CVE-2021-33656_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-34866,outputs/results/torvalds/linux/CVE-2021-34866_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-3573,outputs/results/torvalds/linux/CVE-2021-3573_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2021-3640,outputs/results/torvalds/linux/CVE-2021-3640_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2021-3655,outputs/results/torvalds/linux/CVE-2021-3655_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2021-3715,outputs/results/torvalds/linux/CVE-2021-3715_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2021-37159,outputs/results/torvalds/linux/CVE-2021-37159_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+torvalds/linux,CVE-2021-3732,outputs/results/torvalds/linux/CVE-2021-3732_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2021-38199,outputs/results/torvalds/linux/CVE-2021-38199_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-38205,outputs/results/torvalds/linux/CVE-2021-38205_repo_findings.json,[0]
+torvalds/linux,CVE-2021-38206,outputs/results/torvalds/linux/CVE-2021-38206_repo_findings.json,[0]; [1]; [2]; ... and 36 more
+torvalds/linux,CVE-2021-3923,outputs/results/torvalds/linux/CVE-2021-3923_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2021-39634,outputs/results/torvalds/linux/CVE-2021-39634_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2021-39685,outputs/results/torvalds/linux/CVE-2021-39685_repo_findings.json,[0]; [1]; [2]; ... and 16 more
+torvalds/linux,CVE-2021-4002,outputs/results/torvalds/linux/CVE-2021-4002_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2021-4083,outputs/results/torvalds/linux/CVE-2021-4083_repo_findings.json,[0]
+torvalds/linux,CVE-2021-4148,outputs/results/torvalds/linux/CVE-2021-4148_repo_findings.json,[0]
+torvalds/linux,CVE-2021-4150,outputs/results/torvalds/linux/CVE-2021-4150_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-4159,outputs/results/torvalds/linux/CVE-2021-4159_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-42327,outputs/results/torvalds/linux/CVE-2021-42327_repo_findings.json,[0]
+torvalds/linux,CVE-2021-44879,outputs/results/torvalds/linux/CVE-2021-44879_repo_findings.json,[0]
+torvalds/linux,CVE-2021-45095,outputs/results/torvalds/linux/CVE-2021-45095_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2021-45402,outputs/results/torvalds/linux/CVE-2021-45402_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-45469,outputs/results/torvalds/linux/CVE-2021-45469_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-45868,outputs/results/torvalds/linux/CVE-2021-45868_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2021-46283,outputs/results/torvalds/linux/CVE-2021-46283_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-46913,outputs/results/torvalds/linux/CVE-2021-46913_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2021-46915,outputs/results/torvalds/linux/CVE-2021-46915_repo_findings.json,[0]
+torvalds/linux,CVE-2021-46928,outputs/results/torvalds/linux/CVE-2021-46928_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-46932,outputs/results/torvalds/linux/CVE-2021-46932_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-46933,outputs/results/torvalds/linux/CVE-2021-46933_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-46959,outputs/results/torvalds/linux/CVE-2021-46959_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-46971,outputs/results/torvalds/linux/CVE-2021-46971_repo_findings.json,[0]
+torvalds/linux,CVE-2021-46972,outputs/results/torvalds/linux/CVE-2021-46972_repo_findings.json,[0]
+torvalds/linux,CVE-2021-46982,outputs/results/torvalds/linux/CVE-2021-46982_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2021-46991,outputs/results/torvalds/linux/CVE-2021-46991_repo_findings.json,[0]
+torvalds/linux,CVE-2021-46996,outputs/results/torvalds/linux/CVE-2021-46996_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2021-46998,outputs/results/torvalds/linux/CVE-2021-46998_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-47001,outputs/results/torvalds/linux/CVE-2021-47001_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-47004,outputs/results/torvalds/linux/CVE-2021-47004_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2021-47010,outputs/results/torvalds/linux/CVE-2021-47010_repo_findings.json,[0]
+torvalds/linux,CVE-2021-47013,outputs/results/torvalds/linux/CVE-2021-47013_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-47014,outputs/results/torvalds/linux/CVE-2021-47014_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2021-47016,outputs/results/torvalds/linux/CVE-2021-47016_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-47024,outputs/results/torvalds/linux/CVE-2021-47024_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2021-47056,outputs/results/torvalds/linux/CVE-2021-47056_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-47060,outputs/results/torvalds/linux/CVE-2021-47060_repo_findings.json,[0]; [1]; [2]; ... and 23 more
+torvalds/linux,CVE-2021-47090,outputs/results/torvalds/linux/CVE-2021-47090_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-47102,outputs/results/torvalds/linux/CVE-2021-47102_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2021-47109,outputs/results/torvalds/linux/CVE-2021-47109_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-47110,outputs/results/torvalds/linux/CVE-2021-47110_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2021-47113,outputs/results/torvalds/linux/CVE-2021-47113_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-47117,outputs/results/torvalds/linux/CVE-2021-47117_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2021-47121,outputs/results/torvalds/linux/CVE-2021-47121_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-47138,outputs/results/torvalds/linux/CVE-2021-47138_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2021-47139,outputs/results/torvalds/linux/CVE-2021-47139_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-47142,outputs/results/torvalds/linux/CVE-2021-47142_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2021-47150,outputs/results/torvalds/linux/CVE-2021-47150_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+torvalds/linux,CVE-2021-47153,outputs/results/torvalds/linux/CVE-2021-47153_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2021-47166,outputs/results/torvalds/linux/CVE-2021-47166_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2021-47167,outputs/results/torvalds/linux/CVE-2021-47167_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-0001,outputs/results/torvalds/linux/CVE-2022-0001_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+torvalds/linux,CVE-2022-0168,outputs/results/torvalds/linux/CVE-2022-0168_repo_findings.json,[0]; [1]; [2]; ... and 12 more
+torvalds/linux,CVE-2022-0435,outputs/results/torvalds/linux/CVE-2022-0435_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-0480,outputs/results/torvalds/linux/CVE-2022-0480_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-0487,outputs/results/torvalds/linux/CVE-2022-0487_repo_findings.json,[0]
+torvalds/linux,CVE-2022-1011,outputs/results/torvalds/linux/CVE-2022-1011_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-1055,outputs/results/torvalds/linux/CVE-2022-1055_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+torvalds/linux,CVE-2022-1184,outputs/results/torvalds/linux/CVE-2022-1184_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-1280,outputs/results/torvalds/linux/CVE-2022-1280_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-1353,outputs/results/torvalds/linux/CVE-2022-1353_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-1462,outputs/results/torvalds/linux/CVE-2022-1462_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-1508,outputs/results/torvalds/linux/CVE-2022-1508_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-1652,outputs/results/torvalds/linux/CVE-2022-1652_repo_findings.json,[0]; [1]; [2]; ... and 10 more
+torvalds/linux,CVE-2022-1679,outputs/results/torvalds/linux/CVE-2022-1679_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-1734,outputs/results/torvalds/linux/CVE-2022-1734_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-1852,outputs/results/torvalds/linux/CVE-2022-1852_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-1998,outputs/results/torvalds/linux/CVE-2022-1998_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2022-20422,outputs/results/torvalds/linux/CVE-2022-20422_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-21123,outputs/results/torvalds/linux/CVE-2022-21123_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2022-21125,outputs/results/torvalds/linux/CVE-2022-21125_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-21385,outputs/results/torvalds/linux/CVE-2022-21385_repo_findings.json,[0]; [1]; [2]; ... and 19 more
+torvalds/linux,CVE-2022-22942,outputs/results/torvalds/linux/CVE-2022-22942_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+torvalds/linux,CVE-2022-23037,outputs/results/torvalds/linux/CVE-2022-23037_repo_findings.json,[0]
+torvalds/linux,CVE-2022-24448,outputs/results/torvalds/linux/CVE-2022-24448_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-25258,outputs/results/torvalds/linux/CVE-2022-25258_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2022-26373,outputs/results/torvalds/linux/CVE-2022-26373_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2022-26966,outputs/results/torvalds/linux/CVE-2022-26966_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2022-2785,outputs/results/torvalds/linux/CVE-2022-2785_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-27950,outputs/results/torvalds/linux/CVE-2022-27950_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-28356,outputs/results/torvalds/linux/CVE-2022-28356_repo_findings.json,[0]; [1]; [2]; ... and 16 more
+torvalds/linux,CVE-2022-28388,outputs/results/torvalds/linux/CVE-2022-28388_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-28389,outputs/results/torvalds/linux/CVE-2022-28389_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2022-28390,outputs/results/torvalds/linux/CVE-2022-28390_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2022-29581,outputs/results/torvalds/linux/CVE-2022-29581_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2022-2977,outputs/results/torvalds/linux/CVE-2022-2977_repo_findings.json,[0]; [1]; [2]; ... and 21 more
+torvalds/linux,CVE-2022-2978,outputs/results/torvalds/linux/CVE-2022-2978_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-30594,outputs/results/torvalds/linux/CVE-2022-30594_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2022-3107,outputs/results/torvalds/linux/CVE-2022-3107_repo_findings.json,[0]
+torvalds/linux,CVE-2022-3108,outputs/results/torvalds/linux/CVE-2022-3108_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-3110,outputs/results/torvalds/linux/CVE-2022-3110_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-3202,outputs/results/torvalds/linux/CVE-2022-3202_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-3239,outputs/results/torvalds/linux/CVE-2022-3239_repo_findings.json,[0]
+torvalds/linux,CVE-2022-3521,outputs/results/torvalds/linux/CVE-2022-3521_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2022-3522,outputs/results/torvalds/linux/CVE-2022-3522_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2022-3565,outputs/results/torvalds/linux/CVE-2022-3565_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-3566,outputs/results/torvalds/linux/CVE-2022-3566_repo_findings.json,[0]; [1]; [2]; ... and 13 more
+torvalds/linux,CVE-2022-3567,outputs/results/torvalds/linux/CVE-2022-3567_repo_findings.json,[0]; [1]; [2]; ... and 18 more
+torvalds/linux,CVE-2022-3577,outputs/results/torvalds/linux/CVE-2022-3577_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-3586,outputs/results/torvalds/linux/CVE-2022-3586_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2022-3619,outputs/results/torvalds/linux/CVE-2022-3619_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+torvalds/linux,CVE-2022-36280,outputs/results/torvalds/linux/CVE-2022-36280_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-39188,outputs/results/torvalds/linux/CVE-2022-39188_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2022-4129,outputs/results/torvalds/linux/CVE-2022-4129_repo_findings.json,[0]; [1]; [2]; ... and 13 more
+torvalds/linux,CVE-2022-42432,outputs/results/torvalds/linux/CVE-2022-42432_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-42703,outputs/results/torvalds/linux/CVE-2022-42703_repo_findings.json,[0]; [1]; [2]; ... and 12 more
+torvalds/linux,CVE-2022-42720,outputs/results/torvalds/linux/CVE-2022-42720_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2022-42722,outputs/results/torvalds/linux/CVE-2022-42722_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2022-45869,outputs/results/torvalds/linux/CVE-2022-45869_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+torvalds/linux,CVE-2022-4696,outputs/results/torvalds/linux/CVE-2022-4696_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2022-47941,outputs/results/torvalds/linux/CVE-2022-47941_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2022-47942,outputs/results/torvalds/linux/CVE-2022-47942_repo_findings.json,[0]; [1]; [2]; ... and 13 more
+torvalds/linux,CVE-2022-48627,outputs/results/torvalds/linux/CVE-2022-48627_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-0459,outputs/results/torvalds/linux/CVE-2023-0459_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2023-0590,outputs/results/torvalds/linux/CVE-2023-0590_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2023-1073,outputs/results/torvalds/linux/CVE-2023-1073_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2023-1249,outputs/results/torvalds/linux/CVE-2023-1249_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2023-1513,outputs/results/torvalds/linux/CVE-2023-1513_repo_findings.json,[0]
+torvalds/linux,CVE-2023-1838,outputs/results/torvalds/linux/CVE-2023-1838_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2023-1989,outputs/results/torvalds/linux/CVE-2023-1989_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+torvalds/linux,CVE-2023-1998,outputs/results/torvalds/linux/CVE-2023-1998_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2023-21255,outputs/results/torvalds/linux/CVE-2023-21255_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-21264,outputs/results/torvalds/linux/CVE-2023-21264_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-2177,outputs/results/torvalds/linux/CVE-2023-2177_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2023-2248,outputs/results/torvalds/linux/CVE-2023-2248_repo_findings.json,[0]
+torvalds/linux,CVE-2023-22999,outputs/results/torvalds/linux/CVE-2023-22999_repo_findings.json,[0]
+torvalds/linux,CVE-2023-23000,outputs/results/torvalds/linux/CVE-2023-23000_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2023-23006,outputs/results/torvalds/linux/CVE-2023-23006_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-23455,outputs/results/torvalds/linux/CVE-2023-23455_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2023-25775,outputs/results/torvalds/linux/CVE-2023-25775_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2023-28327,outputs/results/torvalds/linux/CVE-2023-28327_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2023-28466,outputs/results/torvalds/linux/CVE-2023-28466_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-2898,outputs/results/torvalds/linux/CVE-2023-2898_repo_findings.json,[0]; [1]; [2]; ... and 24 more
+torvalds/linux,CVE-2023-3006,outputs/results/torvalds/linux/CVE-2023-3006_repo_findings.json,[0]
+torvalds/linux,CVE-2023-30456,outputs/results/torvalds/linux/CVE-2023-30456_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-31436,outputs/results/torvalds/linux/CVE-2023-31436_repo_findings.json,[0]
+torvalds/linux,CVE-2023-3268,outputs/results/torvalds/linux/CVE-2023-3268_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-3338,outputs/results/torvalds/linux/CVE-2023-3338_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2023-3357,outputs/results/torvalds/linux/CVE-2023-3357_repo_findings.json,[0]
+torvalds/linux,CVE-2023-3567,outputs/results/torvalds/linux/CVE-2023-3567_repo_findings.json,[0]
+torvalds/linux,CVE-2023-3772,outputs/results/torvalds/linux/CVE-2023-3772_repo_findings.json,[0]
+torvalds/linux,CVE-2023-39194,outputs/results/torvalds/linux/CVE-2023-39194_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-40283,outputs/results/torvalds/linux/CVE-2023-40283_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-4194,outputs/results/torvalds/linux/CVE-2023-4194_repo_findings.json,[0]
+torvalds/linux,CVE-2023-4206,outputs/results/torvalds/linux/CVE-2023-4206_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-4207,outputs/results/torvalds/linux/CVE-2023-4207_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2023-4273,outputs/results/torvalds/linux/CVE-2023-4273_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-4623,outputs/results/torvalds/linux/CVE-2023-4623_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-51779,outputs/results/torvalds/linux/CVE-2023-51779_repo_findings.json,[0]; [1]; [2]; ... and 17 more
+torvalds/linux,CVE-2023-51780,outputs/results/torvalds/linux/CVE-2023-51780_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2023-5197,outputs/results/torvalds/linux/CVE-2023-5197_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2023-52340,outputs/results/torvalds/linux/CVE-2023-52340_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2023-52435,outputs/results/torvalds/linux/CVE-2023-52435_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52443,outputs/results/torvalds/linux/CVE-2023-52443_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52444,outputs/results/torvalds/linux/CVE-2023-52444_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52456,outputs/results/torvalds/linux/CVE-2023-52456_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2023-52457,outputs/results/torvalds/linux/CVE-2023-52457_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2023-52458,outputs/results/torvalds/linux/CVE-2023-52458_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-52462,outputs/results/torvalds/linux/CVE-2023-52462_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-52473,outputs/results/torvalds/linux/CVE-2023-52473_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2023-52478,outputs/results/torvalds/linux/CVE-2023-52478_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52479,outputs/results/torvalds/linux/CVE-2023-52479_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-52489,outputs/results/torvalds/linux/CVE-2023-52489_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-52507,outputs/results/torvalds/linux/CVE-2023-52507_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52512,outputs/results/torvalds/linux/CVE-2023-52512_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2023-52515,outputs/results/torvalds/linux/CVE-2023-52515_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2023-52520,outputs/results/torvalds/linux/CVE-2023-52520_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52526,outputs/results/torvalds/linux/CVE-2023-52526_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2023-52527,outputs/results/torvalds/linux/CVE-2023-52527_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-52573,outputs/results/torvalds/linux/CVE-2023-52573_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52578,outputs/results/torvalds/linux/CVE-2023-52578_repo_findings.json,[0]; [1]; [2]; ... and 27 more
+torvalds/linux,CVE-2023-52580,outputs/results/torvalds/linux/CVE-2023-52580_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-52588,outputs/results/torvalds/linux/CVE-2023-52588_repo_findings.json,[0]; [1]; [2]; ... and 22 more
+torvalds/linux,CVE-2023-52589,outputs/results/torvalds/linux/CVE-2023-52589_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2023-52590,outputs/results/torvalds/linux/CVE-2023-52590_repo_findings.json,[0]
+torvalds/linux,CVE-2023-52593,outputs/results/torvalds/linux/CVE-2023-52593_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2023-52615,outputs/results/torvalds/linux/CVE-2023-52615_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2023-52620,outputs/results/torvalds/linux/CVE-2023-52620_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-52622,outputs/results/torvalds/linux/CVE-2023-52622_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2023-52625,outputs/results/torvalds/linux/CVE-2023-52625_repo_findings.json,[0]; [1]; [2]; ... and 15 more
+torvalds/linux,CVE-2023-52640,outputs/results/torvalds/linux/CVE-2023-52640_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2023-5717,outputs/results/torvalds/linux/CVE-2023-5717_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2023-6039,outputs/results/torvalds/linux/CVE-2023-6039_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-6121,outputs/results/torvalds/linux/CVE-2023-6121_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-6176,outputs/results/torvalds/linux/CVE-2023-6176_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2023-6622,outputs/results/torvalds/linux/CVE-2023-6622_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-6915,outputs/results/torvalds/linux/CVE-2023-6915_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2023-6931,outputs/results/torvalds/linux/CVE-2023-6931_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2023-7192,outputs/results/torvalds/linux/CVE-2023-7192_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2024-0443,outputs/results/torvalds/linux/CVE-2024-0443_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2024-23307,outputs/results/torvalds/linux/CVE-2024-23307_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2024-25744,outputs/results/torvalds/linux/CVE-2024-25744_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2024-26581,outputs/results/torvalds/linux/CVE-2024-26581_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2024-26582,outputs/results/torvalds/linux/CVE-2024-26582_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2024-26591,outputs/results/torvalds/linux/CVE-2024-26591_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26593,outputs/results/torvalds/linux/CVE-2024-26593_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+torvalds/linux,CVE-2024-26601,outputs/results/torvalds/linux/CVE-2024-26601_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26603,outputs/results/torvalds/linux/CVE-2024-26603_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26615,outputs/results/torvalds/linux/CVE-2024-26615_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26629,outputs/results/torvalds/linux/CVE-2024-26629_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26632,outputs/results/torvalds/linux/CVE-2024-26632_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26642,outputs/results/torvalds/linux/CVE-2024-26642_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26649,outputs/results/torvalds/linux/CVE-2024-26649_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2024-26657,outputs/results/torvalds/linux/CVE-2024-26657_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26685,outputs/results/torvalds/linux/CVE-2024-26685_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+torvalds/linux,CVE-2024-26700,outputs/results/torvalds/linux/CVE-2024-26700_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26704,outputs/results/torvalds/linux/CVE-2024-26704_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26706,outputs/results/torvalds/linux/CVE-2024-26706_repo_findings.json,[0]; [1]; [2]; ... and 10 more
+torvalds/linux,CVE-2024-26719,outputs/results/torvalds/linux/CVE-2024-26719_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+torvalds/linux,CVE-2024-26726,outputs/results/torvalds/linux/CVE-2024-26726_repo_findings.json,[0]; [1]
+torvalds/linux,CVE-2024-26741,outputs/results/torvalds/linux/CVE-2024-26741_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+torvalds/linux,CVE-2024-26758,outputs/results/torvalds/linux/CVE-2024-26758_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26761,outputs/results/torvalds/linux/CVE-2024-26761_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+torvalds/linux,CVE-2024-26763,outputs/results/torvalds/linux/CVE-2024-26763_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26764,outputs/results/torvalds/linux/CVE-2024-26764_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26767,outputs/results/torvalds/linux/CVE-2024-26767_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2024-26771,outputs/results/torvalds/linux/CVE-2024-26771_repo_findings.json,[0]; [1]; [2]; ... and 12 more
+torvalds/linux,CVE-2024-26772,outputs/results/torvalds/linux/CVE-2024-26772_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2024-26774,outputs/results/torvalds/linux/CVE-2024-26774_repo_findings.json,[0]
+torvalds/linux,CVE-2024-26807,outputs/results/torvalds/linux/CVE-2024-26807_repo_findings.json,[0]; [1]; [2]; ... and 17 more
+uclouvain/openjpeg,CVE-2020-27823,outputs/results/uclouvain/openjpeg/CVE-2020-27823_repo_findings.json,[0]
+uclouvain/openjpeg,CVE-2020-27842,outputs/results/uclouvain/openjpeg/CVE-2020-27842_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+wireshark/wireshark,CVE-2020-11647,outputs/results/wireshark/wireshark/CVE-2020-11647_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+wireshark/wireshark,CVE-2020-25862,outputs/results/wireshark/wireshark/CVE-2020-25862_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2020-26418,outputs/results/wireshark/wireshark/CVE-2020-26418_repo_findings.json,[0]; [1]; [2]; ... and 36 more
+wireshark/wireshark,CVE-2020-26420,outputs/results/wireshark/wireshark/CVE-2020-26420_repo_findings.json,[0]; [1]
+wireshark/wireshark,CVE-2020-26421,outputs/results/wireshark/wireshark/CVE-2020-26421_repo_findings.json,[0]
+wireshark/wireshark,CVE-2020-28030,outputs/results/wireshark/wireshark/CVE-2020-28030_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2021-22191,outputs/results/wireshark/wireshark/CVE-2021-22191_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+wireshark/wireshark,CVE-2021-22235,outputs/results/wireshark/wireshark/CVE-2021-22235_repo_findings.json,[0]
+wireshark/wireshark,CVE-2021-39922,outputs/results/wireshark/wireshark/CVE-2021-39922_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2021-39924,outputs/results/wireshark/wireshark/CVE-2021-39924_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+wireshark/wireshark,CVE-2021-4181,outputs/results/wireshark/wireshark/CVE-2021-4181_repo_findings.json,[0]
+wireshark/wireshark,CVE-2022-0582,outputs/results/wireshark/wireshark/CVE-2022-0582_repo_findings.json,[0]; [1]; [2]; ... and 35 more
+apache/httpd,CVE-2020-11984,outputs/results/apache/httpd/CVE-2020-11984_repo_findings.json,[0]
+apache/httpd,CVE-2020-35452,outputs/results/apache/httpd/CVE-2020-35452_repo_findings.json,[0]; [1]
+apache/httpd,CVE-2021-31618,outputs/results/apache/httpd/CVE-2021-31618_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+apache/httpd,CVE-2021-34798,outputs/results/apache/httpd/CVE-2021-34798_repo_findings.json,[0]; [1]; [2]
+apache/httpd,CVE-2021-36160,outputs/results/apache/httpd/CVE-2021-36160_repo_findings.json,[0]
+apache/httpd,CVE-2022-22719,outputs/results/apache/httpd/CVE-2022-22719_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+apache/httpd,CVE-2022-28330,outputs/results/apache/httpd/CVE-2022-28330_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+apache/httpd,CVE-2022-28614,outputs/results/apache/httpd/CVE-2022-28614_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+apache/httpd,CVE-2022-30556,outputs/results/apache/httpd/CVE-2022-30556_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+apache/httpd,CVE-2023-27522,outputs/results/apache/httpd/CVE-2023-27522_repo_findings.json,[0]; [1]; [2]; ... and 13 more
+curl/curl,CVE-2022-27778,outputs/results/curl/curl/CVE-2022-27778_repo_findings.json,[0]; [1]; [2]
+curl/curl,CVE-2023-52071,outputs/results/curl/curl/CVE-2023-52071_repo_findings.json,[0]; [1]; [2]
+curl/curl,CVE-2024-6197,outputs/results/curl/curl/CVE-2024-6197_repo_findings.json,[0]; [1]
+curl/curl,OSV-2020-1080,outputs/results/curl/curl/OSV-2020-1080_repo_findings.json,[0]
+curl/curl,OSV-2020-389,outputs/results/curl/curl/OSV-2020-389_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+curl/curl,OSV-2021-696,outputs/results/curl/curl/OSV-2021-696_repo_findings.json,[0]
+curl/curl,OSV-2022-139,outputs/results/curl/curl/OSV-2022-139_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2020-12284,outputs/results/FFmpeg/FFmpeg/CVE-2020-12284_repo_findings.json,[0]; [1]; [2]
+FFmpeg/FFmpeg,CVE-2020-20446,outputs/results/FFmpeg/FFmpeg/CVE-2020-20446_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-20451,outputs/results/FFmpeg/FFmpeg/CVE-2020-20451_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+FFmpeg/FFmpeg,CVE-2020-20896,outputs/results/FFmpeg/FFmpeg/CVE-2020-20896_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2020-22020,outputs/results/FFmpeg/FFmpeg/CVE-2020-22020_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-22023,outputs/results/FFmpeg/FFmpeg/CVE-2020-22023_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-22024,outputs/results/FFmpeg/FFmpeg/CVE-2020-22024_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FFmpeg/FFmpeg,CVE-2020-22034,outputs/results/FFmpeg/FFmpeg/CVE-2020-22034_repo_findings.json,[0]; [1]; [2]; ... and 10 more
+FFmpeg/FFmpeg,CVE-2020-22035,outputs/results/FFmpeg/FFmpeg/CVE-2020-22035_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+FFmpeg/FFmpeg,CVE-2020-22037,outputs/results/FFmpeg/FFmpeg/CVE-2020-22037_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2020-22049,outputs/results/FFmpeg/FFmpeg/CVE-2020-22049_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-22051,outputs/results/FFmpeg/FFmpeg/CVE-2020-22051_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+FFmpeg/FFmpeg,CVE-2020-35964,outputs/results/FFmpeg/FFmpeg/CVE-2020-35964_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-35964,outputs/results/FFmpeg/FFmpeg/CVE-2020-35964_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2020-35965,outputs/results/FFmpeg/FFmpeg/CVE-2020-35965_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+FFmpeg/FFmpeg,CVE-2020-36138,outputs/results/FFmpeg/FFmpeg/CVE-2020-36138_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2021-30123,outputs/results/FFmpeg/FFmpeg/CVE-2021-30123_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2021-38114,outputs/results/FFmpeg/FFmpeg/CVE-2021-38114_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2021-38114,outputs/results/FFmpeg/FFmpeg/CVE-2021-38114_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2021-38171,outputs/results/FFmpeg/FFmpeg/CVE-2021-38171_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+FFmpeg/FFmpeg,CVE-2021-38171,outputs/results/FFmpeg/FFmpeg/CVE-2021-38171_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+FFmpeg/FFmpeg,CVE-2022-48434,outputs/results/FFmpeg/FFmpeg/CVE-2022-48434_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+FFmpeg/FFmpeg,CVE-2023-46407,outputs/results/FFmpeg/FFmpeg/CVE-2023-46407_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2023-47342,outputs/results/FFmpeg/FFmpeg/CVE-2023-47342_repo_findings.json,[0]; [1]
+FFmpeg/FFmpeg,CVE-2023-50007,outputs/results/FFmpeg/FFmpeg/CVE-2023-50007_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FFmpeg/FFmpeg,CVE-2024-22860,outputs/results/FFmpeg/FFmpeg/CVE-2024-22860_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FFmpeg/FFmpeg,CVE-2024-31578,outputs/results/FFmpeg/FFmpeg/CVE-2024-31578_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+FFmpeg/FFmpeg,CVE-2024-31585,outputs/results/FFmpeg/FFmpeg/CVE-2024-31585_repo_findings.json,[0]; [1]; [2]; ... and 24 more
+FFmpeg/FFmpeg,CVE-2024-35365,outputs/results/FFmpeg/FFmpeg/CVE-2024-35365_repo_findings.json,[0]; [1]; [2]
+FFmpeg/FFmpeg,CVE-2024-35366,outputs/results/FFmpeg/FFmpeg/CVE-2024-35366_repo_findings.json,[0]
+FFmpeg/FFmpeg,CVE-2024-35368,outputs/results/FFmpeg/FFmpeg/CVE-2024-35368_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FFmpeg/FFmpeg,CVE-2024-36618,outputs/results/FFmpeg/FFmpeg/CVE-2024-36618_repo_findings.json,[0]
+FreeRDP/FreeRDP,CVE-2020-11042,outputs/results/FreeRDP/FreeRDP/CVE-2020-11042_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FreeRDP/FreeRDP,CVE-2020-11044,outputs/results/FreeRDP/FreeRDP/CVE-2020-11044_repo_findings.json,[0]
+FreeRDP/FreeRDP,CVE-2020-11046,outputs/results/FreeRDP/FreeRDP/CVE-2020-11046_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+FreeRDP/FreeRDP,CVE-2020-11047,outputs/results/FreeRDP/FreeRDP/CVE-2020-11047_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+FreeRDP/FreeRDP,CVE-2020-11058,outputs/results/FreeRDP/FreeRDP/CVE-2020-11058_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+FreeRDP/FreeRDP,CVE-2020-11086,outputs/results/FreeRDP/FreeRDP/CVE-2020-11086_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FreeRDP/FreeRDP,CVE-2020-11088,outputs/results/FreeRDP/FreeRDP/CVE-2020-11088_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+FreeRDP/FreeRDP,CVE-2020-11095,outputs/results/FreeRDP/FreeRDP/CVE-2020-11095_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FreeRDP/FreeRDP,CVE-2020-11097,outputs/results/FreeRDP/FreeRDP/CVE-2020-11097_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+FreeRDP/FreeRDP,CVE-2020-11099,outputs/results/FreeRDP/FreeRDP/CVE-2020-11099_repo_findings.json,[0]; [1]
+FreeRDP/FreeRDP,CVE-2020-11525,outputs/results/FreeRDP/FreeRDP/CVE-2020-11525_repo_findings.json,[0]
+FreeRDP/FreeRDP,CVE-2020-13396,outputs/results/FreeRDP/FreeRDP/CVE-2020-13396_repo_findings.json,[0]; [1]
+FreeRDP/FreeRDP,CVE-2020-4032,outputs/results/FreeRDP/FreeRDP/CVE-2020-4032_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+FreeRDP/FreeRDP,CVE-2020-4033,outputs/results/FreeRDP/FreeRDP/CVE-2020-4033_repo_findings.json,[0]; [1]; [2]
+FreeRDP/FreeRDP,CVE-2021-37594,outputs/results/FreeRDP/FreeRDP/CVE-2021-37594_repo_findings.json,[0]; [1]; [2]
+FreeRDP/FreeRDP,CVE-2022-39316,outputs/results/FreeRDP/FreeRDP/CVE-2022-39316_repo_findings.json,[0]
+FreeRDP/FreeRDP,CVE-2022-41877,outputs/results/FreeRDP/FreeRDP/CVE-2022-41877_repo_findings.json,[0]; [1]; [2]
+FreeRDP/FreeRDP,CVE-2023-39354,outputs/results/FreeRDP/FreeRDP/CVE-2023-39354_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+FreeRDP/FreeRDP,CVE-2023-39355,outputs/results/FreeRDP/FreeRDP/CVE-2023-39355_repo_findings.json,[0]; [1]; [2]
+FreeRDP/FreeRDP,CVE-2023-40589,outputs/results/FreeRDP/FreeRDP/CVE-2023-40589_repo_findings.json,[0]; [1]; [2]
+FreeRDP/FreeRDP,CVE-2024-32658,outputs/results/FreeRDP/FreeRDP/CVE-2024-32658_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+FreeRDP/FreeRDP,CVE-2024-32660,outputs/results/FreeRDP/FreeRDP/CVE-2024-32660_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+FreeRDP/FreeRDP,CVE-2024-32662,outputs/results/FreeRDP/FreeRDP/CVE-2024-32662_repo_findings.json,[0]
+gpac/gpac,CVE-2020-11558,outputs/results/gpac/gpac/CVE-2020-11558_repo_findings.json,[0]; [1]
+gpac/gpac,CVE-2020-23928,outputs/results/gpac/gpac/CVE-2020-23928_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+gpac/gpac,CVE-2020-23930,outputs/results/gpac/gpac/CVE-2020-23930_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2020-25427,outputs/results/gpac/gpac/CVE-2020-25427_repo_findings.json,[0]
+gpac/gpac,CVE-2020-35981,outputs/results/gpac/gpac/CVE-2020-35981_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2020-35982,outputs/results/gpac/gpac/CVE-2020-35982_repo_findings.json,[0]
+gpac/gpac,CVE-2021-30019,outputs/results/gpac/gpac/CVE-2021-30019_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+gpac/gpac,CVE-2021-30199,outputs/results/gpac/gpac/CVE-2021-30199_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2021-31254,outputs/results/gpac/gpac/CVE-2021-31254_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+gpac/gpac,CVE-2021-31259,outputs/results/gpac/gpac/CVE-2021-31259_repo_findings.json,[0]; [1]; [2]
+gpac/gpac,CVE-2021-31262,outputs/results/gpac/gpac/CVE-2021-31262_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+gpac/gpac,CVE-2021-32132,outputs/results/gpac/gpac/CVE-2021-32132_repo_findings.json,[0]; [1]; [2]; ... and 35 more
+gpac/gpac,CVE-2021-32134,outputs/results/gpac/gpac/CVE-2021-32134_repo_findings.json,[0]; [1]; [2]; ... and 46 more
+gpac/gpac,CVE-2021-32135,outputs/results/gpac/gpac/CVE-2021-32135_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+gpac/gpac,CVE-2021-32138,outputs/results/gpac/gpac/CVE-2021-32138_repo_findings.json,[0]; [1]
+gpac/gpac,CVE-2021-32139,outputs/results/gpac/gpac/CVE-2021-32139_repo_findings.json,[0]; [1]; [2]; ... and 31 more
+gpac/gpac,CVE-2021-32438,outputs/results/gpac/gpac/CVE-2021-32438_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2021-32439,outputs/results/gpac/gpac/CVE-2021-32439_repo_findings.json,[0]; [1]; [2]; ... and 30 more
+gpac/gpac,CVE-2021-32440,outputs/results/gpac/gpac/CVE-2021-32440_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+gpac/gpac,CVE-2021-33362,outputs/results/gpac/gpac/CVE-2021-33362_repo_findings.json,[0]
+gpac/gpac,CVE-2021-33364,outputs/results/gpac/gpac/CVE-2021-33364_repo_findings.json,[0]; [1]; [2]
+gpac/gpac,CVE-2021-33366,outputs/results/gpac/gpac/CVE-2021-33366_repo_findings.json,[0]
+gpac/gpac,CVE-2021-40566,outputs/results/gpac/gpac/CVE-2021-40566_repo_findings.json,[0]; [1]; [2]; ... and 9 more
+gpac/gpac,CVE-2021-40569,outputs/results/gpac/gpac/CVE-2021-40569_repo_findings.json,[0]; [1]; [2]
+gpac/gpac,CVE-2021-40570,outputs/results/gpac/gpac/CVE-2021-40570_repo_findings.json,[0]; [1]; [2]
+gpac/gpac,CVE-2021-40572,outputs/results/gpac/gpac/CVE-2021-40572_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2021-40575,outputs/results/gpac/gpac/CVE-2021-40575_repo_findings.json,[0]
+gpac/gpac,CVE-2021-40592,outputs/results/gpac/gpac/CVE-2021-40592_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+gpac/gpac,CVE-2022-1172,outputs/results/gpac/gpac/CVE-2022-1172_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2022-1222,outputs/results/gpac/gpac/CVE-2022-1222_repo_findings.json,[0]; [1]; [2]; ... and 10 more
+gpac/gpac,CVE-2022-2549,outputs/results/gpac/gpac/CVE-2022-2549_repo_findings.json,[0]; [1]; [2]; ... and 18 more
+gpac/gpac,CVE-2022-29339,outputs/results/gpac/gpac/CVE-2022-29339_repo_findings.json,[0]; [1]; [2]; ... and 28 more
+gpac/gpac,CVE-2022-29340,outputs/results/gpac/gpac/CVE-2022-29340_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2022-3178,outputs/results/gpac/gpac/CVE-2022-3178_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+gpac/gpac,CVE-2022-47090,outputs/results/gpac/gpac/CVE-2022-47090_repo_findings.json,[0]; [1]; [2]; ... and 28 more
+gpac/gpac,CVE-2023-0358,outputs/results/gpac/gpac/CVE-2023-0358_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+gpac/gpac,CVE-2023-0760,outputs/results/gpac/gpac/CVE-2023-0760_repo_findings.json,[0]
+gpac/gpac,CVE-2023-0770,outputs/results/gpac/gpac/CVE-2023-0770_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+gpac/gpac,CVE-2023-0817,outputs/results/gpac/gpac/CVE-2023-0817_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+gpac/gpac,CVE-2023-0819,outputs/results/gpac/gpac/CVE-2023-0819_repo_findings.json,[0]
+gpac/gpac,CVE-2023-0841,outputs/results/gpac/gpac/CVE-2023-0841_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+gpac/gpac,CVE-2023-1654,outputs/results/gpac/gpac/CVE-2023-1654_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+gpac/gpac,CVE-2023-1655,outputs/results/gpac/gpac/CVE-2023-1655_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+gpac/gpac,CVE-2023-2837,outputs/results/gpac/gpac/CVE-2023-2837_repo_findings.json,[0]; [1]; [2]
+gpac/gpac,CVE-2023-2838,outputs/results/gpac/gpac/CVE-2023-2838_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2023-2840,outputs/results/gpac/gpac/CVE-2023-2840_repo_findings.json,[0]; [1]
+gpac/gpac,CVE-2023-3291,outputs/results/gpac/gpac/CVE-2023-3291_repo_findings.json,[0]
+gpac/gpac,CVE-2023-4679,outputs/results/gpac/gpac/CVE-2023-4679_repo_findings.json,[0]; [1]
+gpac/gpac,CVE-2023-4682,outputs/results/gpac/gpac/CVE-2023-4682_repo_findings.json,[0]
+gpac/gpac,CVE-2023-46927,outputs/results/gpac/gpac/CVE-2023-46927_repo_findings.json,[0]; [1]; [2]
+gpac/gpac,CVE-2023-46930,outputs/results/gpac/gpac/CVE-2023-46930_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,CVE-2023-46931,outputs/results/gpac/gpac/CVE-2023-46931_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+gpac/gpac,CVE-2023-4755,outputs/results/gpac/gpac/CVE-2023-4755_repo_findings.json,[0]
+gpac/gpac,CVE-2023-48011,outputs/results/gpac/gpac/CVE-2023-48011_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+gpac/gpac,CVE-2023-48014,outputs/results/gpac/gpac/CVE-2023-48014_repo_findings.json,[0]; [1]
+gpac/gpac,CVE-2023-5586,outputs/results/gpac/gpac/CVE-2023-5586_repo_findings.json,[0]
+gpac/gpac,CVE-2024-0322,outputs/results/gpac/gpac/CVE-2024-0322_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+gpac/gpac,CVE-2024-6061,outputs/results/gpac/gpac/CVE-2024-6061_repo_findings.json,[0]; [1]
+gpac/gpac,OSV-2024-1029,outputs/results/gpac/gpac/OSV-2024-1029_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+gpac/gpac,OSV-2024-135,outputs/results/gpac/gpac/OSV-2024-135_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+gpac/gpac,OSV-2024-951,outputs/results/gpac/gpac/OSV-2024-951_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2020-25663,outputs/results/ImageMagick/ImageMagick/CVE-2020-25663_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+ImageMagick/ImageMagick,CVE-2020-27752,outputs/results/ImageMagick/ImageMagick/CVE-2020-27752_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+ImageMagick/ImageMagick,CVE-2020-27755,outputs/results/ImageMagick/ImageMagick/CVE-2020-27755_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2020-27766,outputs/results/ImageMagick/ImageMagick/CVE-2020-27766_repo_findings.json,[0]; [1]
+ImageMagick/ImageMagick,CVE-2020-27774,outputs/results/ImageMagick/ImageMagick/CVE-2020-27774_repo_findings.json,[0]; [1]; [2]
+ImageMagick/ImageMagick,CVE-2020-27775,outputs/results/ImageMagick/ImageMagick/CVE-2020-27775_repo_findings.json,[0]
+ImageMagick/ImageMagick,CVE-2020-27776,outputs/results/ImageMagick/ImageMagick/CVE-2020-27776_repo_findings.json,[0]
+ImageMagick/ImageMagick,CVE-2021-20243,outputs/results/ImageMagick/ImageMagick/CVE-2021-20243_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+ImageMagick/ImageMagick6,CVE-2020-27764,outputs/results/ImageMagick/ImageMagick6/CVE-2020-27764_repo_findings.json,[0]; [1]
+ImageMagick/ImageMagick6,CVE-2023-39978,outputs/results/ImageMagick/ImageMagick6/CVE-2023-39978_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+kamailio/kamailio,OSV-2021-1195,outputs/results/kamailio/kamailio/OSV-2021-1195_repo_findings.json,[0]; [1]; [2]
+kamailio/kamailio,OSV-2021-1196,outputs/results/kamailio/kamailio/OSV-2021-1196_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+kamailio/kamailio,OSV-2021-1221,outputs/results/kamailio/kamailio/OSV-2021-1221_repo_findings.json,[0]; [1]; [2]
+kamailio/kamailio,OSV-2021-1300,outputs/results/kamailio/kamailio/OSV-2021-1300_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+kamailio/kamailio,OSV-2023-813,outputs/results/kamailio/kamailio/OSV-2023-813_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+kamailio/kamailio,OSV-2024-1200,outputs/results/kamailio/kamailio/OSV-2024-1200_repo_findings.json,[0]
+kamailio/kamailio,OSV-2024-1427,outputs/results/kamailio/kamailio/OSV-2024-1427_repo_findings.json,[0]
+libarchive/libarchive,CVE-2020-21674,outputs/results/libarchive/libarchive/CVE-2020-21674_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+libarchive/libarchive,CVE-2021-23177,outputs/results/libarchive/libarchive/CVE-2021-23177_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+libarchive/libarchive,OSV-2020-2324,outputs/results/libarchive/libarchive/OSV-2020-2324_repo_findings.json,[0]; [1]
+libarchive/libarchive,OSV-2020-273,outputs/results/libarchive/libarchive/OSV-2020-273_repo_findings.json,[0]; [1]
+libarchive/libarchive,OSV-2020-372,outputs/results/libarchive/libarchive/OSV-2020-372_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+libarchive/libarchive,OSV-2020-483,outputs/results/libarchive/libarchive/OSV-2020-483_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+libarchive/libarchive,OSV-2020-487,outputs/results/libarchive/libarchive/OSV-2020-487_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+libarchive/libarchive,OSV-2020-506,outputs/results/libarchive/libarchive/OSV-2020-506_repo_findings.json,[0]; [1]; [2]
+libarchive/libarchive,OSV-2020-628,outputs/results/libarchive/libarchive/OSV-2020-628_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+libarchive/libarchive,OSV-2022-13,outputs/results/libarchive/libarchive/OSV-2022-13_repo_findings.json,[0]; [1]
+libarchive/libarchive,OSV-2022-299,outputs/results/libarchive/libarchive/OSV-2022-299_repo_findings.json,[0]
+LibreDWG/libredwg,CVE-2023-26157,outputs/results/LibreDWG/libredwg/CVE-2023-26157_repo_findings.json,[0]
+LibreDWG/libredwg,CVE-2023-36274,outputs/results/LibreDWG/libredwg/CVE-2023-36274_repo_findings.json,[0]; [1]
+LibreDWG/libredwg,OSV-2021-543,outputs/results/LibreDWG/libredwg/OSV-2021-543_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+LibreDWG/libredwg,OSV-2021-620,outputs/results/LibreDWG/libredwg/OSV-2021-620_repo_findings.json,[0]; [1]
+LibreDWG/libredwg,OSV-2021-771,outputs/results/LibreDWG/libredwg/OSV-2021-771_repo_findings.json,[0]; [1]; [2]; ... and 23 more
+LibreDWG/libredwg,OSV-2022-1180,outputs/results/LibreDWG/libredwg/OSV-2022-1180_repo_findings.json,[0]; [1]; [2]; ... and 25 more
+LibreDWG/libredwg,OSV-2022-363,outputs/results/LibreDWG/libredwg/OSV-2022-363_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+LibreDWG/libredwg,OSV-2022-403,outputs/results/LibreDWG/libredwg/OSV-2022-403_repo_findings.json,[0]; [1]; [2]; ... and 17 more
+LibreDWG/libredwg,OSV-2022-654,outputs/results/LibreDWG/libredwg/OSV-2022-654_repo_findings.json,[0]; [1]
+LibreDWG/libredwg,OSV-2022-664,outputs/results/LibreDWG/libredwg/OSV-2022-664_repo_findings.json,[0]; [1]; [2]
+LibreDWG/libredwg,OSV-2023-1122,outputs/results/LibreDWG/libredwg/OSV-2023-1122_repo_findings.json,[0]
+LibreDWG/libredwg,OSV-2023-1149,outputs/results/LibreDWG/libredwg/OSV-2023-1149_repo_findings.json,[0]; [1]
+LibreDWG/libredwg,OSV-2023-316,outputs/results/LibreDWG/libredwg/OSV-2023-316_repo_findings.json,[0]; [1]; [2]; ... and 34 more
+LibreDWG/libredwg,OSV-2023-412,outputs/results/LibreDWG/libredwg/OSV-2023-412_repo_findings.json,[0]; [1]; [2]
+LibreDWG/libredwg,OSV-2023-440,outputs/results/LibreDWG/libredwg/OSV-2023-440_repo_findings.json,[0]
+LibreDWG/libredwg,OSV-2023-717,outputs/results/LibreDWG/libredwg/OSV-2023-717_repo_findings.json,[0]
+LibreDWG/libredwg,OSV-2023-748,outputs/results/LibreDWG/libredwg/OSV-2023-748_repo_findings.json,[0]
+LibreDWG/libredwg,OSV-2023-758,outputs/results/LibreDWG/libredwg/OSV-2023-758_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+LibreDWG/libredwg,OSV-2023-850,outputs/results/LibreDWG/libredwg/OSV-2023-850_repo_findings.json,[0]; [1]
+LibreDWG/libredwg,OSV-2023-894,outputs/results/LibreDWG/libredwg/OSV-2023-894_repo_findings.json,[0]; [1]; [2]
+LibreDWG/libredwg,OSV-2023-965,outputs/results/LibreDWG/libredwg/OSV-2023-965_repo_findings.json,[0]
+LibreDWG/libredwg,OSV-2024-384,outputs/results/LibreDWG/libredwg/OSV-2024-384_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+radareorg/radare2,CVE-2020-27793,outputs/results/radareorg/radare2/CVE-2020-27793_repo_findings.json,[0]; [1]
+radareorg/radare2,CVE-2020-27795,outputs/results/radareorg/radare2/CVE-2020-27795_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+radareorg/radare2,CVE-2021-32495,outputs/results/radareorg/radare2/CVE-2021-32495_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+radareorg/radare2,CVE-2022-0518,outputs/results/radareorg/radare2/CVE-2022-0518_repo_findings.json,[0]; [1]; [2]; ... and 14 more
+radareorg/radare2,CVE-2022-0712,outputs/results/radareorg/radare2/CVE-2022-0712_repo_findings.json,[0]; [1]; [2]
+radareorg/radare2,CVE-2022-0713,outputs/results/radareorg/radare2/CVE-2022-0713_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+radareorg/radare2,CVE-2022-1207,outputs/results/radareorg/radare2/CVE-2022-1207_repo_findings.json,[0]; [1]; [2]; ... and 25 more
+radareorg/radare2,CVE-2022-1237,outputs/results/radareorg/radare2/CVE-2022-1237_repo_findings.json,[0]; [1]; [2]; ... and 18 more
+radareorg/radare2,CVE-2022-1240,outputs/results/radareorg/radare2/CVE-2022-1240_repo_findings.json,[0]
+radareorg/radare2,CVE-2022-1283,outputs/results/radareorg/radare2/CVE-2022-1283_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+radareorg/radare2,CVE-2022-1284,outputs/results/radareorg/radare2/CVE-2022-1284_repo_findings.json,[0]; [1]; [2]
+radareorg/radare2,CVE-2022-1382,outputs/results/radareorg/radare2/CVE-2022-1382_repo_findings.json,[0]; [1]; [2]
+radareorg/radare2,CVE-2022-1437,outputs/results/radareorg/radare2/CVE-2022-1437_repo_findings.json,[0]; [1]; [2]; ... and 8 more
+radareorg/radare2,CVE-2022-1451,outputs/results/radareorg/radare2/CVE-2022-1451_repo_findings.json,[0]; [1]; [2]; ... and 16 more
+radareorg/radare2,CVE-2022-28069,outputs/results/radareorg/radare2/CVE-2022-28069_repo_findings.json,[0]; [1]; [2]
+radareorg/radare2,CVE-2022-28071,outputs/results/radareorg/radare2/CVE-2022-28071_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+radareorg/radare2,CVE-2023-0302,outputs/results/radareorg/radare2/CVE-2023-0302_repo_findings.json,[0]; [1]; [2]; ... and 60 more
+radareorg/radare2,CVE-2023-1605,outputs/results/radareorg/radare2/CVE-2023-1605_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+radareorg/radare2,CVE-2024-29645,outputs/results/radareorg/radare2/CVE-2024-29645_repo_findings.json,[0]; [1]; [2]; ... and 2 more
+radareorg/radare2,OSV-2020-133,outputs/results/radareorg/radare2/OSV-2020-133_repo_findings.json,[0]
+radareorg/radare2,OSV-2020-160,outputs/results/radareorg/radare2/OSV-2020-160_repo_findings.json,[0]; [1]; [2]; ... and 3 more
+radareorg/radare2,OSV-2020-317,outputs/results/radareorg/radare2/OSV-2020-317_repo_findings.json,[0]; [1]; [2]
+radareorg/radare2,OSV-2020-393,outputs/results/radareorg/radare2/OSV-2020-393_repo_findings.json,[0]; [1]; [2]
+radareorg/radare2,OSV-2020-399,outputs/results/radareorg/radare2/OSV-2020-399_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+radareorg/radare2,OSV-2020-441,outputs/results/radareorg/radare2/OSV-2020-441_repo_findings.json,[0]
+radareorg/radare2,OSV-2020-533,outputs/results/radareorg/radare2/OSV-2020-533_repo_findings.json,[0]; [1]
+radareorg/radare2,OSV-2020-560,outputs/results/radareorg/radare2/OSV-2020-560_repo_findings.json,[0]; [1]
+radareorg/radare2,OSV-2020-625,outputs/results/radareorg/radare2/OSV-2020-625_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+radareorg/radare2,OSV-2020-64,outputs/results/radareorg/radare2/OSV-2020-64_repo_findings.json,[0]; [1]
+radareorg/radare2,OSV-2020-642,outputs/results/radareorg/radare2/OSV-2020-642_repo_findings.json,[0]
+radareorg/radare2,OSV-2021-1786,outputs/results/radareorg/radare2/OSV-2021-1786_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+radareorg/radare2,OSV-2022-1087,outputs/results/radareorg/radare2/OSV-2022-1087_repo_findings.json,[0]
+radareorg/radare2,OSV-2022-1110,outputs/results/radareorg/radare2/OSV-2022-1110_repo_findings.json,[0]; [1]; [2]; ... and 11 more
+radareorg/radare2,OSV-2023-1247,outputs/results/radareorg/radare2/OSV-2023-1247_repo_findings.json,[0]; [1]; [2]; ... and 10 more
+radareorg/radare2,OSV-2023-605,outputs/results/radareorg/radare2/OSV-2023-605_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+radareorg/radare2,OSV-2023-623,outputs/results/radareorg/radare2/OSV-2023-623_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+uclouvain/openjpeg,CVE-2020-27814,outputs/results/uclouvain/openjpeg/CVE-2020-27814_repo_findings.json,[0]
+uclouvain/openjpeg,CVE-2020-27844,outputs/results/uclouvain/openjpeg/CVE-2020-27844_repo_findings.json,[0]; [1]; [2]
+uclouvain/openjpeg,CVE-2020-6851,outputs/results/uclouvain/openjpeg/CVE-2020-6851_repo_findings.json,[0]; [1]
+wireshark/wireshark,CVE-2020-13164,outputs/results/wireshark/wireshark/CVE-2020-13164_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2020-26419,outputs/results/wireshark/wireshark/CVE-2020-26419_repo_findings.json,[0]; [1]; [2]; ... and 4 more
+wireshark/wireshark,CVE-2020-26422,outputs/results/wireshark/wireshark/CVE-2020-26422_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+wireshark/wireshark,CVE-2020-7044,outputs/results/wireshark/wireshark/CVE-2020-7044_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2021-22173,outputs/results/wireshark/wireshark/CVE-2021-22173_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2021-22222,outputs/results/wireshark/wireshark/CVE-2021-22222_repo_findings.json,[0]
+wireshark/wireshark,CVE-2021-39921,outputs/results/wireshark/wireshark/CVE-2021-39921_repo_findings.json,[0]; [1]; [2]; ... and 1 more
+wireshark/wireshark,CVE-2021-39926,outputs/results/wireshark/wireshark/CVE-2021-39926_repo_findings.json,[0]; [1]
+wireshark/wireshark,CVE-2021-4183,outputs/results/wireshark/wireshark/CVE-2021-4183_repo_findings.json,[0]
+wireshark/wireshark,CVE-2021-4185,outputs/results/wireshark/wireshark/CVE-2021-4185_repo_findings.json,[0]
+wireshark/wireshark,CVE-2022-3190,outputs/results/wireshark/wireshark/CVE-2022-3190_repo_findings.json,[0]
+wireshark/wireshark,CVE-2024-24479,outputs/results/wireshark/wireshark/CVE-2024-24479_repo_findings.json,[0]; [1]; [2]
+torvalds/linux,CVE-2021-47165,outputs/results/torvalds/linux/CVE-2021-47165_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2022-3625,outputs/results/torvalds/linux/CVE-2022-3625_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+torvalds/linux,CVE-2023-22996,outputs/results/torvalds/linux/CVE-2023-22996_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2023-42754,outputs/results/torvalds/linux/CVE-2023-42754_repo_findings.json,[0]; [1]; [2]; ... and 5 more
+torvalds/linux,CVE-2023-52469,outputs/results/torvalds/linux/CVE-2023-52469_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2024-0641,outputs/results/torvalds/linux/CVE-2024-0641_repo_findings.json,[0]; [1]; [2]; ... and 6 more
+torvalds/linux,CVE-2024-26660,outputs/results/torvalds/linux/CVE-2024-26660_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2024-26699,outputs/results/torvalds/linux/CVE-2024-26699_repo_findings.json,[0]; [1]; [2]; ... and 19 more
+torvalds/linux,CVE-2024-26716,outputs/results/torvalds/linux/CVE-2024-26716_repo_findings.json,[0]; [1]; [2]; ... and 7 more
+torvalds/linux,CVE-2024-26747,outputs/results/torvalds/linux/CVE-2024-26747_repo_findings.json,[0]; [1]; [2]; ... and 22 more

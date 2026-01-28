@@ -1,0 +1,16 @@
+repo,count,percentage
+torvalds/linux,635,40.73
+ImageMagick/ImageMagick,171,10.97
+gpac/gpac,141,9.04
+radareorg/radare2,130,8.34
+FFmpeg/FFmpeg,93,5.97
+curl/curl,72,4.62
+wireshark/wireshark,49,3.14
+LibreDWG/libredwg,48,3.08
+FreeRDP/FreeRDP,46,2.95
+libarchive/libarchive,45,2.89
+uclouvain/openjpeg,42,2.69
+apache/httpd,30,1.92
+ImageMagick/ImageMagick6,29,1.86
+kamailio/kamailio,16,1.03
+gnutls/gnutls,12,0.77
