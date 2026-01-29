@@ -1,8 +1,0 @@
-repo,vul_id,fixed_commit_sha
-FreeRDP/FreeRDP,CVE-2022-39347,027424c2c6c0991cb9c22f9511478229c9b17e5d
-apache/httpd,CVE-2021-41773,e150697086e70c552b2588f369f2d17815cb1782
-curl/curl,CVE-2023-27534,4e2b52b5f7a3bf50a0f1494155717b02cc1df6d6
-libarchive/libarchive,CVE-2021-23177,fba4f123cc456d2b2538f811bb831483bf336bad
-libarchive/libarchive,CVE-2021-31566,b41daecb5ccb4c8e3b2c53fd6147109fc12c3043
-torvalds/linux,CVE-2020-29373,ff002b30181d30cdfbca316dadd099c3ca0d739c
-torvalds/linux,CVE-2021-3178,51b2ee7d006a736a9126e8111d1f24e4fd0afaa6

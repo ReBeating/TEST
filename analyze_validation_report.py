@@ -1,108 +1,91 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-统计 validation_report_0day.csv 中不同漏洞类型的 TP/FP 个数和比例
+统计validation_report_0day.csv中各个漏洞类型和软件的TP/FP占比
 """
 
 import pandas as pd
 from collections import defaultdict
 
 def analyze_validation_report(csv_file):
-    """分析验证报告中的 TP/FP 统计"""
-    
-    # 读取 CSV 文件
+    # 读取CSV文件
     df = pd.read_csv(csv_file)
     
-    print(f"总记录数: {len(df)}")
-    print(f"\n列名: {df.columns.tolist()}")
+    print("=" * 80)
+    print("漏洞类型 TP/FP 统计")
+    print("=" * 80)
     
-    # 统计不同漏洞类型的 TP/FP
-    stats = defaultdict(lambda: {'TP': 0, 'FP': 0, 'Unknown': 0, 'Total': 0})
-    
+    # 按漏洞类型统计
+    vuln_type_stats = defaultdict(lambda: {'TP': 0, 'FP': 0})
     for _, row in df.iterrows():
         vuln_type = row['vuln_type']
-        judgement = str(row['judgement']).strip() if pd.notna(row['judgement']) else ''
-        
-        stats[vuln_type]['Total'] += 1
-        
-        if judgement == 'TP':
-            stats[vuln_type]['TP'] += 1
-        elif judgement == 'FP':
-            stats[vuln_type]['FP'] += 1
-        else:
-            stats[vuln_type]['Unknown'] += 1
+        judgement = row['judgement']
+        vuln_type_stats[vuln_type][judgement] += 1
     
-    # 按漏洞类型排序
-    sorted_types = sorted(stats.keys())
+    # 打印漏洞类型统计结果
+    vuln_results = []
+    for vuln_type in sorted(vuln_type_stats.keys()):
+        tp = vuln_type_stats[vuln_type]['TP']
+        fp = vuln_type_stats[vuln_type]['FP']
+        total = tp + fp
+        tp_ratio = tp / total * 100 if total > 0 else 0
+        fp_ratio = fp / total * 100 if total > 0 else 0
+        vuln_results.append({
+            '漏洞类型': vuln_type,
+            'TP': tp,
+            'FP': fp,
+            '总数': total,
+            'TP占比(%)': f'{tp_ratio:.2f}',
+            'FP占比(%)': f'{fp_ratio:.2f}'
+        })
     
-    print("\n" + "="*100)
-    print(f"{'漏洞类型':<30} {'TP':>8} {'FP':>8} {'未知':>8} {'总数':>8} {'TP率':>10} {'FP率':>10}")
-    print("="*100)
-    
-    total_tp = 0
-    total_fp = 0
-    total_unknown = 0
-    total_all = 0
-    
-    for vuln_type in sorted_types:
-        data = stats[vuln_type]
-        tp = data['TP']
-        fp = data['FP']
-        unknown = data['Unknown']
-        total = data['Total']
-        
-        # 计算比例（基于已判断的样本）
-        judged = tp + fp
-        tp_rate = (tp / judged * 100) if judged > 0 else 0
-        fp_rate = (fp / judged * 100) if judged > 0 else 0
-        
-        print(f"{vuln_type:<30} {tp:>8} {fp:>8} {unknown:>8} {total:>8} {tp_rate:>9.2f}% {fp_rate:>9.2f}%")
-        
-        total_tp += tp
-        total_fp += fp
-        total_unknown += unknown
-        total_all += total
-    
-    print("="*100)
+    vuln_df = pd.DataFrame(vuln_results)
+    print(vuln_df.to_string(index=False))
     
     # 总计
-    total_judged = total_tp + total_fp
-    overall_tp_rate = (total_tp / total_judged * 100) if total_judged > 0 else 0
-    overall_fp_rate = (total_fp / total_judged * 100) if total_judged > 0 else 0
+    total_tp = sum(stats['TP'] for stats in vuln_type_stats.values())
+    total_fp = sum(stats['FP'] for stats in vuln_type_stats.values())
+    total_all = total_tp + total_fp
+    print("\n" + "-" * 80)
+    print(f"总计: TP={total_tp}, FP={total_fp}, 总数={total_all}")
+    print(f"总体TP占比: {total_tp/total_all*100:.2f}%, 总体FP占比: {total_fp/total_all*100:.2f}%")
     
-    print(f"{'总计':<30} {total_tp:>8} {total_fp:>8} {total_unknown:>8} {total_all:>8} {overall_tp_rate:>9.2f}% {overall_fp_rate:>9.2f}%")
-    print("="*100)
+    print("\n" + "=" * 80)
+    print("软件项目 TP/FP 统计")
+    print("=" * 80)
     
-    print(f"\n总体统计:")
-    print(f"  - 总记录数: {total_all}")
-    print(f"  - 已判断数: {total_judged} ({total_judged/total_all*100:.2f}%)")
-    print(f"  - True Positive (TP): {total_tp} ({overall_tp_rate:.2f}%)")
-    print(f"  - False Positive (FP): {total_fp} ({overall_fp_rate:.2f}%)")
-    print(f"  - 未判断: {total_unknown} ({total_unknown/total_all*100:.2f}%)")
+    # 按软件统计
+    repo_stats = defaultdict(lambda: {'TP': 0, 'FP': 0})
+    for _, row in df.iterrows():
+        repo = row['repo']
+        judgement = row['judgement']
+        repo_stats[repo][judgement] += 1
     
-    # 按 TP 数量排序显示 Top 10
-    print("\n" + "="*100)
-    print("Top 10 漏洞类型 (按 TP 数量排序):")
-    print("="*100)
+    # 打印软件统计结果
+    repo_results = []
+    for repo in sorted(repo_stats.keys()):
+        tp = repo_stats[repo]['TP']
+        fp = repo_stats[repo]['FP']
+        total = tp + fp
+        tp_ratio = tp / total * 100 if total > 0 else 0
+        fp_ratio = fp / total * 100 if total > 0 else 0
+        repo_results.append({
+            '软件项目': repo,
+            'TP': tp,
+            'FP': fp,
+            '总数': total,
+            'TP占比(%)': f'{tp_ratio:.2f}',
+            'FP占比(%)': f'{fp_ratio:.2f}'
+        })
     
-    sorted_by_tp = sorted(stats.items(), key=lambda x: x[1]['TP'], reverse=True)[:10]
-    for vuln_type, data in sorted_by_tp:
-        judged = data['TP'] + data['FP']
-        tp_rate = (data['TP'] / judged * 100) if judged > 0 else 0
-        print(f"  {vuln_type:<30} TP: {data['TP']:>4}, FP: {data['FP']:>4}, TP率: {tp_rate:>6.2f}%")
+    repo_df = pd.DataFrame(repo_results)
+    print(repo_df.to_string(index=False))
     
-    # 按 FP 数量排序显示 Top 10
-    print("\n" + "="*100)
-    print("Top 10 漏洞类型 (按 FP 数量排序):")
-    print("="*100)
-    
-    sorted_by_fp = sorted(stats.items(), key=lambda x: x[1]['FP'], reverse=True)[:10]
-    for vuln_type, data in sorted_by_fp:
-        judged = data['TP'] + data['FP']
-        fp_rate = (data['FP'] / judged * 100) if judged > 0 else 0
-        print(f"  {vuln_type:<30} FP: {data['FP']:>4}, TP: {data['TP']:>4}, FP率: {fp_rate:>6.2f}%")
-    
-    return stats
+    # 总计
+    print("\n" + "-" * 80)
+    print(f"总计: TP={total_tp}, FP={total_fp}, 总数={total_all}")
+    print(f"总体TP占比: {total_tp/total_all*100:.2f}%, 总体FP占比: {total_fp/total_all*100:.2f}%")
+    print("=" * 80)
 
-if __name__ == '__main__':
-    csv_file = 'validation_report_0day.csv'
-    stats = analyze_validation_report(csv_file)
+if __name__ == "__main__":
+    analyze_validation_report("validation_report_0day.csv")

@@ -22,7 +22,7 @@ from collections import OrderedDict
 from git import Repo
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
-
+from core.configs import REPO_DIR_PATH
 # 添加 src 目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.parser import CtagsParser
@@ -30,7 +30,7 @@ from core.parser import CtagsParser
 # ============================================================
 # 配置
 # ============================================================
-REPO_DIR_PATH = '/data/cyf/repos'
+
 KERNEL_CVES_PATH = 'inputs/linux_kernel_cves/data/kernel_cves.json'
 STREAM_FIXES_PATH = 'inputs/linux_kernel_cves/data/stream_fixes.json'
 DATASET_PATH = 'inputs/Dataset.json'

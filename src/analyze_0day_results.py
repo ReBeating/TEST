@@ -544,12 +544,16 @@ def main():
             recall = len(found_tps) / len(tp_set) * 100
             print(f"\nTP Recall: {recall:.1f}% ({len(found_tps)}/{len(tp_set)})")
     
-    # === Checked List Analysis ===
+    # === Results Statistics ===
     if checked_dict:
-        print("\n=== Checked List Recall Analysis ===")
+        print("\n=== Results Statistics ===")
         
-        # Build sets for comparison
-        verified_set = set()
+        # Count TP/FP/Reported/Confirmed in verified_rows
+        count_tp = 0
+        count_fp = 0
+        count_reported = 0
+        count_confirmed = 0
+        
         for row in verified_rows:
             key = (
                 row.get('repo', ''),
@@ -557,45 +561,30 @@ def main():
                 row.get('target_file', ''),
                 row.get('target_func', '')
             )
-            verified_set.add(key)
+            
+            # Check if this finding is in checked_dict
+            if key in checked_dict:
+                judgement = checked_dict[key]['judgement']
+                if judgement == 'TP':
+                    count_tp += 1
+                elif judgement == 'FP':
+                    count_fp += 1
+            
+            # Check if in reported/confirmed sets
+            if key in checked_reported_set:
+                count_reported += 1
+            if key in checked_confirmed_set:
+                count_confirmed += 1
         
-        # Find matches (recall: how many from checked_list are found in results)
-        in_checked = verified_set & set(checked_dict.keys())
-        in_checked_tp = verified_set & checked_tp_set
-        in_checked_fp = verified_set & checked_fp_set
-        in_checked_reported = verified_set & checked_reported_set
-        in_checked_confirmed = verified_set & checked_confirmed_set
+        print(f"TP: {count_tp}")
+        print(f"FP: {count_fp}")
+        print(f"Reported: {count_reported}")
+        print(f"Confirmed: {count_confirmed}")
         
-        # Calculate recall statistics
-        total_checked = len(checked_dict)
-        total_tp = len(checked_tp_set)
-        total_fp = len(checked_fp_set)
-        total_reported = len(checked_reported_set)
-        total_confirmed = len(checked_confirmed_set)
-        
-        recalled_checked = len(in_checked)
-        recalled_tp = len(in_checked_tp)
-        recalled_fp = len(in_checked_fp)
-        recalled_reported = len(in_checked_reported)
-        recalled_confirmed = len(in_checked_confirmed)
-        
-        print(f"Checked List Total: {total_checked}")
-        print(f"  - TP Total: {total_tp}")
-        print(f"  - FP Total: {total_fp}")
-        print(f"  - Reported Total: {total_reported}")
-        print(f"  - Confirmed Total: {total_confirmed}")
-        
-        print(f"\nRecall from Checked List:")
-        print(f"  - Total Recalled: {recalled_checked}/{total_checked} ({recalled_checked/total_checked*100:.1f}%)" if total_checked > 0 else "  - Total Recalled: 0/0 (N/A)")
-        print(f"  - TP Recalled: {recalled_tp}/{total_tp} ({recalled_tp/total_tp*100:.1f}%)" if total_tp > 0 else "  - TP Recalled: 0/0 (N/A)")
-        print(f"  - FP Recalled: {recalled_fp}/{total_fp} ({recalled_fp/total_fp*100:.1f}%)" if total_fp > 0 else "  - FP Recalled: 0/0 (N/A)")
-        print(f"  - Reported Recalled: {recalled_reported}/{total_reported} ({recalled_reported/total_reported*100:.1f}%)" if total_reported > 0 else "  - Reported Recalled: 0/0 (N/A)")
-        print(f"  - Confirmed Recalled: {recalled_confirmed}/{total_confirmed} ({recalled_confirmed/total_confirmed*100:.1f}%)" if total_confirmed > 0 else "  - Confirmed Recalled: 0/0 (N/A)")
-        
-        # Calculate precision if we have checked data
-        if in_checked:
-            precision = recalled_tp / recalled_checked * 100
-            print(f"\nPrecision based on recalled entries: {precision:.1f}% ({recalled_tp}/{recalled_checked})")
+        # Calculate precision
+        if count_tp + count_fp > 0:
+            precision = count_tp / (count_tp + count_fp) * 100
+            print(f"Precision: {precision:.1f}% ({count_tp}/{count_tp + count_fp})")
     
     # Print Summary
     print("\n=== Analysis Summary ===")

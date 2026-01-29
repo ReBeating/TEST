@@ -1,6 +1,0 @@
-repo,vul_id,fixed_commit_sha
-apache/httpd,CVE-2021-40438,6e768a811c59ca6a0769b72681aaef381823339f
-curl/curl,CVE-2023-27533,538b1e79a6e7b0bb829ab4cecc828d32105d0684
-radareorg/radare2,CVE-2023-0302,961f0e723903011d4f54c2396e44efa91fcc74ce
-radareorg/radare2,OSV-2020-317,7d30ff52fc1be6f9698b166107b8981eab6ec7ba
-wireshark/wireshark,CVE-2021-22191,e99c9afce86edd47b4388dd6e10cf2e758fe31cf
