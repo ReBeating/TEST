@@ -1,0 +1,259 @@
+vul_id,repo,fixed_commit_sha,patch_file,patch_func,target_file,target_func,CWE,vuln_type,judgement
+CVE-2019-19947,torvalds/linux,da2311a6385c3b499da2ed5d9be59ce331fa93e9,drivers/net/can/usb/kvaser_usb/kvaser_usb_leaf.c,kvaser_usb_leaf_simple_cmd_async,drivers/net/can/usb/esd_usb.c,esd_usb_2_set_bittiming,CWE-908,Uninitialized Use,
+CVE-2017-12662,ImageMagick/ImageMagick,bd40cc5f53067322861b881485cbd70f509f3829,coders/pdf.c,WritePDFImage,coders/rle.c,ReadRLEImage,CWE-772,Memory Leak,
+CVE-2024-29645,radareorg/radare2,72bf3a486fa851797aa21887a40ba0e3d3a6d620,libr/bin/dwarf.c,parse_die,libr/anal/dwarf_process.c,parse_struct_member,CWE-120,Null Pointer Dereference,
+CVE-2020-19488,gpac/gpac,6170024568f4dda310e98ef7508477b425c58d09,src/isomedia/box_code_apple.c,ilst_item_box_read,src/isomedia/box_code_apple.c,ilst_box_read,CWE-476,Null Pointer Dereference,TP
+CVE-2019-19036,torvalds/linux,62fdaa52a3d00a875da771719b6dc537ca79fce1,fs/btrfs/disk-io.c,btrfs_verify_level_key,fs/btrfs/send.c,is_extent_unchanged,CWE-476,Out-of-bounds Read,
+CVE-2021-23177,libarchive/libarchive,fba4f123cc456d2b2538f811bb831483bf336bad,libarchive/archive_disk_acl_sunos.c,archive_write_disk_set_acls,libarchive/archive_disk_acl_darwin.c,archive_write_disk_set_acls,CWE-59,Path Traversal,
+CVE-2017-14166,libarchive/libarchive,fa7438a0ff4033e4741c807394a9af6207940d71,libarchive/archive_read_support_format_xar.c,atol10,libarchive/archive_read_support_format_ar.c,ar_atol8,CWE-125,Out-of-bounds Read,FP
+CVE-2017-5334,gnutls/gnutls,c5aaa488a3d6df712dc8dff23a049133cab5ec1b,lib/x509/x509_ext.c,gnutls_x509_ext_import_proxy,lib/x509/krb5.c,principal_to_str,CWE-415,Double Free,
+CVE-2024-26675,torvalds/linux,cb88cb53badb8aeb3955ad6ce80b07b598e310b8,drivers/net/ppp/ppp_async.c,ppp_async_ioctl,drivers/net/ppp/ppp_generic.c,ppp_ioctl,CWE-770,Resource Exhaustion,TP
+CVE-2021-47025,torvalds/linux,b34ea31fe013569d42b7e8681ef3f717f77c5b72,drivers/iommu/mtk_iommu.c,mtk_iommu_hw_init,drivers/iommu/mtk_iommu_v1.c,mtk_iommu_v1_hw_init,CWE-664,Unknown,
+CVE-2021-3564,torvalds/linux,6a137caec23aeb9e036cdfd8a46dd8a366460e5d,net/bluetooth/hci_core.c,hci_dev_do_open,net/bluetooth/hci_sync.c,hci_dev_close_sync,CWE-415,Race Condition,
+CVE-2022-20158,torvalds/linux,c700525fcc06b05adfea78039de02628af79e07a,net/packet/af_packet.c,tpacket_rcv,net/packet/af_packet.c,packet_rcv,CWE-416,Information Exposure,FP
+CVE-2023-52638,torvalds/linux,6cdedc18ba7b9dacc36466e27e3267d201948c8d,net/can/j1939/socket.c,j1939_sk_recv_match,drivers/net/wireless/marvell/mwifiex/tdls.c,mwifiex_auto_tdls_update_peer_status,CWE-667,Deadlock,
+CVE-2020-11098,FreeRDP/FreeRDP,c0fd449ec0870b050d350d6d844b1ea6dad4bc7d,libfreerdp/cache/glyph.c,glyph_cache_put,libfreerdp/cache/glyph.c,glyph_cache_get,CWE-125,Out-of-bounds Read,TP
+CVE-2023-46929,gpac/gpac,4248def5d24325aeb0e35cacde3d56c9411816a6,src/media_tools/av_parsers.c,gf_avc_change_vui,src/media_tools/av_parsers.c,gf_vvc_change_vui,CWE-20,Null Pointer Dereference,TP
+CVE-2022-3532,torvalds/linux,6e8280b958c5d7edc514cf347a800b23b7732b2b,tools/testing/selftests/bpf/prog_tests/tracing_struct.c,test_fentry,tools/testing/selftests/bpf/prog_tests/wq.c,serial_test_wq,CWE-772,Resource Leak,TP
+CVE-2021-44733,torvalds/linux,dfd0743f1d9ea76931510ed150334d571fbab49d,drivers/tee/tee_shm.c,tee_shm_register,drivers/gpio/gpio-aggregator.c,new_device_store,CWE-362,Race Condition,
+CVE-2021-0937,torvalds/linux,b29c457a6511435960115c0f548c4360d5f4801d,net/netfilter/x_tables.c,xt_compat_match_from_user,net/netfilter/nft_compat.c,match_compat_from_user,CWE-200,Information Exposure,FP
+CVE-2021-4219,ImageMagick/ImageMagick,d7f1b2b9b816baaa956381ff80c3b120e83faa95,MagickCore/draw.c,DrawPrimitive,MagickCore/display.c,XOpenImage,CWE-20,Improper Validation,
+CVE-2019-19769,torvalds/linux,6d390e4b5d48ec03bb87e63cf0a2bff5f4e116da,fs/locks.c,locks_delete_block,fs/nfs/nfs4state.c,nfs_release_seqid,CWE-416,Race Condition,
+CVE-2020-29371,torvalds/linux,bcf85fcedfdd17911982a3e3564fcfec7b01eebd,fs/romfs/storage.c,romfs_dev_read,fs/romfs/storage.c,romfs_dev_strnlen,CWE-908,Unknown,
+CVE-2021-22207,wireshark/wireshark,b7a0650e061b5418ab4a8f72c6e4b00317aff623,epan/dissectors/packet-mswsp.c,dissect_CPMSetBindings,epan/dissectors/packet-synphasor.c,config_3_frame_fast,CWE-770,Resource Exhaustion,TP
+CVE-2016-7515,ImageMagick/ImageMagick,2ad6d33493750a28a5a655d319a8e0b16c392de1,coders/rle.c,ReadRLEImage,coders/sgi.c,ReadSGIImage,CWE-125,Out-of-bounds Read,
+CVE-2020-25669,torvalds/linux,77e70d351db7de07a46ac49b87a6c3c7a60fca7e,drivers/input/keyboard/sunkbd.c,sunkbd_interrupt,drivers/input/tablet/pegasus_notetaker.c,pegasus_parse_packet,CWE-416,Use After Free,
+CVE-2022-36123,torvalds/linux,38fa5479b41376dc9d7f57e71c83514285a25ca0,arch/x86/kernel/head64.c,clear_bss,arch/csky/kernel/setup.c,csky_start,CWE-457,Uninitialized Use,
+CVE-2024-26778,torvalds/linux,04e5eac8f3ab2ff52fa191c187a46d4fdbc1e288,drivers/video/fbdev/savage/savagefb_driver.c,savagefb_check_var,drivers/video/fbdev/uvesafb.c,uvesafb_check_var,CWE-369,Divide By Zero,
+CVE-2021-47029,torvalds/linux,c996f0346e40e3b1ac2ebaf0681df898fb157f60,drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c,mt76_connac_mcu_uni_add_dev,drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c,mt76_connac_mcu_uni_add_bss,CWE-703,Logic Error,
+CVE-2024-0322,gpac/gpac,092904b80edbc4dce315684a59cc3184c45c1b70,src/filters/reframe_ac3.c,ac3dmx_process,src/filters/reframe_mp3.c,mp3_dmx_process,CWE-125,Out-of-bounds Read,
+CVE-2021-40568,gpac/gpac,f1ae01d745200a258cdf62622f71754c37cb6c30,src/media_tools/av_parsers.c,svc_parse_slice,src/filters/hevcmerge.c,hevcmerge_rewrite_slice,CWE-120,Buffer Overflow,TP
+CVE-2023-4720,gpac/gpac,e396648e48c57e2d53988d3fd4465b068b96c89a,src/scene_manager/swf_parse.c,swf_get_32,src/filters/load_text.c,ttxt_get_color,CWE-1077,Logic Error,
+CVE-2021-46994,torvalds/linux,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/mcp251x.c,mcp251x_open,drivers/net/can/spi/hi311x.c,hi3110_open,CWE-476,Unknown,TP
+CVE-2016-1575,torvalds/linux,cf9a6784f7c1b5ee2b9159a1246e327c331c5697,fs/overlayfs/inode.c,ovl_setattr,fs/overlayfs/export.c,ovl_encode_maybe_copy_up,CWE-269,Privilege Escalation,TP
+CVE-2016-10154,torvalds/linux,06deeec77a5a689cc94b21a8a91a76e42176685d,fs/cifs/smbencrypt.c,smbhash,net/mac802154/llsec.c,llsec_do_encrypt_unauth,CWE-119,Buffer Overflow,
+CVE-2017-14040,uclouvain/openjpeg,2cd30c2b06ce332dede81cccad8b334cde997281,src/bin/jp2/convert.c,tgatoimage,src/bin/jp2/convert.c,pnmtoimage,CWE-787,Unknown,FP
+CVE-2020-27767,ImageMagick/ImageMagick,564f2a35e523e2b6cce9485018157f03ec05a947,MagickCore/quantum.h,ClampToQuantum,MagickCore/pixel-accessor.h,ClampPixel,CWE-190,Integer Overflow,
+CVE-2021-4197,torvalds/linux,1756d7994ad85c2479af6ae5a9750b92324685af,kernel/cgroup/cgroup-v1.c,__cgroup1_procs_write,arch/x86/kernel/cpu/resctrl/rdtgroup.c,rdtgroup_task_write_permission,CWE-287,Privilege Escalation,
+OSV-2020-560,radareorg/radare2,d7fd30df8ef0f1a9081863b91a0197f26408dc6b,libr/core/cbin.c,snInit,libr/core/cbin.c,bin_classes,CWE-20,Unknown,
+CVE-2021-4037,torvalds/linux,01ea173e103edd5ec41acec65b9261b87e123fc2,fs/xfs/xfs_inode.c,xfs_init_new_inode,fs/gfs2/inode.c,munge_mode_uid_gid,CWE-284,Authorization Bypass,
+OSV-2024-1427,kamailio/kamailio,9c44aec667fc3c088612dd31935bce2eb082812d,src/core/parser/sdp/sdp_helpr_funcs.c,extract_mediaip,src/modules/nathelper/nathelper.c,nh_extract_mediaip,CWE-122,Buffer Overflow,
+CVE-2021-39923,wireshark/wireshark,9104a3744e63b54b2cff3152aedeea340976355b,epan/dissectors/packet-pnrp.c,dissect_pnrp,epan/dissectors/packet-adb_service.c,dissect_adb_service,CWE-834,Infinite Loop,
+CVE-2024-26698,torvalds/linux,e0526ec5360a48ad3ab2e26e802b0532302a7e11,drivers/net/hyperv/netvsc.c,netvsc_device_remove,drivers/net/netdevsim/netdev.c,nsim_del_napi,CWE-362,Race Condition,
+CVE-2023-38432,torvalds/linux,2b9b8f3b68edb3d67d79962f02e26dbb5ae3808d,fs/smb/server/smb2misc.c,ksmbd_smb2_check_message,fs/smb/client/smb2misc.c,smb2_check_message,CWE-125,Out-of-bounds Read,
+CVE-2021-45100,torvalds/linux,83912d6d55be10d65b5268d1871168b9ebe1ec4b,fs/ksmbd/smb2pdu.c,ntlm_authenticate,fs/smb/server/smb2pdu.c,krb5_authenticate,CWE-319,Cryptographic Issue,
+CVE-2020-26575,wireshark/wireshark,3ff940652962c099b73ae3233322b8697b0d10ab,epan/dissectors/packet-fbzero.c,dissect_fb_zero_tag,epan/dissectors/packet-tls.c,dissect_tls_handshake,CWE-835,Infinite Loop,
+CVE-2020-27507,kamailio/kamailio,ada3701d22b1fd579f06b4f54fa695fa988e685f,src/modules/tm/t_msgbuilder.c,build_local_reparse,src/modules/tm/t_msgbuilder.c,build_local,CWE-120,Buffer Overflow,
+CVE-2021-47029,torvalds/linux,c996f0346e40e3b1ac2ebaf0681df898fb157f60,drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c,mt76_connac_mcu_uni_add_dev,drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c,mt76_connac_mcu_sta_basic_tlv,CWE-703,Logic Error,
+CVE-2020-25284,torvalds/linux,f44d04e696feaf13d192d942c4f14ad2e117065a,drivers/block/rbd.c,rbd_config_info_show,drivers/block/rbd.c,rbd_image_id_show,CWE-863,Authorization Bypass,
+CVE-2021-46950,torvalds/linux,2417b9869b81882ab90fd5ed1081a1cb2d4db1dd,drivers/md/raid1.c,raid1_end_write_request,drivers/md/raid10.c,raid10_end_write_request,CWE-252,Logic Error,
+CVE-2020-11097,FreeRDP/FreeRDP,58a3122250d54de3a944c487776bcd4d1da4721e,winpr/libwinpr/sspi/NTLM/ntlm_av_pairs.c,ntlm_av_pair_check,winpr/libwinpr/sspi/NTLM/ntlm_av_pairs.c,ntlm_av_pair_check_data,CWE-125,Unknown,
+CVE-2021-3752,torvalds/linux,1bff51ea59a9afb67d2dd78518ab0582a54a472c,net/bluetooth/l2cap_sock.c,l2cap_sock_close_cb,net/bluetooth/l2cap_sock.c,l2cap_sock_alloc_skb_cb,CWE-362,Null Pointer Dereference,TP
+CVE-2024-26723,torvalds/linux,15faa1f67ab405d47789d4702f587ec7df7ef03e,drivers/net/ethernet/microchip/lan966x/lan966x_lag.c,lan966x_lag_set_aggr_pgids,drivers/net/ethernet/microchip/lan966x/lan966x_main.c,lan966x_xtr_irq_handler,CWE-400,Null Pointer Dereference,
+CVE-2023-51782,torvalds/linux,810c38a369a0a0ce625b5c12169abce1dd9ccd53,net/rose/af_rose.c,rose_ioctl,net/netrom/af_netrom.c,nr_ioctl,CWE-416,Race Condition,FP
+CVE-2023-4722,gpac/gpac,de7f3a852bef72a52825fd307cf4e8f486401a76,src/filters/mux_isom.c,mp4_mux_initialize_movie,src/filters/dasher.c,dasher_setup_period,CWE-190,Unknown,
+OSV-2020-628,libarchive/libarchive,b625b17e6fd6e89b2f54236b402ccd3722ace2bb,libarchive/test/test_read_format_rar5.c,DEFINE_TEST,libarchive/test/test_read_format_rar.c,DEFINE_TEST,CWE-125,Out-of-bounds Read,
+CVE-2019-7397,ImageMagick/ImageMagick,306c1f0fa5754ca78efd16ab752f0e981d4f6b82,coders/pdf.c,WritePDFImage,coders/png.c,ReadOneJNGImage,CWE-401,Memory Leak,
+CVE-2022-27223,torvalds/linux,7f14c7227f342d9932f9b918893c8814f86d2a0d,drivers/usb/gadget/udc/udc-xilinx.c,xudc_set_clear_feature,drivers/usb/gadget/udc/max3420_udc.c,max3420_set_clear_feature,CWE-129,Improper Validation,TP
+CVE-2020-1749,torvalds/linux,6c8991f41546c3c472503dff1ea9daaddf9331c2,net/core/lwt_bpf.c,bpf_lwt_xmit_reroute,net/netfilter/nf_synproxy_core.c,synproxy_send_tcp_ipv6,CWE-319,Other,
+CVE-2021-46950,torvalds/linux,2417b9869b81882ab90fd5ed1081a1cb2d4db1dd,drivers/md/raid1.c,raid1_end_write_request,drivers/md/raid1.c,raid1_end_write_request,CWE-252,Logic Error,
+CVE-2022-0519,radareorg/radare2,6c4428f018d385fc80a33ecddcb37becea685dd5,shlr/java/class.c,r_bin_java_enclosing_methods_attr_new,shlr/java/class.c,r_bin_java_source_code_file_attr_new,CWE-119,Out-of-bounds Read,
+CVE-2016-5400,torvalds/linux,aa93d1fee85c890a34f2510a310e55ee76a27848,drivers/media/usb/airspy/airspy.c,airspy_probe,drivers/media/usb/hackrf/hackrf.c,hackrf_probe,CWE-119,Memory Leak,
+CVE-2021-47081,torvalds/linux,115726c5d312b462c9d9931ea42becdfa838a076,drivers/misc/habanalabs/gaudi/gaudi.c,gaudi_memset_device_memory,drivers/accel/habanalabs/goya/goya.c,goya_memset_device_memory,CWE-416,Use After Free,FP
+CVE-2020-9430,wireshark/wireshark,93d6b03a67953b82880cdbdcf0d30e2a3246d790,plugins/epan/wimax/msg_dlmap.c,wimax_decode_dlmapc,plugins/epan/wimax/mac_hd_generic_decoder.c,dissect_mac_header_generic_decoder,CWE-20,Improper Validation,FP
+CVE-2022-1122,uclouvain/openjpeg,0afbdcf3e6d0d2bd2e16a0c4d513ee3cf86e460d,src/bin/jp2/opj_decompress.c,main,src/bin/jp2/opj_dump.c,main,CWE-665,Unknown,
+CVE-2023-52457,torvalds/linux,ad90d0358bd3b4554f243a425168fc7cebe7d04e,drivers/tty/serial/8250/8250_omap.c,omap8250_remove,drivers/usb/chipidea/ci_hdrc_tegra.c,tegra_usb_probe,CWE-416,Unknown,
+CVE-2023-52602,torvalds/linux,fa5492ee89463a7590a1449358002ff7ef63529f,fs/jfs/jfs_dtree.c,dtSearch,fs/jfs/jfs_dtree.c,dtReadNext,CWE-400,Out-of-bounds Read,
+CVE-2020-27765,ImageMagick/ImageMagick,a4c89f2a61069ad7637bc7749cc1a839de442526,MagickCore/segment.c,Classify,coders/stegano.c,ReadSTEGANOImage,CWE-369,Unknown,
+CVE-2022-36123,torvalds/linux,38fa5479b41376dc9d7f57e71c83514285a25ca0,arch/x86/kernel/head64.c,clear_bss,arch/powerpc/kernel/early_32.c,early_init,CWE-457,Uninitialized Use,
+CVE-2022-2453,gpac/gpac,dc7de8d3d604426c7a6e628d90cb9fb88e7b4c2c,src/bifs/field_decode.c,BD_DecMFFieldVec,src/bifs/field_decode.c,gf_bifs_dec_node,CWE-416,Unknown,
+CVE-2021-47012,torvalds/linux,3093ee182f01689b89e9f8797b321603e5de4f63,drivers/infiniband/sw/siw/siw_mem.c,siw_mr_add_mem,drivers/gpu/drm/nouveau/nvkm/subdev/mmu/mem.c,nvkm_mem_new_host,CWE-416,Use After Free,
+CVE-2021-3178,torvalds/linux,51b2ee7d006a736a9126e8111d1f24e4fd0afaa6,fs/nfsd/nfs3xdr.c,compose_entry_fh,fs/nfsd/vfs.c,nfsd_lookup_dentry,CWE-22,Path Traversal,
+CVE-2021-46982,torvalds/linux,a949dc5f2c5cfe0c910b664650f45371254c0744,fs/f2fs/compress.c,prepare_compress_overwrite,fs/f2fs/file.c,redirty_blocks,CWE-362,Unknown,
+CVE-2021-38091,FFmpeg/FFmpeg,99f8d32129dd233d4eb2efa44678a0bc44869f23,libavfilter/vf_convolution.c,filter_sobel,libavfilter/vf_convolution.c,filter_kirsch,CWE-190,Integer Overflow,
+CVE-2022-1204,torvalds/linux,9fd75b66b8f68498454d685dc4ba13192ae069b0,net/ax25/af_ax25.c,ax25_kill_by_device,net/ax25/ax25_dev.c,ax25_dev_device_down,CWE-416,Use After Free,
+CVE-2020-35519,torvalds/linux,6ee50c8e262a0f0693dad264c3c99e30e6442a56,net/x25/af_x25.c,x25_connect,net/rose/af_rose.c,rose_bind,CWE-125,Out-of-bounds Read,
+CVE-2020-29370,torvalds/linux,fd4d9c7d0c71866ec0c2825189ebd2ce35bd95b8,mm/slub.c,kmem_cache_alloc_bulk,mm/slub.c,__slab_alloc_node,CWE-362,Race Condition,
+CVE-2022-2308,torvalds/linux,46f8a29272e51b6df7393d58fc5cb8967397ef2b,drivers/vdpa/vdpa_user/vduse_dev.c,vduse_vdpa_get_config,drivers/remoteproc/remoteproc_virtio.c,rproc_virtio_get,CWE-908,Uninitialized Use,TP
+CVE-2021-30014,gpac/gpac,51cdb67ff7c5f1242ac58c5aa603ceaf1793b788,src/media_tools/av_parsers.c,vvc_parse_picture_header,src/media_tools/av_parsers.c,vvc_parse_slice,CWE-190,Out-of-bounds Read,
+CVE-2021-47015,torvalds/linux,bbd6f0a948139970f4a615dff189d9a503681a39,drivers/net/ethernet/broadcom/bnxt/bnxt.c,bnxt_rx_pkt,drivers/net/ethernet/broadcom/bnxt/bnxt.c,bnxt_poll_nitroa0,CWE-682,Logic Error,
+CVE-2024-26667,torvalds/linux,7f3d03c48b1eb6bc45ab20ca98b8b11be25f9f52,drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c,dpu_encoder_helper_phys_cleanup,drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c,dpu_encoder_phys_vid_setup_timing_engine,CWE-459,Null Pointer Dereference,TP
+CVE-2021-47126,torvalds/linux,821bbf79fe46a8b1d18aa456e8ed0a3c208c3754,net/ipv6/route.c,ip6_route_info_create,net/ipv4/fib_semantics.c,fib_create_info,CWE-125,Unknown,
+CVE-2017-11448,ImageMagick/ImageMagick,f6463ca9588579633bbaed9460899d892aa3c64a,coders/jpeg.c,ReadJPEGImage,www/source/mgk.c,ReadMGKImage,CWE-200,Uninitialized Use,
+CVE-2016-6491,ImageMagick/ImageMagick,dd84447b63a71fa8c3f47071b09454efc667767b,MagickCore/property.c,Get8BIMProperty,MagickCore/property.c,TraceSVGClippath,CWE-125,Out-of-bounds Read,
+CVE-2020-20896,FFmpeg/FFmpeg,dd01947397b98e94c3f2a79d5820aaf4594f4d3b,libavformat/latmenc.c,latm_write_packet,libavformat/adtsenc.c,adts_write_packet,CWE-476,Null Pointer Dereference,FP
+OSV-2023-1051,LibreDWG/libredwg,5b4c2fce7262b2bec00fa679e472559ab268d0c7,src/decode.c,dwg_decode_unknown_rest,src/decode.c,dwg_decode_unknown_bits,CWE-476,Unknown,TP
+CVE-2022-21385,torvalds/linux,ea010070d0a7497253d5a6f919f6dd107450b31a,net/rds/send.c,rds_rm_size,net/rds/send.c,rds_rdma_bytes,CWE-367,Logic Error,
+CVE-2020-22035,FFmpeg/FFmpeg,8c9ff740a35d6f46935f70e4a9533dddaaf33788,libavfilter/vf_bm3d.c,filter_slice,libavfilter/vf_bm3d.c,block_matching_multi,CWE-787,Buffer Overflow,
+CVE-2023-52603,torvalds/linux,27e56f59bab5ddafbcfe69ad7a4a6ea1279c1b16,fs/jfs/jfs_dtree.c,dtSplitRoot,fs/jfs/jfs_dtree.c,dtExtendPage,CWE-129,Out-of-bounds Read,TP
+CVE-2020-11647,wireshark/wireshark,6f56fc9496db158218243ea87e3660c874a0bab0,epan/dissectors/packet-bacapp.c,dissect_bacapp,epan/dissectors/packet-bacapp.c,fComplexAckPDU,CWE-674,Recursion Error,
+CVE-2021-47146,torvalds/linux,020ef930b826d21c5446fdc9db80fd72a791bc21,net/ipv6/mcast.c,mld_newpack,net/ipv6/mcast.c,mld_newpack,CWE-119,Logic Error,
+CVE-2023-52502,torvalds/linux,31c07dffafce914c1d1543c135382a11ff058d93,net/nfc/llcp_core.c,nfc_llcp_sock_get,net/smc/smc_core.c,__smc_lgr_terminate,CWE-362,Race Condition,
+CVE-2021-33630,torvalds/linux,3e8b9bfa110896f95d602d8c98d5f9d67e41d78c,net/sched/sch_cbs.c,cbs_destroy,net/sched/sch_taprio.c,taprio_destroy,CWE-476,Null Pointer Dereference,
+CVE-2023-3291,gpac/gpac,6a748ccc3f76ff10e3ae43014967ea4b0c088aaf,src/filters/reframe_mp3.c,id3dmx_flush,src/filters/load_svg.c,svgin_process,CWE-122,Buffer Overflow,
+CVE-2024-26725,torvalds/linux,53c0441dd2c44ee93fddb5473885fd41e4bc2361,drivers/dpll/dpll_netlink.c,dpll_nl_pin_get_dumpit,drivers/dpll/dpll_netlink.c,dpll_nl_pin_get_dumpit,CWE-667,Deadlock,
+CVE-2017-6197,radareorg/radare2,1ea23bd6040441a21fbcfba69dce9a01af03f989,libr/include/r_endian.h,r_read_le32,libr/include/r_endian.h,r_read_be32,CWE-476,Null Pointer Dereference,TP
+CVE-2016-3137,torvalds/linux,c55aee1bf0e6b6feec8b2927b43f7a09a6d5f754,drivers/usb/serial/cypress_m8.c,cypress_open,drivers/usb/serial/garmin_gps.c,garmin_init_session,CWE-476,Null Pointer Dereference,
+CVE-2023-1654,gpac/gpac,2c055153d401b8c49422971e3a0159869652d3da,src/filter_core/filter_pid.c,gf_filter_pid_inst_del,src/filter_core/filter_pck.c,gf_filter_pck_send_internal,CWE-400,Unknown,
+CVE-2024-26598,torvalds/linux,ad362fe07fecf0aba839ff2cc59a3617bd42c33f,arch/arm64/kvm/vgic/vgic-its.c,vgic_its_inject_cached_translation,arch/arm64/kvm/vgic/vgic-its.c,vgic_its_trigger_msi,CWE-416,Use After Free,FP
+CVE-2024-36617,FFmpeg/FFmpeg,d973fcbcc2f944752ff10e6a76b0b2d9329937a7,libavformat/cafdec.c,read_pakt_chunk,libavformat/avidec.c,avi_read_header,CWE-190,Integer Overflow,
+OSV-2020-560,radareorg/radare2,d7fd30df8ef0f1a9081863b91a0197f26408dc6b,libr/core/cbin.c,bin_symbols,libr/core/cmd_debug.inc.c,cmd_debug_modules,CWE-20,Unknown,
+CVE-2022-28072,radareorg/radare2,027cd9b7274988bb1af866539ba6c2fa2ff63e45,libr/anal/p/anal_hexagon.c,hexagon_v6_op,libr/arch/p/bpf/plugin.c,disassemble,CWE-787,Out-of-bounds Read,TP
+CVE-2021-47015,torvalds/linux,bbd6f0a948139970f4a615dff189d9a503681a39,drivers/net/ethernet/broadcom/bnxt/bnxt.c,bnxt_rx_pkt,drivers/net/ethernet/broadcom/bnxt/bnxt.c,bnxt_force_rx_discard,CWE-682,Logic Error,
+CVE-2024-26698,torvalds/linux,e0526ec5360a48ad3ab2e26e802b0532302a7e11,drivers/net/hyperv/netvsc.c,netvsc_device_remove,drivers/crypto/caam/caamalg_qi2.c,dpaa2_dpseci_disable,CWE-362,Race Condition,
+CVE-2024-1085,torvalds/linux,b1db244ffd041a49ecc9618e8feb6b5c1afcdaa7,net/netfilter/nf_tables_api.c,nft_setelem_catchall_deactivate,net/netfilter/nf_tables_api.c,nft_set_catchall_flush,CWE-416,Double Free,
+OSV-2022-656,LibreDWG/libredwg,9d068534eb093790d9be1b8aa8ed47cafc7f2285,src/bits.c,bit_read_RC,src/bits.c,bit_write_BB,CWE-125,Buffer Overflow,
+CVE-2019-19036,torvalds/linux,62fdaa52a3d00a875da771719b6dc537ca79fce1,fs/btrfs/disk-io.c,btrfs_verify_level_key,fs/btrfs/disk-io.c,btrfs_validate_extent_buffer,CWE-476,Out-of-bounds Read,TP
+CVE-2018-16645,ImageMagick/ImageMagick,ecb31dbad39ccdc65868d5d2a37f0f0521250832,coders/bmp.c,ReadBMPImage,coders/bmp.c,ReadBMPImage,CWE-770,Resource Exhaustion,
+CVE-2022-47942,torvalds/linux,8f0541186e9ad1b62accc9519cc2b7a7240272a7,fs/ksmbd/smbacl.c,smb_inherit_dacl,fs/smb/client/cifsacl.c,parse_sec_desc,CWE-787,Buffer Overflow,
+CVE-2022-1035,gpac/gpac,3718d583c6ade191dc7979c64f48c001ca6f0243,src/scene_manager/scene_dump.c,gf_dump_vrml_simple_field,src/scene_manager/scene_stats.c,StatNodeGraph,CWE-476,Null Pointer Dereference,
+CVE-2023-5377,gpac/gpac,8e9d6b38c036a97020c462ad48e1132e0ddc57ce,src/isomedia/box_code_base.c,chnl_box_write,src/isomedia/box_code_drm.c,pssh_box_write,CWE-125,Out-of-bounds Read,
+CVE-2019-20911,LibreDWG/libredwg,c6f6668b82bfe595899cc820279ac37bb9ef16f5,src/free.c,dwg_free_object,src/out_json.c,dwg_json_object,CWE-835,Infinite Loop,
+CVE-2022-28073,radareorg/radare2,59a9dfb60acf8b5c0312061cffd9693fc9526053,libr/core/cmd_anal.c,cmd_anal_reg,libr/core/cmd_debug.inc.c,cmd_debug_reg,CWE-416,Use After Free,FP
+CVE-2020-24020,FFmpeg/FFmpeg,584f396132aa19d21bb1e38ad9a5d428869290cb,libavfilter/dnn/dnn_backend_native.c,calculate_operand_data_length,libavfilter/dnn/dnn_backend_tf.c,allocate_input_tensor,CWE-120,Buffer Overflow,TP
+CVE-2018-16323,ImageMagick/ImageMagick,216d117f05bff87b9dc4db55a1b1fadb38bcb786,coders/xbm.c,ReadXBMImage,coders/jbig.c,ReadJBIGImage,CWE-200,Uninitialized Use,TP
+CVE-2023-0047,torvalds/linux,60e2793d440a3ec95abb5d6d4fc034a4b480472d,mm/oom_kill.c,pagefault_out_of_memory,mm/page_alloc.c,__alloc_pages_may_oom,CWE-703,Logic Error,
+CVE-2020-0444,torvalds/linux,2ad3e17ebf94b7b7f3f64c050ff168f9915345eb,kernel/auditfilter.c,audit_data_to_entry,kernel/auditfilter.c,audit_dupe_rule,CWE-763,Logic Error,
+CVE-2019-19947,torvalds/linux,da2311a6385c3b499da2ed5d9be59ce331fa93e9,drivers/net/can/usb/kvaser_usb/kvaser_usb_leaf.c,kvaser_usb_leaf_set_opt_mode,drivers/net/can/usb/kvaser_usb/kvaser_usb_leaf.c,kvaser_usb_leaf_set_bittiming,CWE-908,Uninitialized Use,TP
+CVE-2024-26692,torvalds/linux,4860abb91f3d7fbaf8147d54782149bb1fc45892,fs/smb/client/fs_context.c,smb3_fs_context_parse_param,fs/nfs/fs_context.c,nfs_fs_context_parse_param,CWE-787,Unknown,
+CVE-2021-47024,torvalds/linux,8432b8114957235f42e070a16118a7f750de9d39,net/vmw_vsock/virtio_transport_common.c,virtio_transport_do_close,net/vmw_vsock/hyperv_transport.c,hvs_do_close_lock_held,CWE-401,Memory Leak,FP
+CVE-2022-28073,radareorg/radare2,59a9dfb60acf8b5c0312061cffd9693fc9526053,libr/core/anal_tp.c,r_core_anal_type_match,libr/core/cmd_search.inc.c,emulateSyscallPrelude,CWE-416,Use After Free,TP
+CVE-2021-4202,torvalds/linux,86cdf8e38792545161dbe3350a7eced558ba4d15,net/nfc/nci/core.c,nci_request,net/bluetooth/msft.c,msft_cancel_address_filter_sync,CWE-362,Race Condition,
+CVE-2023-52612,torvalds/linux,744e1885922a9943458954cfea917b31064b4131,crypto/scompress.c,scomp_acomp_comp_decomp,crypto/scompress.c,scomp_acomp_comp_decomp,CWE-120,Buffer Overflow,
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/can/slcan.c,slcan_write_wakeup,drivers/net/can/slcan/slcan-core.c,slcan_write_wakeup,CWE-362,Race Condition,TP
+CVE-2023-3106,torvalds/linux,1ba5bf993c6a3142e18e68ea6452b347f9cb5635,net/xfrm/xfrm_user.c,xfrm_dump_sa_done,net/xfrm/xfrm_user.c,xfrm_dump_policy_done,CWE-476,Null Pointer Dereference,FP
+CVE-2023-0461,torvalds/linux,2c02d41d71f90a5168391b6a5f2954112ba2307c,net/ipv4/inet_connection_sock.c,inet_csk_listen_start,net/mptcp/protocol.c,mptcp_set_state,CWE-416,Unknown,
+CVE-2020-25666,ImageMagick/ImageMagick,94691f00839dbdf43edb1508af945ab19b388573,MagickCore/histogram.c,HistogramCompare,MagickCore/quantize.c,DominantColorCompare,CWE-190,Integer Overflow,TP
+CVE-2023-52629,torvalds/linux,246f80a0b17f8f582b2c0996db02998239057c65,arch/sh/drivers/push-switch.c,switch_drv_remove,drivers/tty/sysrq.c,sysrq_disconnect,CWE-416,Use After Free,
+OSV-2024-142,gpac/gpac,57f3ff863669c8eb8edfabd68021d560900d6c68,src/filters/load_text.c,txtin_setup_ttxt,src/filters/load_text.c,txtin_process_texml,CWE-457,Unknown,TP
+CVE-2020-22023,FFmpeg/FFmpeg,ab0b268bb78ccd5ba4411594ae74a368ad2186e1,libavfilter/vf_bitplanenoise.c,filter_frame,libavfilter/vf_waveform.c,chroma,CWE-787,Unknown,
+CVE-2022-2327,torvalds/linux,44526bedc2ff8fcd58552e3c5bae928524b6f13c,fs/io_uring.c,io_init_req,io_uring/io_uring.c,io_init_req,CWE-415,Unknown,
+CVE-2016-7530,ImageMagick/ImageMagick,c4e63ad30bc42da691f2b5f82a24516dd6b4dc70,MagickCore/quantum.c,GetQuantumExtent,coders/miff.c,ReadMIFFImage,CWE-369,Unknown,
+CVE-2016-7515,ImageMagick/ImageMagick,2ad6d33493750a28a5a655d319a8e0b16c392de1,coders/rle.c,ReadRLEImage,coders/dib.c,ReadDIBImage,CWE-125,Out-of-bounds Read,
+CVE-2024-26748,torvalds/linux,5fd9e45f1ebcd57181358af28506e8a661a260b3,drivers/usb/cdns3/cdns3-gadget.c,cdns3_gadget_giveback,drivers/usb/gadget/udc/cdns2/cdns2-gadget.c,cdns2_gadget_giveback,CWE-415,Double Free,TP
+CVE-2018-20467,ImageMagick/ImageMagick,db0add932fb850d762b02604ca3053b7d7ab6deb,coders/bmp.c,ReadBMPImage,coders/pcx.c,ReadPCXImage,CWE-835,Unknown,
+CVE-2021-3490,torvalds/linux,049c4e13714ecbca567b4d5f6d563f05d431c80e,kernel/bpf/verifier.c,scalar32_min_max_xor,kernel/bpf/verifier.c,scalar_min_max_and,CWE-125,Out-of-bounds Read,
+CVE-2023-0266,torvalds/linux,56b88b50565cd8b946a2d00b0c83927b7ebb055e,sound/core/control.c,snd_ctl_elem_read,sound/pci/ice1712/wm8776.c,snd_wm8776_activate_ctl,CWE-416,Use After Free,
+CVE-2020-12352,torvalds/linux,eddb7732119d53400f48a02536a84c509692faa8,net/bluetooth/a2mp.c,a2mp_chan_recv_cb,net/bluetooth/l2cap_core.c,l2cap_sig_send_rej,CWE-909,Information Exposure,FP
+CVE-2022-1516,torvalds/linux,7781607938c8371d4c2b243527430241c62e39c2,net/x25/af_x25.c,x25_kill_by_neigh,net/netrom/af_netrom.c,nr_kill_by_device,CWE-476,Null Pointer Dereference,
+CVE-2017-15931,radareorg/radare2,c6d0076c924891ad9948a62d89d0bcdaf965f0cd,libr/bin/format/elf/elf.c,store_versioninfo_gnu_verneed,libr/bin/format/elf/elf.c,_maybe_parse_aux_ver_needed_info,CWE-125,Out-of-bounds Read,FP
+CVE-2022-1516,torvalds/linux,7781607938c8371d4c2b243527430241c62e39c2,net/x25/af_x25.c,x25_kill_by_neigh,net/rose/af_rose.c,rose_kill_by_neigh,CWE-476,Null Pointer Dereference,
+CVE-2021-47151,torvalds/linux,a00593737f8bac2c9e97b696e7ff84a4446653e8,drivers/interconnect/qcom/bcm-voter.c,of_bcm_voter_get,sound/soc/ti/rx51.c,rx51_soc_probe,CWE-401,Resource Leak,
+CVE-2020-15393,torvalds/linux,28ebeb8db77035e058a510ce9bd17c2b9a009dba,drivers/usb/misc/usbtest.c,usbtest_disconnect,drivers/w1/masters/ds2490.c,ds_disconnect,CWE-401,Memory Leak,
+CVE-2023-52573,torvalds/linux,f1d95df0f31048f1c59092648997686e3f7d9478,net/rds/rdma_transport.c,rds_rdma_cm_event_handler_cmn,fs/smb/client/smbdirect.c,smbd_conn_upcall,CWE-476,Null Pointer Dereference,
+CVE-2022-3964,FFmpeg/FFmpeg,92f9b28ed84a77138105475beba16c146bdaf984,libavcodec/rpzaenc.c,rpza_encode_stream,libavcodec/rpza.c,rpza_decode_stream,CWE-119,Out-of-bounds Read,
+CVE-2021-4043,gpac/gpac,64a2e1b799352ac7d7aad1989bc06e7b0f2b01db,src/isomedia/box_code_base.c,gitn_box_del,src/isomedia/box_code_base.c,segr_box_del,CWE-476,Null Pointer Dereference,TP
+CVE-2024-26702,torvalds/linux,792595bab4925aa06532a14dd256db523eb4fa5e,drivers/iio/magnetometer/rm3100-core.c,rm3100_common_probe,drivers/iio/magnetometer/rm3100-core.c,rm3100_get_samp_freq,CWE-125,Out-of-bounds Read,TP
+CVE-2020-27767,ImageMagick/ImageMagick,564f2a35e523e2b6cce9485018157f03ec05a947,MagickCore/quantum.h,ClampToQuantum,MagickCore/quantum-private.h,ScaleMapToQuantum,CWE-190,Integer Overflow,
+OSV-2023-452,LibreDWG/libredwg,8027830aac4625a96b70b645fbbb4ccb625f781e,src/in_json.c,json_fixed_string,src/in_json.c,json_acis_data,CWE-170,Buffer Overflow,
+CVE-2024-26620,torvalds/linux,850fb7fa8c684a4c6bf0e4b6978f4ddcc5d43d11,drivers/s390/crypto/vfio_ap_ops.c,vfio_ap_mdev_filter_matrix,drivers/s390/crypto/vfio_ap_ops.c,vfio_ap_filter_apid_by_qtype,CWE-787,Logic Error,
+CVE-2016-10061,ImageMagick/ImageMagick,4e914bbe371433f0590cefdf3bd5f3a5710069f9,coders/tiff.c,ReadGROUP4Image,coders/pwp.c,ReadPWPImage,CWE-252,Logic Error,
+CVE-2020-11647,wireshark/wireshark,6f56fc9496db158218243ea87e3660c874a0bab0,epan/dissectors/packet-bacapp.c,dissect_bacapp,epan/dissectors/packet-bacapp.c,dissect_bacapp,CWE-674,Recursion Error,
+CVE-2024-26588,torvalds/linux,36a87385e31c9343af9a4756598e704741250a67,arch/loongarch/net/bpf_jit.c,build_insn,kernel/bpf/disasm.c,print_bpf_insn,CWE-119,Out-of-bounds Read,
+CVE-2021-31256,gpac/gpac,2da2f68bffd51d89b1d272d22aa8cc023c1c066e,src/isomedia/stbl_read.c,stbl_GetSampleInfos,src/isomedia/stbl_write.c,stbl_SetChunkOffset,CWE-401,Out-of-bounds Read,
+CVE-2021-3610,ImageMagick/ImageMagick,930ff0d1a9bc42925a7856e9ea53f5fc9f318bf3,coders/tiff.c,ReadTIFFImage,coders/tiff.c,ReadTIFFImage,CWE-787,Unknown,
+CVE-2024-31585,FFmpeg/FFmpeg,81df787b53eb5c6433731f6eaaf7f2a94d8a8c80,libavfilter/avf_showspectrum.c,uninit,libavfilter/af_axcorrelate.c,uninit,CWE-193,Logic Error,
+CVE-2015-0239,torvalds/linux,f3747379accba8e95d70cec0eae0582c8c182050,arch/x86/kvm/emulate.c,em_sysenter,arch/x86/kvm/emulate.c,em_sysexit,CWE-269,Privilege Escalation,
+CVE-2022-1383,radareorg/radare2,1dd65336f0f0c351d6ea853efcf73cf9c0030862,libr/bin/format/mach0/coresymbolication.c,r_coresym_cache_element_new,libr/bin/p/bin_xnu_kernelcache.c,resolve_syscalls,CWE-787,Out-of-bounds Read,
+CVE-2022-0001,torvalds/linux,d45476d9832409371537013ebdd8dc1a7781f97a,arch/x86/kernel/cpu/bugs.c,spectre_v2_select_mitigation,arch/x86/kernel/cpu/bugs.c,spectre_v2_select_rsb_mitigation,CWE-200,Information Exposure,
+CVE-2022-0476,radareorg/radare2,27fe8031782d3a06c3998eaa94354867864f9f1b,libr/bin/format/mdmp/mdmp.c,read_module,libr/bin/format/mdmp/mdmp.c,read_memory64_list,CWE-400,Resource Exhaustion,TP
+CVE-2016-3137,torvalds/linux,c55aee1bf0e6b6feec8b2927b43f7a09a6d5f754,drivers/usb/serial/cypress_m8.c,cypress_open,drivers/usb/serial/belkin_sa.c,belkin_sa_open,CWE-476,Null Pointer Dereference,
+CVE-2021-47032,torvalds/linux,7dcf3c04f0aca746517a77433b33d40868ca4749,drivers/net/wireless/mediatek/mt76/mt7915/mac.c,mt7915_txp_skb_unmap,drivers/net/wireless/intel/iwlwifi/pcie/tx-gen2.c,iwl_txq_gen2_tfd_unmap,CWE-401,Unknown,
+CVE-2021-0935,torvalds/linux,2f987a76a97773beafbc615b9c4d8fe79129a7f4,net/ipv6/datagram.c,__ip6_datagram_connect,net/ipv4/tcp_ipv4.c,tcp_v4_connect,CWE-416,Use After Free,
+CVE-2016-7529,ImageMagick/ImageMagick,a2e1064f288a353bc5fef7f79ccb7683759e775c,coders/xcf.c,load_tile,coders/flif.c,ReadFLIFImage,CWE-125,Unknown,
+CVE-2021-47178,torvalds/linux,70ca3c57ff914113f681e657634f7fbfa68e1ad1,drivers/target/target_core_transport.c,__target_init_cmd,arch/powerpc/sysdev/mpic.c,mpic_processor_id,CWE-459,Logic Error,
+CVE-2022-3222,gpac/gpac,4e7736d7ec7bf64026daa611da951993bb42fdaf,src/bifs/script_dec.c,SFS_Params,src/bifs/script_dec.c,SFS_CompoundExpression,CWE-674,Recursion Error,
+CVE-2023-4622,torvalds/linux,57d44a354a43edba4ef9963327d4657d12edbfbc,net/unix/af_unix.c,unix_stream_sendpage,net/ipv6/ip6_output.c,__ip6_append_data,CWE-416,Use After Free,
+CVE-2016-7537,ImageMagick/ImageMagick,6d202a0514fb6a406456b8b728cde776becb25f8,coders/pdb.c,WritePDBImage,coders/palm.c,WritePALMImage,CWE-125,Out-of-bounds Read,
+CVE-2021-33631,torvalds/linux,5c099c4fdc438014d5893629e70a8ba934433ee8,fs/ext4/inode.c,ext4_write_end,fs/ext4/inode.c,ext4_journalled_write_end,CWE-190,Race Condition,TP
+CVE-2022-1035,gpac/gpac,3718d583c6ade191dc7979c64f48c001ca6f0243,src/scene_manager/scene_dump.c,gf_dump_vrml_simple_field,src/scene_manager/scene_dump.c,gf_dump_vrml_field,CWE-476,Null Pointer Dereference,TP
+CVE-2015-1350,torvalds/linux,030b533c4fd4d2ec3402363323de4bb2983c9cee,fs/attr.c,setattr_prepare,security/smack/smack_lsm.c,smack_inode_setattr,CWE-552,Unknown,
+CVE-2022-0519,radareorg/radare2,6c4428f018d385fc80a33ecddcb37becea685dd5,shlr/java/class.c,r_bin_java_synthetic_attr_new,shlr/java/class.c,r_bin_java_code_attr_new,CWE-119,Out-of-bounds Read,FP
+CVE-2023-52599,torvalds/linux,49f9637aafa6e63ba686c13cb8549bf5e6920402,fs/jfs/jfs_imap.c,diNewExt,fs/jfs/jfs_imap.c,diAllocBit,CWE-129,Unknown,TP
+CVE-2020-12465,torvalds/linux,b102f0c522cf668c8382c56a4f771b37d011cda2,drivers/net/wireless/mediatek/mt76/dma.c,mt76_add_fragment,drivers/net/ethernet/wangxun/libwx/wx_lib.c,wx_build_skb,CWE-120,Buffer Overflow,
+CVE-2022-0519,radareorg/radare2,6c4428f018d385fc80a33ecddcb37becea685dd5,shlr/java/class.c,r_bin_java_synthetic_attr_new,shlr/java/class.c,r_bin_java_deprecated_attr_new,CWE-119,Out-of-bounds Read,
+OSV-2018-68,libarchive/libarchive,3614747af54e60229a2bf11e8f40e1b975cc9ae6,libarchive/archive_read_support_format_rar5.c,parse_tables,libarchive/archive_read_support_format_rar5.c,process_block,CWE-125,Out-of-bounds Read,
+CVE-2021-3640,torvalds/linux,99c23da0eed4fd20cae8243f2b51e10e66aa0951,net/bluetooth/sco.c,sco_sock_sendmsg,net/vmw_vsock/af_vsock.c,__vsock_connectible_recvmsg,CWE-362,Race Condition,
+CVE-2021-31261,gpac/gpac,cd3738dea038dbd12e603ad48cd7373ae0440f65,src/media_tools/isom_hinter.c,gf_hinter_track_new,src/media_tools/isom_tools.c,gf_media_change_par,CWE-119,Memory Leak,
+CVE-2020-10767,torvalds/linux,21998a351512eba4ed5969006f0c55882d995ada,arch/x86/kernel/cpu/bugs.c,stibp_state,arch/x86/kernel/cpu/bugs.c,spectre_v2_user_select_mitigation,CWE-440,Logic Error,
+CVE-2022-1882,torvalds/linux,353f7988dd8413c47718f7ca79c030b6fb62cfe5,kernel/watch_queue.c,remove_watch_from_object,kernel/watch_queue.c,watch_queue_clear,CWE-416,Use After Free,
+CVE-2023-39198,torvalds/linux,c611589b4259ed63b9b77be6872b1ce07ec0ac16,drivers/gpu/drm/qxl/qxl_ioctl.c,qxl_alloc_ioctl,drivers/gpu/drm/nouveau/nouveau_display.c,nouveau_display_dumb_create,CWE-416,Use After Free,
+CVE-2021-47011,torvalds/linux,9f38f03ae8d5f57371b71aa6b4275765b65454fd,mm/memcontrol.c,drain_obj_stock,mm/memcontrol.c,obj_stock_flush_required,CWE-416,Unknown,
+CVE-2023-0760,gpac/gpac,ea7395f39f601a7750d48d606e9d10ea0b7beefe,src/isomedia/box_code_base.c,sgpd_parse_entry,src/isomedia/box_code_meta.c,bxml_box_read,CWE-122,Unknown,
+CVE-2022-0168,torvalds/linux,d6f5e358452479fa8a773b5c6ccc9e4ec5a20880,fs/cifs/smb2ops.c,smb2_ioctl_query_info,fs/smb/client/smb2ops.c,smb2_query_info_compound,CWE-476,Null Pointer Dereference,
+CVE-2021-29648,torvalds/linux,350a5c4dd2452ea999cc5e1d4a8dbf12de2f97ef,kernel/bpf/syscall.c,map_create,tools/lib/bpf/libbpf.c,bpf_object__create_map,CWE-307,Uninitialized Use,
+OSV-2023-1149,LibreDWG/libredwg,774894c13e511318215a888eb483d76282a18ed1,src/bits.c,bit_advance_position,src/encode.c,dwg_encode_variable_type,CWE-122,Buffer Overflow,
+CVE-2021-30019,gpac/gpac,22774aa9e62f586319c8f107f5bae950fed900bc,src/filters/reframe_adts.c,adts_dmx_process,src/filters/reframe_mhas.c,mhas_dmx_process,CWE-787,Buffer Overflow,
+CVE-2015-2304,libarchive/libarchive,59357157706d47c365b2227739e17daba3607526,libarchive/test/test_write_disk_secure.c,DEFINE_TEST,libarchive/test/test_write_disk_secure745.c,DEFINE_TEST,CWE-22,Path Traversal,
+CVE-2021-42252,torvalds/linux,b49a0e69a7b1a68c8d3f64097d06dabb770fec96,drivers/soc/aspeed/aspeed-lpc-ctrl.c,aspeed_lpc_ctrl_mmap,arch/x86/kernel/cpu/resctrl/pseudo_lock.c,pseudo_lock_dev_mmap,CWE-682,Logic Error,
+CVE-2021-39711,torvalds/linux,6e6fddc78323533be570873abb728b7e0ba7e024,tools/testing/selftests/bpf/test_verifier.c,do_test_single,samples/hid/hid_surface_dial.c,set_haptic,CWE-125,Out-of-bounds Read,
+CVE-2024-26651,torvalds/linux,07161b2416f740a2cb87faa5566873f401440a61,drivers/net/usb/sr9800.c,sr9800_bind,drivers/net/usb/asix_devices.c,ax88772_bind,CWE-252,Improper Validation,TP
+CVE-2022-45869,torvalds/linux,47b0c2e4c220f2251fd8dcfbb44479819c715e15,arch/x86/kvm/mmu/mmu.c,direct_page_fault,arch/x86/kvm/mmu/mmu.c,kvm_tdp_mmu_page_fault,CWE-362,Race Condition,
+CVE-2020-25665,ImageMagick/ImageMagick,cfd829bd3581b092e0a267b3deba46fa90b9bc88,coders/palm.c,WritePALMImage,coders/palm.c,ReadPALMImage,CWE-125,Out-of-bounds Read,
+CVE-2016-7537,ImageMagick/ImageMagick,6d202a0514fb6a406456b8b728cde776becb25f8,coders/pdb.c,ReadPDBImage,coders/sun.c,ReadSUNImage,CWE-125,Out-of-bounds Read,
+OSV-2020-317,radareorg/radare2,7d30ff52fc1be6f9698b166107b8981eab6ec7ba,libr/core/cbin.c,bin_symbols,libr/bin/format/nxo/nxo.c,walkSymbols,CWE-77,Injection,
+CVE-2023-38039,curl/curl,3ee79c1674fd6f99e8efca52cd7510e08b766770,lib/pingpong.c,Curl_pp_readresp,lib/pingpong.c,Curl_pp_readresp,CWE-770,Resource Exhaustion,FP
+CVE-2021-46910,torvalds/linux,d624833f5984d484c5e3196f34b926f9e71dafee,arch/arm/mm/mmu.c,__set_fixmap,arch/x86/mm/pgtable.c,__native_set_fixmap,CWE-697,Logic Error,
+CVE-2022-3965,FFmpeg/FFmpeg,13c13109759090b7f7182480d075e13b36ed8edd,libavcodec/smcenc.c,smc_encode_stream,libavcodec/vb.c,vb_decode_framedata,CWE-119,Out-of-bounds Read,FP
+CVE-2019-20911,LibreDWG/libredwg,c6f6668b82bfe595899cc820279ac37bb9ef16f5,src/free.c,dwg_free_object,src/print.c,dwg_print_object,CWE-835,Infinite Loop,FP
+CVE-2024-26805,torvalds/linux,661779e1fcafe1b74b3f3fe8e980c1e207fea1fd,net/netlink/af_netlink.c,netlink_to_full_skb,drivers/net/xen-netfront.c,bounce_skb,CWE-908,Out-of-bounds Read,
+CVE-2017-1000252,torvalds/linux,3a8b0677fc6180a467e26cc32ce6b0c09a32f9bb,arch/x86/kvm/vmx.c,vmx_update_pi_irte,arch/sparc/kernel/irq_32.c,irq_link,CWE-20,Unknown,
+CVE-2022-23816,torvalds/linux,742ab6df974ae8384a2dd213db1a3a06cf6d8936,arch/x86/kvm/vmx/vmx.c,vmx_enable_fb_clear,arch/x86/kernel/cpu/bugs.c,update_srbds_msr,CWE-200,Information Exposure,
+CVE-2021-40564,gpac/gpac,cf6771c857eb9a290e2c19ddacfdd3ed98b27618,src/media_tools/av_parsers.c,avc_parse_slice,src/filters/hevcsplit.c,hevcsplit_remove_slice_address,CWE-476,Unknown,TP
+CVE-2023-39350,FreeRDP/FreeRDP,e204fc8be5a372626b13f66daf2abafe71dbc2dc,libfreerdp/codec/rfx.c,rfx_process_message_tileset,libfreerdp/codec/progressive.c,progressive_tile_read_upgrade,CWE-191,Out-of-bounds Read,
+CVE-2016-7530,ImageMagick/ImageMagick,c4e63ad30bc42da691f2b5f82a24516dd6b4dc70,MagickCore/quantum.c,GetQuantumExtent,MagickCore/quantum.c,GetQuantumExtent,CWE-369,Unknown,
+CVE-2021-4182,wireshark/wireshark,b3215d99cacbcd2613157d10f11b233b35b5d10b,epan/dissectors/file-rfc7468.c,dissect_rfc7468,epan/req_resp_hdrs.c,req_resp_hdrs_do_reassembly,CWE-835,Infinite Loop,FP
+CVE-2023-39198,torvalds/linux,c611589b4259ed63b9b77be6872b1ce07ec0ac16,drivers/gpu/drm/qxl/qxl_gem.c,qxl_gem_object_create_with_handle,drivers/gpu/drm/radeon/radeon_gem.c,radeon_mode_dumb_create,CWE-416,Use After Free,
+CVE-2022-1199,torvalds/linux,71171ac8eb34ce7fe6b3267dce27c313ab3cb3ac,net/ax25/af_ax25.c,ax25_kill_by_device,net/ax25/af_ax25.c,ax25_destroy_timer,CWE-416,Null Pointer Dereference,
+CVE-2020-22017,FFmpeg/FFmpeg,d4d6b7b0355f3597cad3b8d12911790c73b5f96d,libavfilter/vf_datascope.c,oscilloscope_filter_frame,libavfilter/vf_datascope.c,filter_frame,CWE-787,Buffer Overflow,
+CVE-2021-47063,torvalds/linux,4d906839d321c2efbf3fed4bc31ffd9ff55b75c0,drivers/gpu/drm/bridge/panel.c,panel_bridge_detach,drivers/gpu/drm/bridge/tc358767.c,tc_edp_bridge_detach,CWE-416,Unknown,
+CVE-2023-5341,ImageMagick/ImageMagick,aa673b2e4defc7cad5bec16c4fc8324f71e531f1,coders/bmp.c,ReadBMPImage,coders/pcx.c,ReadPCXImage,CWE-416,Use After Free,
+CVE-2021-29264,torvalds/linux,d8861bab48b6c1fc3cdbcab8ff9d1eaea43afe7f,drivers/net/ethernet/freescale/gianfar.c,gfar_add_rx_frag,drivers/net/ethernet/intel/fm10k/fm10k_main.c,fm10k_add_rx_frag,CWE-191,Logic Error,
+CVE-2020-27751,ImageMagick/ImageMagick,f60d59cc3a7e3402d403361e0985ffa56f746a82,MagickCore/quantum-private.h,ScaleQuantumToAny,MagickCore/quantum-private.h,ScaleAnyToQuantum,CWE-190,Integer Overflow,
+CVE-2016-7537,ImageMagick/ImageMagick,6d202a0514fb6a406456b8b728cde776becb25f8,coders/pdb.c,ReadPDBImage,coders/dib.c,ReadDIBImage,CWE-125,Out-of-bounds Read,
+CVE-2018-1000878,libarchive/libarchive,bfcfe6f04ed20db2504db8a254d1f40a1d84eb28,libarchive/archive_read_support_format_rar.c,rar_read_ahead,libarchive/archive_read_support_format_rar.c,archive_read_format_rar_read_data_skip,CWE-416,Use After Free,
+CVE-2022-1714,radareorg/radare2,3ecdbf8e21186a9c5a4d3cfa3b1e9fd27045340e,libr/anal/p/anal_msp430.c,set_reg_profile,libr/arch/p/arc/plugin.c,regs,CWE-125,Out-of-bounds Read,
+CVE-2024-26731,torvalds/linux,4cd12c6065dfcdeba10f49949bffcf383b3952d8,net/core/skmsg.c,sk_psock_verdict_data_ready,net/ipv4/tcp_bpf.c,tcp_bpf_recvmsg_parser,CWE-476,Race Condition,
+CVE-2023-52441,torvalds/linux,536bb492d39bb6c080c92f31e8a55fe9934f452b,fs/smb/server/smb_common.c,init_smb1_server,fs/smb/server/smb2ops.c,init_smb3_0_server,CWE-119,Unknown,
+CVE-2022-0519,radareorg/radare2,6c4428f018d385fc80a33ecddcb37becea685dd5,shlr/java/class.c,r_bin_java_element_pair_calc_size,shlr/java/class.c,r_bin_java_element_value_calc_size,CWE-119,Out-of-bounds Read,
+CVE-2016-7532,ImageMagick/ImageMagick,4f2c04ea6673863b87ac7f186cbb0d911f74085c,coders/psd.c,RemoveResolutionFromResourceBlock,coders/psd.c,RemoveICCProfileFromResourceBlock,CWE-125,Out-of-bounds Read,
+CVE-2022-47942,torvalds/linux,8f0541186e9ad1b62accc9519cc2b7a7240272a7,fs/ksmbd/smbacl.c,smb_inherit_dacl,fs/smb/client/cifsacl.c,id_mode_to_cifs_acl,CWE-787,Buffer Overflow,
+CVE-2024-26793,torvalds/linux,616d82c3cfa2a2146dd7e3ae47bda7e877ee549e,drivers/net/gtp.c,gtp_init,net/xdp/xsk.c,xsk_init,CWE-416,Null Pointer Dereference,TP
+CVE-2024-26633,torvalds/linux,d375b98e0248980681e5e56b712026174d617198,net/ipv6/ip6_tunnel.c,ip6_tnl_parse_tlv_enc_lim,net/ipv6/exthdrs_core.c,ipv6_skip_exthdr,CWE-125,Out-of-bounds Read,
+CVE-2023-52638,torvalds/linux,6cdedc18ba7b9dacc36466e27e3267d201948c8d,net/can/j1939/socket.c,j1939_sk_recv_match,drivers/net/wireless/marvell/mwifiex/tdls.c,mwifiex_auto_tdls_update_peer_signal,CWE-667,Deadlock,
+CVE-2020-12352,torvalds/linux,eddb7732119d53400f48a02536a84c509692faa8,net/bluetooth/a2mp.c,a2mp_chan_recv_cb,net/bluetooth/l2cap_core.c,l2cap_le_sig_channel,CWE-909,Information Exposure,FP
+CVE-2023-4678,gpac/gpac,4607052c482a51dbdacfe1ade10645c181d07b07,src/filters/reframe_mhas.c,mhas_dmx_process,src/filters/reframe_flac.c,flac_dmx_process,CWE-369,Divide By Zero,TP
+CVE-2023-21264,torvalds/linux,09cce60bddd6461a93a5bf434265a47827d1bc6f,arch/arm64/kvm/hyp/nvhe/mem_protect.c,hyp_get_page_state,arch/arm64/kvm/hyp/nvhe/setup.c,fix_host_ownership_walker,CWE-119,Unknown,
+CVE-2021-30014,gpac/gpac,51cdb67ff7c5f1242ac58c5aa603ceaf1793b788,src/media_tools/av_parsers.c,hevc_parse_slice_segment,src/filters/hevcmerge.c,hevcmerge_rewrite_slice,CWE-190,Out-of-bounds Read,TP
+CVE-2022-0519,radareorg/radare2,6c4428f018d385fc80a33ecddcb37becea685dd5,shlr/java/class.c,r_bin_java_synthetic_attr_new,shlr/java/class.c,r_bin_java_line_number_table_attr_new,CWE-119,Out-of-bounds Read,TP
+CVE-2019-19947,torvalds/linux,da2311a6385c3b499da2ed5d9be59ce331fa93e9,drivers/net/can/usb/kvaser_usb/kvaser_usb_leaf.c,kvaser_usb_leaf_simple_cmd_async,drivers/net/can/usb/esd_usb.c,esd_usb_3_set_bittiming,CWE-908,Uninitialized Use,TP
+CVE-2016-7533,ImageMagick/ImageMagick,bef1e4f637d8f665bc133a9c6d30df08d983bc3a,coders/wpg.c,ReadWPGImage,coders/cut.c,ReadCUTImage,CWE-125,Out-of-bounds Read,
+CVE-2020-10773,torvalds/linux,b8e51a6a9db94bc1fb18ae831b3dab106b5a4b5f,arch/s390/mm/cmm.c,cmm_timeout_handler,kernel/auditsc.c,audit_log_execve_info,CWE-626,Information Exposure,
+CVE-2021-3640,torvalds/linux,99c23da0eed4fd20cae8243f2b51e10e66aa0951,net/bluetooth/sco.c,sco_sock_sendmsg,net/bluetooth/iso.c,iso_sock_sendmsg,CWE-362,Race Condition,
+CVE-2017-15265,torvalds/linux,71105998845fb012937332fe2e806d443c09e026,sound/core/seq/seq_ports.c,snd_seq_create_port,drivers/scsi/scsi_debug.c,sdebug_add_host_helper,CWE-362,Unknown,
+CVE-2024-26730,torvalds/linux,d56e460e19ea8382f813eb489730248ec8d7eb73,drivers/hwmon/nct6775-core.c,nct6775_probe,drivers/hwmon/w83627ehf.c,w83627ehf_resume,CWE-787,Unknown,
+CVE-2021-28691,torvalds/linux,107866a8eb0b664675a260f1ba0655010fac1e08,drivers/net/xen-netback/interface.c,xenvif_disconnect_queue,drivers/iio/adc/ina2xx-adc.c,ina2xx_buffer_disable,CWE-416,Use After Free,
+CVE-2021-39929,wireshark/wireshark,ed98abe2080053403f1881a8b2df1905a3ccdf2e,epan/dissectors/packet-bt-dht.c,dissect_bencoded_list,epan/dissectors/packet-bt-dht.c,dissect_bencoded_dict,CWE-674,Recursion Error,FP
+CVE-2020-11058,FreeRDP/FreeRDP,3627aaf7d289315b614a584afb388f04abfb5bbf,libfreerdp/core/capabilities.c,rdp_read_font_capability_set,libfreerdp/core/capabilities.c,rdp_read_share_capability_set,CWE-125,Out-of-bounds Read,
+CVE-2016-10061,ImageMagick/ImageMagick,4e914bbe371433f0590cefdf3bd5f3a5710069f9,coders/tiff.c,ReadGROUP4Image,coders/wpg.c,ExtractPostscript,CWE-252,Logic Error,
+CVE-2015-4036,torvalds/linux,59c816c1f24df0204e01851431d3bab3eb76719c,drivers/vhost/scsi.c,vhost_scsi_make_tpg,drivers/usb/gadget/function/f_tcm.c,usbg_make_tpg,CWE-119,Unknown,TP
+CVE-2023-23145,gpac/gpac,4ade98128cbc41d5115b97a41ca2e59529c8dd5f,src/laser/lsr_dec.c,lsr_read_rare_full,src/laser/lsr_dec.c,lsr_read_update_value_indexed,CWE-401,Memory Leak,
+CVE-2021-47028,torvalds/linux,f43b941fd61003659a3f0e039595e5e525917aa8,drivers/net/wireless/mediatek/mt76/mt7915/mcu.c,mt7915_mcu_tx_rate_parse,drivers/net/wireless/mediatek/mt76/mt7915/testmode.c,mt7915_tm_set_tx_len,CWE-125,Out-of-bounds Read,TP
+CVE-2021-39713,torvalds/linux,e368fdb61d8e7c67ac70791b23345b26d7bbc661,net/sched/cls_api.c,tcf_block_find,net/sched/sch_api.c,__tc_ctl_tclass,CWE-362,Resource Leak,
+CVE-2021-47082,torvalds/linux,158b515f703e75e7d68289bf4d98c664e1d632df,drivers/net/tun.c,tun_free_netdev,drivers/net/tun.c,tun_net_init,CWE-415,Double Free,
+CVE-2016-10208,torvalds/linux,3a4b77cd47bb837b8557595ec7425f281f2ca1fe,fs/ext4/super.c,ext4_fill_super,fs/ext2/super.c,ext2_fill_super,CWE-125,Out-of-bounds Read,
+CVE-2023-46928,gpac/gpac,0753bf6d867343a80a044bf47a27d0b7accc8bf1,src/media_tools/isom_tools.c,gf_media_change_pl,src/media_tools/isom_tools.c,gf_media_change_par,CWE-787,Null Pointer Dereference,TP
+CVE-2022-36123,torvalds/linux,38fa5479b41376dc9d7f57e71c83514285a25ca0,arch/x86/kernel/head64.c,clear_bss,arch/powerpc/kernel/prom_init.c,prom_init,CWE-457,Uninitialized Use,
+CVE-2021-46967,torvalds/linux,3a3e0fad16d40a2aa68ddf7eea4acdf48b22dd44,drivers/vhost/vdpa.c,vhost_vdpa_mmap,drivers/rapidio/devices/rio_mport_cdev.c,mport_cdev_mmap,CWE-665,Unknown,
+CVE-2022-1714,radareorg/radare2,3ecdbf8e21186a9c5a4d3cfa3b1e9fd27045340e,libr/anal/p/anal_msp430.c,msp430_op,libr/arch/p/pic/plugin.c,anal_pic_pic18_op,CWE-125,Out-of-bounds Read,
+CVE-2023-2156,torvalds/linux,4e006c7a6dac0ead4c1bf606000aa90a372fc253,net/ipv6/rpl.c,ipv6_rpl_srh_size,net/ipv6/rpl.c,ipv6_rpl_srh_compress,CWE-617,Unknown,
+CVE-2023-52491,torvalds/linux,206c857dd17d4d026de85866f1b5f0969f2a109e,drivers/media/platform/mediatek/jpeg/mtk_jpeg_core.c,mtk_jpeg_dec_device_run,drivers/media/platform/mediatek/jpeg/mtk_jpeg_core.c,mtk_jpegenc_worker,CWE-416,Use After Free,FP
+CVE-2023-52599,torvalds/linux,49f9637aafa6e63ba686c13cb8549bf5e6920402,fs/jfs/jfs_imap.c,diNewExt,fs/jfs/jfs_imap.c,diFree,CWE-129,Unknown,TP
+CVE-2023-52448,torvalds/linux,8877243beafa7c6bfc42022cbfdf9e39b25bd4fa,fs/gfs2/rgrp.c,gfs2_rgrp_dump,fs/gfs2/rgrp.c,gfs2_rgrp_lvb_valid,CWE-476,Null Pointer Dereference,
+CVE-2022-47940,torvalds/linux,158a66b245739e15858de42c0ba60fcf3de9b8e6,fs/ksmbd/smb2pdu.c,smb2_write_pipe,fs/smb/server/smb2pdu.c,fsctl_pipe_transceive,CWE-125,Out-of-bounds Read,
+CVE-2021-28691,torvalds/linux,107866a8eb0b664675a260f1ba0655010fac1e08,drivers/net/xen-netback/interface.c,xenvif_disconnect_queue,drivers/iio/light/rohm-bu27034.c,bu27034_buffer_disable,CWE-416,Use After Free,
+CVE-2021-20224,ImageMagick/ImageMagick,5af1dffa4b6ab984b5f13d1e91c95760d75f12a6,MagickCore/quantum-export.c,ExportIndexQuantum,coders/pnm.c,WritePNMImage,CWE-190,Unknown,TP
+CVE-2018-20467,ImageMagick/ImageMagick,db0add932fb850d762b02604ca3053b7d7ab6deb,coders/bmp.c,ReadBMPImage,coders/sgi.c,ReadSGIImage,CWE-835,Unknown,
+CVE-2023-52502,torvalds/linux,31c07dffafce914c1d1543c135382a11ff058d93,net/nfc/llcp_core.c,nfc_llcp_sock_from_sn,drivers/net/ethernet/marvell/prestera/prestera_main.c,prestera_find_port,CWE-362,Race Condition,
+CVE-2021-47070,torvalds/linux,0b0226be3a52dadd965644bc52a807961c2c26df,drivers/uio/uio_hv_generic.c,hv_uio_probe,tools/hv/hv_fcopy_uio_daemon.c,main,CWE-401,Memory Leak,
+CVE-2022-28072,radareorg/radare2,027cd9b7274988bb1af866539ba6c2fa2ff63e45,libr/anal/p/anal_hexagon.c,hexagon_v6_op,libr/arch/p/ebc/plugin.c,ebc_anal_jmp,CWE-787,Out-of-bounds Read,TP

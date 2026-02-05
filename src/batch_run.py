@@ -85,9 +85,6 @@ if __name__ == "__main__":
     if args.vul_id:
         all_records = [item for item in all_records if item.get("vul_id") == args.vul_id]
     
-    # 限制处理总数，如果需要保留原逻辑的前128个
-    # all_records = all_records[16:]
-    
     total = len(all_records)
     max_workers = args.workers
     

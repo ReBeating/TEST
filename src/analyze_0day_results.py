@@ -102,6 +102,32 @@ def load_checked_list(checked_csv_path):
     
     return checked_dict, tp_set, fp_set, reported_set, confirmed_set
 
+def get_repo_path(repo, results_base):
+    """Helper to find repo path in results directory."""
+    # 1. Try direct path
+    candidate_path = results_base / repo
+    if candidate_path.exists():
+        return candidate_path
+    
+    # 2. Optimized search for known repos (if short name used)
+    if repo == 'linux':
+        return results_base / 'torvalds' / 'linux'
+    elif repo == 'php-src':
+        return results_base / 'php' / 'php-src'
+    elif repo == 'systemd':
+        return results_base / 'systemd' / 'systemd'
+    
+    # 3. Fallback search: look for any directory named 'repo' (leaf name)
+    # Handle "Owner/Repo" vs just "Repo"
+    repo_name = repo.split('/')[-1]
+    
+    # Search owner/repo
+    found = list(results_base.glob(f"*/{repo_name}"))
+    if found:
+        return found[0]
+        
+    return None
+
 def analyze_vulnerability(vul_id, repo, results_base, input_row, max_findings=None):
     """
     Analyze artifacts for a single vulnerability across all phases.
@@ -110,29 +136,7 @@ def analyze_vulnerability(vul_id, repo, results_base, input_row, max_findings=No
     Args:
         max_findings: Optional limit on number of findings per vulnerability (default: no limit)
     """
-    repo_path = None
-    
-    # 1. Try direct path
-    candidate_path = results_base / repo
-    if candidate_path.exists():
-        repo_path = candidate_path
-    
-    # 2. Optimized search for known repos (if short name used)
-    elif repo == 'linux':
-        repo_path = results_base / 'torvalds' / 'linux'
-    elif repo == 'php-src':
-        repo_path = results_base / 'php' / 'php-src'
-    elif repo == 'systemd':
-        repo_path = results_base / 'systemd' / 'systemd'
-    else:
-        # 3. Fallback search: look for any directory named 'repo' (leaf name)
-        # Handle "Owner/Repo" vs just "Repo"
-        repo_name = repo.split('/')[-1]
-        
-        # Search owner/repo
-        found = list(results_base.glob(f"*/{repo_name}"))
-        if found:
-            repo_path = found[0]
+    repo_path = get_repo_path(repo, results_base)
 
     # Base dictionary for common fields (using new column names)
     base_row = {
@@ -346,6 +350,103 @@ def check_tp_match(row, tp_set):
         return True
     
     return False
+
+def format_code_block(code, language=""):
+    """Format code block for Markdown."""
+    if not code:
+        return "*Code not available*"
+    return f"```{language}\n{code}\n```"
+
+def generate_fp_report(row, results_base, output_dir):
+    """Generate detailed report for a False Positive finding."""
+    vul_id = row.get('vul_id')
+    repo = row.get('repo')
+    target_func = row.get('target_func')
+    target_file = row.get('target_file')
+    
+    repo_path = get_repo_path(repo, results_base)
+    if not repo_path:
+        return None
+        
+    # Load artifacts
+    features_path = repo_path / f"{vul_id}_features.json"
+    findings_path = repo_path / f"{vul_id}_repo_findings.json"
+    
+    features_data = load_json(features_path)
+    findings_data = load_json(findings_path)
+    
+    # Find specific finding data
+    finding_detail = None
+    if findings_data:
+        for f in findings_data:
+            # Match finding
+            f_func = f.get('target_func') or f.get('func_name')
+            f_file = f.get('target_file') or f.get('file_path') or f.get('location')
+            
+            if f_func == target_func:
+                # If file is also present, check it too (loose match)
+                if target_file != "N/A" and f_file and target_file not in f_file and f_file not in target_file:
+                    continue
+                finding_detail = f
+                break
+    
+    # Create report
+    safe_func = target_func.replace('/', '_').replace(':', '_').replace('<', '').replace('>', '')
+    report_filename = f"FP_{vul_id}_{safe_func}.md"
+    report_path = output_dir / report_filename
+    
+    lines = []
+    lines.append(f"# FP Report: {vul_id} - {target_func}\n")
+    lines.append(f"**Repository**: `{repo}`  ")
+    lines.append(f"**Target File**: `{target_file}`  ")
+    lines.append(f"**Target Function**: `{target_func}`  ")
+    lines.append(f"**Judgement**: `FP`\n")
+    
+    # Section 1: Patch Info
+    lines.append("---\n")
+    lines.append("## 1. Patch Information\n")
+    
+    if features_data and isinstance(features_data, list) and len(features_data) > 0:
+        item = features_data[0]
+        patches = item.get('patches', [])
+        if patches:
+            for p in patches:
+                lines.append(f"**Patch File**: `{p.get('file_path', 'N/A')}`\n")
+                lines.append(f"**Patch Function**: `{p.get('function_name', 'N/A')}`\n")
+        else:
+            lines.append("*No patch details found in features.json*\n")
+    else:
+        lines.append("*Features data not available*\n")
+        
+    # Section 2: Finding Details
+    lines.append("\n---\n")
+    lines.append("## 2. Finding Details\n")
+    
+    if finding_detail:
+        lines.append(f"**Confidence**: {finding_detail.get('confidence', 'N/A')}\n")
+        lines.append(f"**Vuln Type**: {finding_detail.get('vuln_type', 'N/A')}\n")
+        
+        analysis_report = finding_detail.get('analysis_report', '')
+        if analysis_report:
+            lines.append("\n### Analysis Report\n")
+            lines.append(analysis_report)
+            lines.append("\n")
+        else:
+            lines.append("\n*No analysis report available*\n")
+            
+        # Add evidence/traces if available
+        if 'evidence' in finding_detail:
+             lines.append("\n### Evidence\n")
+             lines.append(format_code_block(json.dumps(finding_detail['evidence'], indent=2), 'json'))
+
+    else:
+        lines.append("*Detailed finding data not found in JSON*\n")
+        
+    # Write to file
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+        
+    return report_path
 
 def main():
     parser = argparse.ArgumentParser(description="Generate 0-day Analysis Report")
@@ -595,6 +696,24 @@ def main():
     # Phase 4 Global Ratio
     p4_ratio = (global_p4_valid / global_p4_total * 100) if global_p4_total > 0 else 0.0
     print(f"Overall Phase 4 TP Ratio (limit={args.max_findings_per_vul}): {global_p4_valid}/{global_p4_total} ({p4_ratio:.1f}%)")
+
+    # === Generate FP Reports ===
+    fp_rows = [r for r in verified_rows if r.get('judgement') == 'FP']
+    if fp_rows:
+        print(f"\n=== Generating FP Reports ({len(fp_rows)}) ===")
+        fp_report_dir = Path("outputs/fp_reports_0day")
+        fp_report_dir.mkdir(parents=True, exist_ok=True)
+        
+        generated_count = 0
+        for row in fp_rows:
+            try:
+                report_path = generate_fp_report(row, results_base, fp_report_dir)
+                if report_path:
+                    generated_count += 1
+            except Exception as e:
+                print(f"Error generating report for {row.get('vul_id')}: {e}")
+                
+        print(f"Successfully generated {generated_count} FP reports in {fp_report_dir}")
 
 if __name__ == "__main__":
     main()

@@ -63,6 +63,31 @@ class BaselineJudgeOutput(BaseModel):
 
 
 # ==============================================================================
+# Baseline Three-Role Debate Output Models (Simplified)
+# ==============================================================================
+
+class BaselineRedOutput(BaseModel):
+    """Baseline Red Agent: Argue that vulnerability EXISTS in target code."""
+    vulnerability_exists: bool = Field(description="Red's claim: True if vulnerability exists")
+    concedes: bool = Field(default=False, description="True if Red concedes to Blue's defense argument")
+    origin_line: Optional[int] = Field(default=None, description="Line number where vulnerable state is created")
+    origin_code: Optional[str] = Field(default=None, description="Code at origin point")
+    impact_line: Optional[int] = Field(default=None, description="Line number where vulnerability triggers")
+    impact_code: Optional[str] = Field(default=None, description="Code at impact point")
+    attack_reasoning: str = Field(description="Explanation of how the attack works or response to Blue's refutation")
+
+
+class BaselineBlueOutput(BaseModel):
+    """Baseline Blue Agent: Argue that vulnerability does NOT exist in target code."""
+    vulnerability_exists: bool = Field(description="Blue's claim: True if vulnerability exists (usually False)")
+    concedes: bool = Field(default=False, description="True if Blue concedes to Red's attack argument")
+    defense_found: bool = Field(description="Whether a defense mechanism was found")
+    defense_line: Optional[int] = Field(default=None, description="Line number of defense mechanism")
+    defense_code: Optional[str] = Field(default=None, description="Code of defense mechanism")
+    refutation_reasoning: str = Field(description="Explanation of why the vulnerability does not exist or is blocked")
+
+
+# ==============================================================================
 # Round 1: C_cons Validation (No Tools) - Simplified Design
 # ==============================================================================
 
@@ -2763,6 +2788,585 @@ Your task is to determine if the `Target Code` contains the specific vulnerabili
 - Provide a STRICT validated JSON output including verdict (is_vulnerable), confidence, and reasoning.
 """
 
+# ==============================================================================
+# Baseline Three-Role Debate Prompts (Simplified)
+# ==============================================================================
+
+BASELINE_RED_PROMPT = """You are the **Red Agent** in a simplified vulnerability debate.
+Your goal is to PROVE that the vulnerability EXISTS in the target code.
+
+## YOUR TASK
+1. Analyze the vulnerability description (root cause, attack path)
+2. Find the **Origin** point in target code: where vulnerable state is created
+3. Find the **Impact** point in target code: where vulnerability triggers
+4. Explain how the attack works step by step
+5. If Blue has responded, address their defense arguments
+
+## INPUTS PROVIDED
+- Vulnerability Logic: Root cause, attack path, fix mechanism
+- Reference Pre-Patch Code: Shows the vulnerable pattern
+- Reference Post-Patch Code: Shows what the fix looks like
+- Target Code: The code you need to analyze
+- [Optional] Blue's Previous Refutation: If this is a follow-up round
+
+## OUTPUT REQUIREMENTS
+Provide a JSON with:
+- vulnerability_exists: true/false (your claim)
+- concedes: true/false (set to true if you accept Blue's defense is valid and give up)
+- origin_line: line number where vulnerable state is created
+- origin_code: the code at that line
+- impact_line: line number where vulnerability triggers
+- impact_code: the code at that line
+- attack_reasoning: step-by-step explanation of the attack OR response to Blue's refutation
+
+## CONCEDE RULES
+- If Blue has found a valid defense that you cannot counter, set concedes=true
+- If Blue has shown your origin/impact mapping is fundamentally wrong, set concedes=true
+- Otherwise, continue arguing your case
+
+Be aggressive in finding vulnerabilities - that's your job!
+"""
+
+BASELINE_BLUE_PROMPT = """You are the **Blue Agent** in a simplified vulnerability debate.
+Your goal is to PROVE that the vulnerability does NOT exist or is BLOCKED in the target code.
+
+## YOUR TASK
+1. Review Red's attack claim (origin, impact, reasoning)
+2. Find defenses: NULL checks, bounds validation, lock protection, etc.
+3. Find blockers: early returns, error handling that prevents the attack path
+4. Refute Red's claim if the mapping is incorrect
+
+## INPUTS PROVIDED
+- Red's Attack Claim: origin, impact, and attack reasoning
+- Vulnerability Logic: Root cause, attack path, fix mechanism
+- Reference Post-Patch Code: Shows what the fix looks like
+- Target Code: The code you need to analyze
+
+## OUTPUT REQUIREMENTS
+Provide a JSON with:
+- vulnerability_exists: true/false (your verdict)
+- concedes: true/false (set to true if you accept Red's attack is valid and cannot find defense)
+- defense_found: true/false
+- defense_line: line number of defense (if found)
+- defense_code: the defense code (if found)
+- refutation_reasoning: explain why vulnerability doesn't exist or is blocked
+
+## CONCEDE RULES
+- If Red's attack path is clearly valid and you cannot find any defense, set concedes=true
+- If your previous defenses were correctly refuted by Red, set concedes=true
+- Otherwise, continue defending
+
+Be thorough in finding defenses - that's your job!
+"""
+
+BASELINE_JUDGE_PROMPT = """You are the **Judge** in a simplified vulnerability debate.
+Your goal is to make the FINAL VERDICT based on Red and Blue arguments from multiple rounds.
+
+## YOUR TASK
+1. Review the debate history between Red and Blue
+2. Evaluate Red's attack claim: Is the origin/impact mapping correct?
+3. Evaluate Blue's defense claim: Is the defense valid and does it block the attack?
+4. Consider if either side conceded
+5. Make final verdict: VULNERABLE or SAFE
+
+## DECISION LOGIC
+- If Red conceded → SAFE (Red admits no vulnerability)
+- If Blue conceded → VULNERABLE (Blue admits no defense)
+- If Red's mapping is incorrect (wrong origin/impact) → SAFE
+- If Blue found a valid defense that blocks the attack → SAFE
+- If Red's attack path is valid AND no defense blocks it → VULNERABLE
+
+## INPUTS PROVIDED
+- Complete Debate History (Red and Blue arguments from all rounds)
+- Vulnerability Logic
+- Target Code
+
+## OUTPUT REQUIREMENTS
+Provide a JSON with:
+- is_vulnerable: true/false (final verdict)
+- reasoning: explain your decision based on both arguments
+"""
+
+
+def run_baseline_red(
+    feature: PatchFeatures,
+    candidate,  # SearchResultItem
+    target_code: str,
+    tools: List[Any],
+    llm: ChatOpenAI,
+    round_num: int = 1,
+    debate_history: Optional[List[tuple]] = None
+) -> BaselineRedOutput:
+    """
+    Baseline Red Agent: Argue that vulnerability EXISTS.
+    Uses tools to support arguments.
+    
+    Args:
+        round_num: Current round number (1, 2, ...)
+        debate_history: List of (round_num, red_output, blue_output) from previous rounds
+    """
+    print(f"      [Baseline-Red] Round {round_num}: Arguing vulnerability exists...")
+    
+    sf = feature.slices.get(candidate.patch_func)
+    
+    # Build debate history summary if available
+    history_section = ""
+    if debate_history and len(debate_history) > 0:
+        history_lines = []
+        for prev_round, prev_red, prev_blue in debate_history:
+            history_lines.append(f"""
+### Round {prev_round} Summary
+**Your Previous Attack**:
+- Origin: Line {prev_red.origin_line}: `{prev_red.origin_code}`
+- Impact: Line {prev_red.impact_line}: `{prev_red.impact_code}`
+- Reasoning: {prev_red.attack_reasoning}
+
+**Blue's Refutation**:
+- Defense Found: {prev_blue.defense_found}
+- Defense: Line {prev_blue.defense_line}: `{prev_blue.defense_code}`
+- Refutation: {prev_blue.refutation_reasoning}
+- Blue Concedes: {prev_blue.concedes}
+""")
+        history_section = f"""
+## Previous Debate History
+{chr(10).join(history_lines)}
+
+**YOU MUST ADDRESS Blue's latest refutation. If Blue's defense is valid and you cannot counter it, set concedes=true. Otherwise, explain why their defense doesn't work or provide a stronger attack argument.**
+"""
+    
+    # Build context
+    user_input = f"""
+### Vulnerability Logic
+- **Root Cause**: {feature.semantics.root_cause}
+- **Attack Path**: {feature.semantics.attack_path}
+- **Vulnerability Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
+
+### Reference Pre-Patch Code (Vulnerable Pattern)
+{sf.s_pre if sf else 'Not available'}
+
+### Target Code to Analyze
+File: {candidate.target_file}
+Function: {candidate.target_func.split(':')[-1]}
+
+{target_code}
+{history_section}
+**YOUR TASK**: Find the Origin (where vulnerable state is created) and Impact (where vulnerability triggers) in the target code. Use tools if needed to verify your findings.
+{"Address the debate history above and respond to Blue's latest refutation." if debate_history else ""}
+"""
+    
+    llm_with_tools = llm.bind_tools(tools)
+    messages = [
+        SystemMessage(content=BASELINE_RED_PROMPT),
+        HumanMessage(content=user_input)
+    ]
+    
+    # Tool exploration loop (limited)
+    max_tool_steps = 5
+    for step in range(max_tool_steps):
+        try:
+            ai_msg = llm_invoke_with_retry(llm_with_tools, messages)
+            if ai_msg is None:
+                break
+        except Exception as e:
+            print(f"      [Baseline-Red] Error: {e}")
+            break
+        
+        messages.append(ai_msg)
+        
+        if not ai_msg.tool_calls:
+            break
+        
+        for tc in ai_msg.tool_calls:
+            tool_map = {t.name: t for t in tools}
+            t_func = tool_map.get(tc["name"])
+            try:
+                res = str(t_func.invoke(tc["args"])) if t_func else "Tool not found"
+            except Exception as e:
+                res = f"Error: {e}"
+            messages.append(ToolMessage(content=res, tool_call_id=tc["id"]))
+    
+    # Request structured output
+    try:
+        schema_str = json.dumps(BaselineRedOutput.model_json_schema(), indent=2)
+    except:
+        schema_str = "BaselineRedOutput schema"
+    
+    messages.append(HumanMessage(content=f"\n\nProvide your attack analysis in JSON format.\n\nSchema:\n{schema_str}\n\nOutput ONLY the JSON."))
+    
+    # Parse response
+    for attempt in range(3):
+        try:
+            ai_msg = llm_invoke_with_retry(llm, messages)
+            if ai_msg is None:
+                continue
+            
+            result = robust_json_parse(ai_msg.content, BaselineRedOutput, "Baseline-Red", use_fallback=(attempt == 2))
+            if result:
+                print(f"      [Baseline-Red] Claim: vulnerability_exists={result.vulnerability_exists}")
+                return result
+            
+            messages.append(ai_msg)
+            messages.append(HumanMessage(content="Parse error. Output ONLY valid JSON."))
+        except Exception as e:
+            print(f"      [Baseline-Red] Parse error: {e}")
+    
+    # Fallback
+    return BaselineRedOutput(
+        vulnerability_exists=False,
+        origin_line=None,
+        origin_code=None,
+        impact_line=None,
+        impact_code=None,
+        attack_reasoning="Failed to analyze"
+    )
+
+
+def run_baseline_blue(
+    red_output: BaselineRedOutput,
+    feature: PatchFeatures,
+    candidate,  # SearchResultItem
+    target_code: str,
+    tools: List[Any],
+    llm: ChatOpenAI,
+    round_num: int = 1,
+    debate_history: Optional[List[tuple]] = None
+) -> BaselineBlueOutput:
+    """
+    Baseline Blue Agent: Argue that vulnerability does NOT exist.
+    Uses tools to find defenses.
+    
+    Args:
+        round_num: Current round number
+        debate_history: List of (round_num, red_output, blue_output) from previous rounds (not including current red)
+    """
+    print(f"      [Baseline-Blue] Round {round_num}: Arguing vulnerability does not exist...")
+    
+    sf = feature.slices.get(candidate.patch_func)
+    
+    # Build debate history summary if available
+    history_section = ""
+    if debate_history and len(debate_history) > 0:
+        history_lines = []
+        for prev_round, prev_red, prev_blue in debate_history:
+            history_lines.append(f"""
+### Round {prev_round} Summary
+**Red's Attack**:
+- Origin: Line {prev_red.origin_line}: `{prev_red.origin_code}`
+- Impact: Line {prev_red.impact_line}: `{prev_red.impact_code}`
+- Reasoning: {prev_red.attack_reasoning}
+
+**Your Previous Defense**:
+- Defense Found: {prev_blue.defense_found}
+- Defense: Line {prev_blue.defense_line}: `{prev_blue.defense_code}`
+- Refutation: {prev_blue.refutation_reasoning}
+""")
+        history_section = f"""
+## Previous Debate History
+{chr(10).join(history_lines)}
+"""
+    
+    # Build context with Red's current claim
+    concede_status = ""
+    if red_output.concedes:
+        concede_status = "\n**NOTE: Red has CONCEDED. You win this debate. Still provide your analysis.**"
+    
+    red_claim = f"""
+**Red's Current Attack (Round {round_num})**:
+- Vulnerability Exists: {red_output.vulnerability_exists}
+- Concedes: {red_output.concedes}{concede_status}
+- Origin: Line {red_output.origin_line}: `{red_output.origin_code}`
+- Impact: Line {red_output.impact_line}: `{red_output.impact_code}`
+- Attack Reasoning: {red_output.attack_reasoning}
+"""
+    
+    user_input = f"""
+{history_section}
+{red_claim}
+
+### Vulnerability Logic
+- **Root Cause**: {feature.semantics.root_cause}
+- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+
+### Reference Post-Patch Code (Shows the Fix)
+{sf.s_post if sf else 'Not available'}
+
+### Target Code to Analyze
+File: {candidate.target_file}
+Function: {candidate.target_func.split(':')[-1]}
+
+{target_code}
+
+**YOUR TASK**: Find defenses or refute Red's claim. Use tools to check if:
+1. The target has the same fix as reference
+2. The target has an equivalent defense
+3. Red's origin/impact mapping is incorrect
+
+If Red's attack is clearly valid and you cannot find any defense, set concedes=true.
+"""
+    
+    llm_with_tools = llm.bind_tools(tools)
+    messages = [
+        SystemMessage(content=BASELINE_BLUE_PROMPT),
+        HumanMessage(content=user_input)
+    ]
+    
+    # Tool exploration loop (limited)
+    max_tool_steps = 5
+    for step in range(max_tool_steps):
+        try:
+            ai_msg = llm_invoke_with_retry(llm_with_tools, messages)
+            if ai_msg is None:
+                break
+        except Exception as e:
+            print(f"      [Baseline-Blue] Error: {e}")
+            break
+        
+        messages.append(ai_msg)
+        
+        if not ai_msg.tool_calls:
+            break
+        
+        for tc in ai_msg.tool_calls:
+            tool_map = {t.name: t for t in tools}
+            t_func = tool_map.get(tc["name"])
+            try:
+                res = str(t_func.invoke(tc["args"])) if t_func else "Tool not found"
+            except Exception as e:
+                res = f"Error: {e}"
+            messages.append(ToolMessage(content=res, tool_call_id=tc["id"]))
+    
+    # Request structured output
+    try:
+        schema_str = json.dumps(BaselineBlueOutput.model_json_schema(), indent=2)
+    except:
+        schema_str = "BaselineBlueOutput schema"
+    
+    messages.append(HumanMessage(content=f"\n\nProvide your defense analysis in JSON format.\n\nSchema:\n{schema_str}\n\nOutput ONLY the JSON."))
+    
+    # Parse response
+    for attempt in range(3):
+        try:
+            ai_msg = llm_invoke_with_retry(llm, messages)
+            if ai_msg is None:
+                continue
+            
+            result = robust_json_parse(ai_msg.content, BaselineBlueOutput, "Baseline-Blue", use_fallback=(attempt == 2))
+            if result:
+                print(f"      [Baseline-Blue] Claim: vulnerability_exists={result.vulnerability_exists}, defense_found={result.defense_found}")
+                return result
+            
+            messages.append(ai_msg)
+            messages.append(HumanMessage(content="Parse error. Output ONLY valid JSON."))
+        except Exception as e:
+            print(f"      [Baseline-Blue] Parse error: {e}")
+    
+    # Fallback
+    return BaselineBlueOutput(
+        vulnerability_exists=True,  # Conservative: assume Red is right if Blue fails
+        defense_found=False,
+        defense_line=None,
+        defense_code=None,
+        refutation_reasoning="Failed to analyze"
+    )
+
+
+def run_baseline_judge(
+    debate_history: List[tuple],  # List of (round_num, red_output, blue_output)
+    feature: PatchFeatures,
+    candidate,
+    target_code: str,
+    llm: ChatOpenAI
+) -> BaselineJudgeOutput:
+    """
+    Baseline Judge: Make final verdict based on Red and Blue arguments from all rounds.
+    No tools - just synthesis.
+    
+    Args:
+        debate_history: List of tuples (round_num, red_output, blue_output) from all rounds
+    """
+    print("      [Baseline-Judge] Making final verdict based on all rounds...")
+    
+    # Build debate history summary
+    history_lines = []
+    final_red = None
+    final_blue = None
+    
+    for round_num, red_output, blue_output in debate_history:
+        history_lines.append(f"""
+## Round {round_num}
+
+### Red Agent's Attack (Round {round_num})
+- Vulnerability Exists: {red_output.vulnerability_exists}
+- Concedes: {red_output.concedes}
+- Origin: Line {red_output.origin_line}: `{red_output.origin_code}`
+- Impact: Line {red_output.impact_line}: `{red_output.impact_code}`
+- Attack Reasoning: {red_output.attack_reasoning}
+
+### Blue Agent's Defense (Round {round_num})
+- Vulnerability Exists: {blue_output.vulnerability_exists}
+- Concedes: {blue_output.concedes}
+- Defense Found: {blue_output.defense_found}
+- Defense: Line {blue_output.defense_line}: `{blue_output.defense_code}`
+- Refutation Reasoning: {blue_output.refutation_reasoning}
+""")
+        final_red = red_output
+        final_blue = blue_output
+    
+    debate_summary = "\n".join(history_lines)
+    
+    user_input = f"""
+# Complete Debate History
+
+{debate_summary}
+
+### Vulnerability Logic
+- **Root Cause**: {feature.semantics.root_cause}
+- **Attack Path**: {feature.semantics.attack_path}
+- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+
+### Target Code
+File: {candidate.target_file}
+Function: {candidate.target_func.split(':')[-1]}
+
+{target_code}
+
+**YOUR TASK**: Review the complete debate history and make the final verdict.
+- If Red conceded → SAFE
+- If Blue conceded → VULNERABLE
+- If Red's mapping is correct AND Blue found no valid defense → VULNERABLE
+- If Red's mapping is wrong OR Blue found a valid defense → SAFE
+"""
+    
+    messages = [
+        SystemMessage(content=BASELINE_JUDGE_PROMPT),
+        HumanMessage(content=user_input)
+    ]
+    
+    # Request structured output
+    try:
+        schema_str = json.dumps(BaselineJudgeOutput.model_json_schema(), indent=2)
+    except:
+        schema_str = "BaselineJudgeOutput schema"
+    
+    messages.append(HumanMessage(content=f"\n\nProvide your final verdict in JSON format.\n\nSchema:\n{schema_str}\n\nOutput ONLY the JSON."))
+    
+    # Parse response
+    for attempt in range(3):
+        try:
+            ai_msg = llm_invoke_with_retry(llm, messages)
+            if ai_msg is None:
+                continue
+            
+            result = robust_json_parse(ai_msg.content, BaselineJudgeOutput, "Baseline-Judge", use_fallback=(attempt == 2))
+            if result:
+                print(f"      [Baseline-Judge] Final verdict: is_vulnerable={result.is_vulnerable}")
+                return result
+            
+            messages.append(ai_msg)
+            messages.append(HumanMessage(content="Parse error. Output ONLY valid JSON."))
+        except Exception as e:
+            print(f"      [Baseline-Judge] Parse error: {e}")
+    
+    # Fallback: based on concessions or final state
+    if final_red and final_red.concedes:
+        return BaselineJudgeOutput(
+            is_vulnerable=False,
+            reasoning="Fallback: Red conceded, vulnerability not proven"
+        )
+    if final_blue and final_blue.concedes:
+        return BaselineJudgeOutput(
+            is_vulnerable=True,
+            reasoning="Fallback: Blue conceded, no defense found"
+        )
+    if final_red and final_red.vulnerability_exists and final_blue and not final_blue.defense_found:
+        return BaselineJudgeOutput(
+            is_vulnerable=True,
+            reasoning="Fallback: Red claimed vulnerability, Blue found no defense"
+        )
+    return BaselineJudgeOutput(
+        is_vulnerable=False,
+        reasoning="Fallback: Either Red's claim failed or Blue found defense"
+    )
+
+
+def run_baseline_debate(
+    feature: PatchFeatures,
+    candidate,  # SearchResultItem
+    target_code: str,
+    tools: List[Any],
+    llm: ChatOpenAI,
+    max_rounds: int = 2
+) -> BaselineJudgeOutput:
+    """
+    Execute the simplified baseline three-role debate with multiple rounds.
+    
+    Flow:
+        Round 1: Red → Blue
+        Round 2: Red (responds to Blue) → Blue (responds to Red)
+        ...
+        Final: Judge reviews all rounds
+    
+    Args:
+        max_rounds: Maximum number of debate rounds (default: 2)
+    
+    Returns:
+        BaselineJudgeOutput with final verdict
+    """
+    print(f"    [Baseline-Debate] Starting {max_rounds}-round three-role debate...")
+    
+    # Track debate history for Judge (and for agents to see previous rounds)
+    debate_history: List[tuple] = []  # (round_num, red_output, blue_output)
+    
+    for round_num in range(1, max_rounds + 1):
+        print(f"    [Baseline-Debate] === Round {round_num} ===")
+        
+        # Red: Attack (receives full debate history from previous rounds)
+        red_output = run_baseline_red(
+            feature, candidate, target_code, tools, llm,
+            round_num=round_num,
+            debate_history=debate_history if debate_history else None
+        )
+        
+        # Check if Red concedes
+        if red_output.concedes:
+            print(f"    [Baseline-Debate] Red concedes in round {round_num}!")
+            # Create minimal Blue output and end debate
+            blue_output = BaselineBlueOutput(
+                vulnerability_exists=False,
+                concedes=False,
+                defense_found=True,
+                defense_line=None,
+                defense_code=None,
+                refutation_reasoning="Red conceded the debate."
+            )
+            debate_history.append((round_num, red_output, blue_output))
+            break
+        
+        # Blue: Defense (receives full debate history from previous rounds)
+        blue_output = run_baseline_blue(
+            red_output, feature, candidate, target_code, tools, llm,
+            round_num=round_num,
+            debate_history=debate_history if debate_history else None
+        )
+        
+        # Record this round
+        debate_history.append((round_num, red_output, blue_output))
+        
+        # Check if Blue concedes
+        if blue_output.concedes:
+            print(f"    [Baseline-Debate] Blue concedes in round {round_num}!")
+            break
+    
+    # Judge: Final verdict based on all rounds
+    judge_output = run_baseline_judge(
+        debate_history, feature, candidate, target_code, llm
+    )
+    
+    print(f"    [Baseline-Debate] Final: is_vulnerable={judge_output.is_vulnerable}")
+    
+    return judge_output
+
+
 class ContextBuilder:
     def __init__(self, repo_path: str):
         self.repo_path = repo_path
@@ -3380,13 +3984,14 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
 
 def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
     """
-    Baseline (Ablation Phase 4): 
-    No Tools, No Debate, Zero-Shot (or One-Shot) Verification.
-    Uses the same inputs (Vulnerability Logic + Sliced Code).
+    Baseline (Ablation Phase 4):
+    Simple Verification with Tool Support (but no multi-round debate).
+    Agent can use tools to verify its understanding in a single pass.
     """
     candidates: List[SearchResultItem] = state["candidates"]
     feature: PatchFeatures = state["feature_context"]
     mode = state["mode"]
+    vul_id = state.get("vul_id", "")
     findings = []
     
     # 1. Candidate Filtering (Same as main node)
@@ -3409,8 +4014,6 @@ def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
         filtered_candidates = filtered_candidates[:MAX_CANDIDATES]
     
     # [Adaptive Threshold]
-    # Strategy: Start with base confidence (0.4). Process Top X candidates unconditionally.
-    # For every False Positive (Safe verdict), raise the required confidence threshold.
     current_threshold = 0.4
     if mode == 'benchmark':
         THRESHOLD_PENALTY_STEP = 0.0
@@ -3421,73 +4024,85 @@ def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
     # 2. Iteration
     processed_funcs = set()
     for candidate in filtered_candidates:
-        if candidate.rank != -1 and candidate.rank > GRACE_RANK_LIMIT:
-             if candidate.confidence < current_threshold:
-                print(f"    [Skip-Adaptive] Rank {candidate.rank} (Conf {candidate.confidence:.2f}) < Threshold {current_threshold:.2f}")
-                continue
-        unique_key = f"{candidate.target_file}::{candidate.target_func}"
-        if unique_key in processed_funcs: continue
-        processed_funcs.add(unique_key)
-        
-        # 3. Context Preparation
-        raw_code = candidate.code_content
         try:
-            matched_lines = [m.line_no for m in candidate.evidence.aligned_vuln_traces if m.line_no is not None]
-            s_pre_code = feature.slices[candidate.patch_func].s_pre
-            # Simple regex to get hint vars
-            hint_vars = list(set(re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', s_pre_code)))
-            slicer = TargetSlicerAdapter(raw_code)
-            sliced = slicer.slice_context(matched_lines, hint_vars)
-            if len(sliced) < len(raw_code) * 0.9:
-                raw_code = f"// [Note] Code Sliced for Focus.\n{sliced}"
-        except:
-            pass
+            if candidate.rank != -1 and candidate.rank > GRACE_RANK_LIMIT:
+                 if candidate.confidence < current_threshold:
+                    print(f"    [Skip-Adaptive] Rank {candidate.rank} (Conf {candidate.confidence:.2f}) < Threshold {current_threshold:.2f}")
+                    continue
+            unique_key = f"{candidate.target_file}::{candidate.target_func}"
+            if unique_key in processed_funcs: continue
+            processed_funcs.add(unique_key)
             
-        full_code_context = f"File: {candidate.target_file}\nFunction: {candidate.target_func.split(':')[-1]}\nCode:\n{raw_code}\n"
+            # Initialize CodeNavigator and create tools
+            from core.navigator import CodeNavigator
+            repo_path = candidate.repo_path
+            
+            target_version = None
+            if mode == 'benchmark':
+                parts = candidate.target_func.split(':')
+                if len(parts) >= 2:
+                    target_version = parts[1]
+            
+            navigator = CodeNavigator(repo_path, target_version=target_version)
+            shared_tool_cache: Dict[str, Any] = {}
+            tools = create_tools(navigator, candidate.target_file, shared_tool_cache)
+            
+            # 3. Context Preparation
+            raw_code = candidate.code_content
+            try:
+                matched_lines = [m.line_no for m in candidate.evidence.aligned_vuln_traces if m.line_no is not None]
+                s_pre_code = feature.slices[candidate.patch_func].s_pre
+                hint_vars = list(set(re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', s_pre_code)))
+                slicer = TargetSlicerAdapter(raw_code)
+                sliced = slicer.slice_context(matched_lines, hint_vars)
+                if len(sliced) < len(raw_code) * 0.9:
+                    raw_code = f"// [Note] Code Sliced for Focus.\n{sliced}"
+            except:
+                pass
+                
+            full_code_context = f"File: {candidate.target_file}\nFunction: {candidate.target_func.split(':')[-1]}\nCode:\n{raw_code}\n"
         
-        # 4. Prompt Construction
-        all_diffs = []
-        for p in feature.patches:
-            header = f"--- {p.file_path} : {p.function_name} ---"
-            diff_content = p.clean_diff if p.clean_diff else p.raw_diff
-            all_diffs.append(f"{header}\n{diff_content}")
-        combined_diffs = "\n\n".join(all_diffs)
-        
-        vuln_info = f"""
-        [Root Cause]: {feature.semantics.root_cause}
-        [Attack Path]: {feature.semantics.attack_path}
-        [Fix Mechanism]: {feature.semantics.fix_mechanism}
-        [Reference (Pre-Patch)]:
-        {feature.slices[candidate.patch_func].s_pre}
-        [Reference (Post-Patch)]:
-        {feature.slices[candidate.patch_func].s_post}
-        [Diffs]:
-        {combined_diffs}
-        """
+            # 4. Prompt Construction
+            all_diffs = []
+            for p in feature.patches:
+                header = f"--- {p.file_path} : {p.function_name} ---"
+                diff_content = p.clean_diff if p.clean_diff else p.raw_diff
+                all_diffs.append(f"{header}\n{diff_content}")
+            combined_diffs = "\n\n".join(all_diffs)
+            
+            vuln_info = f"""
+[Root Cause]: {feature.semantics.root_cause}
+[Attack Path]: {feature.semantics.attack_path}
+[Fix Mechanism]: {feature.semantics.fix_mechanism}
+[Reference (Pre-Patch)]:
+{feature.slices[candidate.patch_func].s_pre}
+[Reference (Post-Patch)]:
+{feature.slices[candidate.patch_func].s_post}
+[Diffs]:
+{combined_diffs}
+"""
 
-        baseline_input = f"""
-        {vuln_info}
-        
-        [TARGET TO ANALYZE]:
-        {full_code_context}
-        """
-
-        # 5. LLM Call
-        llm = ChatOpenAI(
-            base_url=os.getenv("API_BASE"),
-            api_key=os.getenv("API_KEY"),
-            model=os.getenv("MODEL_NAME", "gpt-4o"), 
-            temperature=0
-        )
-        
-        print(f"    [Baseline] Verifying {candidate.target_func}...")
-        try:
-            baseline_extractor = llm.with_structured_output(BaselineJudgeOutput)
-            baseline_messages = [
-                SystemMessage(content=BASELINE_PROMPT),
-                HumanMessage(content=baseline_input)
-            ]
-            res: BaselineJudgeOutput = llm_invoke_with_retry(baseline_extractor, baseline_messages)
+            # 5. LLM and Three-Role Debate
+            llm = ChatOpenAI(
+                base_url=os.getenv("API_BASE"),
+                api_key=os.getenv("API_KEY"),
+                model=os.getenv("MODEL_NAME", "gpt-4o"),
+                temperature=0
+            )
+            
+            print(f"    [Baseline] Verifying {candidate.target_func} with three-role debate...")
+            
+            # Run simplified three-role debate (Red → Blue → Judge)
+            # - Red: Argues vulnerability EXISTS, finds origin/impact
+            # - Blue: Argues vulnerability does NOT exist, finds defenses
+            # - Judge: Makes final verdict based on both arguments
+            res = run_baseline_debate(
+                feature=feature,
+                candidate=candidate,
+                target_code=full_code_context,
+                tools=tools,
+                llm=llm
+            )
             
             # 6. Result Mapping
             finding = VulnerabilityFinding(
@@ -3512,11 +4127,13 @@ def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
             )
             findings.append(finding)
             if not res.is_vulnerable:
-                # False Positive / Safe -> Raise threshold to be stricter
                 current_threshold += THRESHOLD_PENALTY_STEP
                 print(f"    [Adaptive] Verdict SAFE -> Raising threshold to {current_threshold:.2f}")
+                
         except Exception as e:
-            print(f"    [Baseline] Error: {e}")
-            
+            print(f"    [Baseline] Error for {candidate.target_func}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
 
     return {"final_findings": findings}

@@ -1,18 +1,16 @@
-vul_id,repo,fixed_commit_sha,patch_file_path,patch_func_name,target_file_path,target_func_name,reason,judgement
+vul_id,repo,fixed_commit_sha,patch_file,patch_func,target_file,target_func,reason,judgement
 CVE-2018-8789,FreeRDP/FreeRDP,2ee663f39dc8dac3d9988e847db19b2d7e3ac8c6,winpr/libwinpr/sspi/NTLM/ntlm_message.c,ntlm_free_message_fields_buffer,winpr/libwinpr/sspi/NTLM/ntlm_message.c,ntlm_free_message_fields_buffer,函数名相同,FP
 CVE-2016-10063,ImageMagick/ImageMagick,94936efda8aa63563211eda07a5ade92abb32f7a,coders/tiff.c,ReadTIFFImage,coders/tiff.c,ReadTIFFImage,函数名相同,FP
-CVE-2016-7524,ImageMagick/ImageMagick,f8c318d462270b03e77f082e2a3a32867cacd3c6,coders/meta.c,parse8BIM,coders/meta.c,parse8BIMW,,
+CVE-2016-7524,ImageMagick/ImageMagick,f8c318d462270b03e77f082e2a3a32867cacd3c6,coders/meta.c,parse8BIM,coders/meta.c,parse8BIMW,,FP
 CVE-2016-9559,ImageMagick/ImageMagick,b61d35eaccc0a7ddeff8a1c3abfcd0a43ccf210b,MagickCore/property.c,SetImageProperty,MagickCore/property.c,SetImageProperty,函数名相同,FP
 CVE-2019-15139,ImageMagick/ImageMagick,c78993d138bf480ab4652b5a48379d4ff75ba5f7,coders/xwd.c,RegisterXWDImage,coders/xwd.c,RegisterXWDImage,函数名相同,FP
 CVE-2020-25663,ImageMagick/ImageMagick,a47e7a994766b92b10d4a87df8c1c890c8b170f3,MagickCore/channel.c,SetImageAlphaChannel,MagickCore/channel.c,SetImageAlphaChannel,,FP
-CVE-2020-27829,ImageMagick/ImageMagick,6ee5059cd3ac8d82714a1ab1321399b88539abf0,coders/tiff.c,ReadTIFFImage,coders/tiff.c,ReadTIFFImage,函数名相同,FP
 CVE-2021-20224,ImageMagick/ImageMagick6,553054c1cb1e4e05ec86237afef76a32cd7c464d,magick/quantum-export.c,ExportRGBQuantum,magick/quantum-export.c,ExportBGRQuantum,找错vul function,FP
 CVE-2021-3574,ImageMagick/ImageMagick6,cd7f9fb7751b0d59d5a74b12d971155caad5a792,coders/tiff.c,ReadTIFFImage,coders/tiff.c,ReadTIFFImage,函数名相同,FP
 OSV-2023-1051,LibreDWG/libredwg,5b4c2fce7262b2bec00fa679e472559ab268d0c7,src/decode.c,dwg_decode_unknown_rest,src/decode.c,dwg_decode_unknown_bits,,TP
 OSV-2023-758,LibreDWG/libredwg,3a37ad736c87393c9f88396f03f0ba69a54fcf9b,src/bits.c,bit_TV_to_utf8,src/bits.c,bit_TV_to_utf8,函数名相同,FP
 CVE-2020-11993,apache/httpd,971fc8f5b5d664ddeb5d22f8adef2137c7980fc7,modules/http2/h2_util.c,h2_req_add_header,modules/http2/h2_proxy_util.c,h2_headers_add_h1,,TP
 CVE-2021-26691,apache/httpd,7e09dd714fc62c08c5b0319ed7b9702594faf49b,modules/session/mod_session.c,session_identity_encode,modules/session/mod_session.c,session_identity_encode,,FP
-CVE-2021-33193,apache/httpd,ecebcc035ccd8d0e2984fe41420d9e944f456b3c,server/vhost.c,check_serverpath,server/vhost.c,check_serverpath,,FP
 CVE-2024-2004,curl/curl,17d302e56221f5040092db77d4f85086e8a20e0e,lib/setopt.c,protocol2num,lib/setopt.c,protocol2num,,FP
 CVE-2021-4209,gnutls/gnutls,3db352734472d851318944db13be73da61300568,lib/nettle/mac.c,wrap_nettle_hash_fast,lib/accelerated/x86/sha-x86-ssse3.c,wrap_x86_hash_fast,,TP
 CVE-2021-4209,gnutls/gnutls,3db352734472d851318944db13be73da61300568,lib/nettle/mac.c,wrap_nettle_hash_fast,lib/accelerated/aarch64/sha-aarch64.c,wrap_aarch64_hash_fast,,TP
@@ -38,8 +36,8 @@ CVE-2023-46927,gpac/gpac,a7b467b151d9b54badbc4dd71e7a366b7c391817,src/isomedia/i
 CVE-2023-46928,gpac/gpac,0753bf6d867343a80a044bf47a27d0b7accc8bf1,src/media_tools/isom_tools.c,gf_media_make_isma,src/media_tools/isom_tools.c,gf_media_make_isma,,FP
 CVE-2024-24267,gpac/gpac,d28d9ba45cf4f628a7b2c351849a895e6fcf2234,src/utils/os_file.c,gf_fileio_from_blob,src/utils/os_file.c,gf_fileio_from_blob,,FP
 OSV-2024-951,gpac/gpac,7ff782d744c6e8e996f5a702842437d4ff637f55,src/media_tools/av_parsers.c,hevc_ref_pic_lists_modification,src/media_tools/av_parsers.c,hevc_ref_pic_lists_modification,,FP
-CVE-2017-14166,libarchive/libarchive,fa7438a0ff4033e4741c807394a9af6207940d71,libarchive/archive_read_support_format_xar.c,atol8,libarchive/archive_write_add_filter_b64encode.c,atol8,,
-CVE-2017-14166,libarchive/libarchive,fa7438a0ff4033e4741c807394a9af6207940d71,libarchive/archive_read_support_format_xar.c,atol8,libarchive/archive_write_add_filter_uuencode.c,atol8,,
+CVE-2017-14166,libarchive/libarchive,fa7438a0ff4033e4741c807394a9af6207940d71,libarchive/archive_read_support_format_xar.c,atol8,libarchive/archive_write_add_filter_b64encode.c,atol8,,FP
+CVE-2017-14166,libarchive/libarchive,fa7438a0ff4033e4741c807394a9af6207940d71,libarchive/archive_read_support_format_xar.c,atol8,libarchive/archive_write_add_filter_uuencode.c,atol8,,FP
 OSV-2018-160,libarchive/libarchive,b52dd6c9e4ef7cf95c2a6ae5ab7ccac7f6d462a1,libarchive/archive_read_support_format_rar5.c,init_unpack,libarchive/archive_read_support_format_rar5.c,init_unpack,函数名相同,FP
 OSV-2020-372,libarchive/libarchive,39736c43bd7374beedb372aa300ecf36c9fc4733,libarchive/archive_read_support_format_rar5.c,read_ahead,libarchive/archive_read_support_format_rar5.c,read_ahead,,FP
 OSV-2020-543,libarchive/libarchive,9950d89616d31fe2d83f5134d357560c423794ee,libarchive/archive_read_support_format_rar5.c,rar5_cleanup,libarchive/archive_read_support_format_rar5.c,rar5_cleanup,,FP
@@ -52,7 +50,7 @@ CVE-2015-7613,torvalds/linux,b9a532277938798b53178d5a66af6e2915cb27cf,ipc/shm.c,
 CVE-2015-8963,torvalds/linux,12ca6ad2e3a896256f086497a7c7406a547ee373,kernel/events/core.c,swevent_hlist_get_cpu,kernel/events/core.c,swevent_hlist_get_cpu,函数名相同,FP
 CVE-2016-4805,torvalds/linux,1f461dcdd296eecedaffffc6bae2bfa90bd7eb89,drivers/net/ppp/ppp_generic.c,ppp_unregister_channel,drivers/net/ppp/ppp_generic.c,ppp_unregister_channel,函数名相同,FP
 CVE-2019-19531,torvalds/linux,fc05481b2fcabaaeccf63e32ac1baab54e5b6963,drivers/usb/misc/yurex.c,yurex_delete,drivers/usb/misc/yurex.c,yurex_delete,函数名相同,FP
-CVE-2020-10711,torvalds/linux,eead1c2ea2509fd754c6da893a94f0e69e83ebe4,net/ipv4/cipso_ipv4.c,cipso_v4_parsetag_rng,net/ipv4/cipso_ipv4.c,cipso_v4_parsetag_enum,,
+CVE-2020-10711,torvalds/linux,eead1c2ea2509fd754c6da893a94f0e69e83ebe4,net/ipv4/cipso_ipv4.c,cipso_v4_parsetag_rng,net/ipv4/cipso_ipv4.c,cipso_v4_parsetag_enum,,FP
 CVE-2020-11609,torvalds/linux,485b06aadb933190f4bc44e006076bc27a23f205,drivers/media/usb/gspca/stv06xx/stv06xx.c,stv06xx_isoc_nego,drivers/media/usb/gspca/stv06xx/stv06xx.c,stv06xx_isoc_nego,,FP
 CVE-2020-11668,torvalds/linux,a246b4d547708f33ff4d4b9a7a5dbac741dc89d8,drivers/media/usb/gspca/xirlink_cit.c,sd_isoc_nego,drivers/media/usb/gspca/xirlink_cit.c,sd_isoc_nego,,FP
 CVE-2020-27777,torvalds/linux,bd59380c5ba4147dcbaad3e582b55ccfd120b764,arch/powerpc/kernel/rtas.c,rtas_initialize,arch/powerpc/kernel/rtas.c,rtas_initialize,,FP
@@ -60,7 +58,7 @@ CVE-2020-28941,torvalds/linux,d4122754442799187d5d537a9c039a49a67e57f1,drivers/a
 CVE-2020-29660,torvalds/linux,c8bcd9c5be24fb9e6132e97da5a35e55a83e36b9,drivers/tty/tty_jobctrl.c,__proc_set_tty,drivers/tty/tty_jobctrl.c,__proc_set_tty,,FP
 CVE-2020-36778,torvalds/linux,a85c5c7a3aa8041777ff691400b4046e56149fd3,drivers/i2c/busses/i2c-xiic.c,xiic_i2c_remove,drivers/i2c/busses/i2c-xiic.c,xiic_i2c_remove,,FP
 CVE-2021-28691,torvalds/linux,107866a8eb0b664675a260f1ba0655010fac1e08,drivers/net/xen-netback/interface.c,xenvif_disconnect_queue,drivers/net/xen-netback/interface.c,xenvif_disconnect_queue,,FP
-CVE-2021-3493,torvalds/linux,7c03e2cda4a584cadc398e8f6641ca9988a39d52,fs/xattr.c,vfs_setxattr,fs/xattr.c,vfs_removexattr,,
+CVE-2021-3493,torvalds/linux,7c03e2cda4a584cadc398e8f6641ca9988a39d52,fs/xattr.c,vfs_setxattr,fs/xattr.c,vfs_removexattr,,FP
 CVE-2021-3609,torvalds/linux,d5f9023fa61ee8b94f37a93f08e94b136cf1e463,net/can/bcm.c,bcm_delete_rx_op,net/can/bcm.c,bcm_delete_rx_op,,FP
 CVE-2021-3732,torvalds/linux,427215d85e8d1476da1a86b8d67aceb485eb3631,fs/namespace.c,has_locked_children,fs/namespace.c,has_locked_children,,FP
 CVE-2021-3732,torvalds/linux,427215d85e8d1476da1a86b8d67aceb485eb3631,fs/namespace.c,has_locked_children,fs/namespace.c,__has_locked_children,函数包装,FP
@@ -70,7 +68,7 @@ CVE-2021-46943,torvalds/linux,ad91849996f9dd79741a961fd03585a683b08356,drivers/s
 CVE-2021-46956,torvalds/linux,c79c5e0178922a9e092ec8fed026750f39dcaef4,fs/fuse/virtio_fs.c,virtio_fs_probe,fs/fuse/virtio_fs.c,virtio_fs_probe,,FP
 CVE-2021-46994,torvalds/linux,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/mcp251x.c,mcp251x_can_remove,drivers/net/can/spi/hi311x.c,hi3110_can_remove,,TP
 CVE-2021-47012,torvalds/linux,3093ee182f01689b89e9f8797b321603e5de4f63,drivers/infiniband/sw/siw/siw_mem.c,siw_mr_add_mem,drivers/infiniband/sw/siw/siw_mem.c,siw_mr_add_mem,,FP
-CVE-2021-47024,torvalds/linux,8432b8114957235f42e070a16118a7f750de9d39,net/vmw_vsock/virtio_transport_common.c,virtio_transport_do_close,net/vmw_vsock/hyperv_transport.c,hvs_do_close_lock_held,,
+CVE-2021-47024,torvalds/linux,8432b8114957235f42e070a16118a7f750de9d39,net/vmw_vsock/virtio_transport_common.c,virtio_transport_do_close,net/vmw_vsock/hyperv_transport.c,hvs_do_close_lock_held,,FP
 CVE-2021-47055,torvalds/linux,1e97743fd180981bef5f01402342bb54bf1c6366,drivers/mtd/mtdchar.c,mtdchar_ioctl,drivers/mtd/mtdchar.c,mtdchar_ioctl,,FP
 CVE-2021-47056,torvalds/linux,8609f5cfdc872fc3a462efa6a3eca5cb1e2f6446,drivers/crypto/qat/qat_c3xxxvf/adf_drv.c,adf_probe,drivers/crypto/intel/qat/qat_c3xxxvf/adf_drv.c,adf_probe,没有关键漏洞特征,FP
 CVE-2021-47056,torvalds/linux,8609f5cfdc872fc3a462efa6a3eca5cb1e2f6446,drivers/crypto/qat/qat_c62xvf/adf_drv.c,adf_probe,drivers/crypto/intel/qat/qat_c3xxxvf/adf_drv.c,adf_probe,没有关键漏洞特征,FP
@@ -105,7 +103,7 @@ CVE-2023-0459,torvalds/linux,74e19ef0ff8061ef55957c3abd71614ef0f42f47,lib/userco
 CVE-2023-1195,torvalds/linux,153695d36ead0ccc4d0256953c751cabf673e621,fs/cifs/connect.c,cifs_put_tcp_session,fs/smb/client/connect.c,cifs_put_tcp_session,函数名相同,FP
 CVE-2023-2162,torvalds/linux,f484a794e4ee2a9ce61f52a78e810ac45f3fe3b3,drivers/scsi/iscsi_tcp.c,iscsi_sw_tcp_session_create,drivers/scsi/iscsi_tcp.c,iscsi_sw_tcp_session_create,,FP
 CVE-2023-2176,torvalds/linux,8d037973d48c026224ab285e6a06985ccac6f7bf,drivers/infiniband/core/cma.c,rdma_resolve_addr,drivers/infiniband/core/cma.c,rdma_resolve_addr,,FP
-CVE-2023-25775,torvalds/linux,bb6d73d9add68ad270888db327514384dfa44958,drivers/infiniband/hw/irdma/verbs.c,irdma_hw_alloc_stag,drivers/infiniband/hw/irdma/verbs.c,irdma_hw_alloc_mw,,
+CVE-2023-25775,torvalds/linux,bb6d73d9add68ad270888db327514384dfa44958,drivers/infiniband/hw/irdma/verbs.c,irdma_hw_alloc_stag,drivers/infiniband/hw/irdma/verbs.c,irdma_hw_alloc_mw,,FP
 CVE-2023-2985,torvalds/linux,07db5e247ab5858439b14dd7cc1fe538b9efcf32,fs/hfsplus/super.c,hfsplus_put_super,fs/hfsplus/super.c,hfsplus_put_super,,FP
 CVE-2023-3567,torvalds/linux,226fae124b2dac217ea5436060d623ff3385bc34,drivers/tty/vt/vc_screen.c,vcs_read,drivers/tty/vt/vc_screen.c,vcs_read,,FP
 CVE-2023-38430,torvalds/linux,1c1bcf2d3ea061613119b534f57507c377df20f9,fs/smb/server/connection.c,ksmbd_conn_handler_loop,fs/smb/server/connection.c,ksmbd_conn_handler_loop,,FP
@@ -117,7 +115,7 @@ CVE-2023-52629,torvalds/linux,246f80a0b17f8f582b2c0996db02998239057c65,arch/sh/d
 CVE-2023-5717,torvalds/linux,32671e3799ca2e4590773fd0e63aaa4229e50c06,kernel/events/core.c,perf_read_group,kernel/events/core.c,perf_read_group,,FP
 CVE-2024-26619,torvalds/linux,78996eee79ebdfe8b6f0e54cb6dcc792d5129291,arch/riscv/kernel/module.c,add_relocation_to_accumulate,arch/riscv/kernel/module.c,add_relocation_to_accumulate,,FP
 CVE-2024-26745,torvalds/linux,09a3c1e46142199adcee372a420b024b4fc61051,arch/powerpc/platforms/pseries/iommu.c,find_existing_ddw_windows_named,arch/powerpc/platforms/pseries/iommu.c,find_existing_ddw_windows_named,,FP
-CVE-2024-26765,torvalds/linux,1001db6c42e4012b55e5ee19405490f23e033b5a,arch/loongarch/kernel/smp.c,arch_cpu_idle_dead,arch/loongarch/kernel/smp.c,poll_play_dead,,TP
+CVE-2024-26765,torvalds/linux,1001db6c42e4012b55e5ee19405490f23e033b5a,arch/loongarch/kernel/smp.c,arch_cpu_idle_dead,arch/loongarch/kernel/smp.c,poll_play_dead,,FP
 CVE-2016-7163,uclouvain/openjpeg,c16bc057ba3f125051c9966cf1f5b68a05681de4,src/lib/openjp2/pi.c,opj_pi_create_decode,src/lib/openjp2/pi.c,opj_pi_initialise_encode,,TP
 CVE-2020-15389,uclouvain/openjpeg,e8e258ab049240c2dd1f1051b4e773b21e2d3dc0,src/bin/jp2/opj_decompress.c,main,src/bin/jp2/opj_decompress.c,main,,FP
 CVE-2021-22191,wireshark/wireshark,e99c9afce86edd47b4388dd6e10cf2e758fe31cf,epan/wslua/wslua_gui.c,wslua_browser_open_data_file,epan/wslua/wslua_gui.c,wslua_browser_open_data_file,,FP

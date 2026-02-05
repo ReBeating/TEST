@@ -33,8 +33,11 @@ from core.configs import REPO_DIR_PATH, OUTPUT_DIR_PATH
 
 def loader_node(state: WorkflowState):
     """
-    Smart Loader: Checks for existings checkpoints to skip phases.
-    (Simplified copy from run.py)
+    Smart Loader: Checks for existing checkpoints to skip phases.
+    
+    For ablation experiments:
+    - Phase 1 & 3: Always use standard version (can reuse across all ablations)
+    - Phase 2 & 4: May use baseline or full version depending on ablation type
     """
     vul_id = state["vul_id"]
     current_phase = state["start_phase"]
@@ -42,137 +45,149 @@ def loader_node(state: WorkflowState):
     mode = state["mode"]
     output_dir = state["output_dir"]
     force = state.get("force_execution", False)
-    updates = {} 
+    updates = {}
 
     ablation = state.get("ablation", "none")
     
-    # [Important] If ablation is active (e.g. phase4), check output_dir (checkpoints_ablation4) first.
-    # If not found there, we MUST look into the STANDARD checkpoints directory (checkpoints) to reuse prior work!
-    # Because output_dir is already set to checkpoints_ablation4 by setup_directories.
+    # Determine ablation configuration
+    ablation_map = {
+        'ablation1': {'p2': 'baseline', 'p4': 'baseline'},
+        'plain': {'p2': 'baseline', 'p4': 'baseline'},
+        'ablation2': {'p2': 'full', 'p4': 'baseline'},
+        'with_extraction': {'p2': 'full', 'p4': 'baseline'},
+        'ablation3': {'p2': 'baseline', 'p4': 'full'},
+        'with_validation': {'p2': 'baseline', 'p4': 'full'},
+        'ablation4': {'p2': 'full', 'p4': 'full'},
+        'full': {'p2': 'full', 'p4': 'full'},
+        'none': {'p2': 'full', 'p4': 'full'},
+        'phase2': {'p2': 'baseline', 'p4': 'full'},
+        'phase4': {'p2': 'full', 'p4': 'baseline'},
+    }
+    config = ablation_map.get(ablation, {'p2': 'full', 'p4': 'full'})
     
-    # Resolve the path to the STANDARD checkpoints directory
-    # output_dir is currently .../checkpoints_ablation4/repo/vul_id
-    # We need .../checkpoints/repo/vul_id
+    # Resolve the path to the STANDARD checkpoints directory for P1/P3 reuse
     base_checkpoints_dir = output_dir
-    if ablation != "none":
-        # Replace the last occurrence of 'checkpoints_ablationX' with 'checkpoints'
-        # Path manipulation: 
-        # output_dir = /path/to/checkpoints_ablation4/linux/CVE-123
+    if ablation not in ["none", "full", "ablation4"]:
+        # Need to find standard checkpoints for P1/P3 reuse
         parts = output_dir.split(os.sep)
-        try:
-            # Find the index of the ablation folder
-            ablation_folder_name = f"checkpoints_{ablation.replace('phase', 'ablation')}"
-            if ablation_folder_name in parts:
-                idx = parts.index(ablation_folder_name)
-                parts[idx] = "checkpoints"
+        for i, part in enumerate(parts):
+            if part.startswith("checkpoints_ablation"):
+                parts[i] = "checkpoints"
                 base_checkpoints_dir = os.sep.join(parts)
-        except:
-            print("    [Warning] Could not resolve standard checkpoints dir automatically.")
+                break
 
     print(f"[*] Pipeline Init: {vul_id} | Start: P{current_phase} | Ablation: {ablation}")
-    print(f"    Standard Checkpoints Source: {base_checkpoints_dir}")
+    if base_checkpoints_dir != output_dir:
+        print(f"    Standard Checkpoints: {base_checkpoints_dir}")
 
     while current_phase <= end_phase:
         skip_current = False
         
-        # Phase 1
+        # Phase 1 (Always Full - can reuse from standard checkpoints)
         if current_phase == 1:
-            p1_suffix = f"_{ablation}" if ablation == "phase1" else ""
             p1_filename = f"{vul_id}_phase1.pkl"
             
-            # Check output_dir first (if we already ran this ablation)
+            # Try current dir first
             if os.path.exists(os.path.join(output_dir, p1_filename)) and not force:
-                print(f"    [Skip] Phase 1 found in ablation dir.")
+                print(f"    [Skip] Phase 1 found in current dir.")
                 data = CheckpointManager.load_pkl(p1_filename, output_dir)
                 updates["grouped_patches"] = data.get("grouped_patches", [])
                 skip_current = True
-            # If not, and this phase is NOT being ablated (e.g. we are ablating P4, so P1 is standard), check standard dir
-            elif ablation != "phase1" and not force:
-                 standard_p1 = f"{vul_id}_phase1.pkl"
-                 if os.path.exists(os.path.join(base_checkpoints_dir, standard_p1)):
-                    print(f"    [Skip] Phase 1 found in standard dir (Reusing).")
-                    data = CheckpointManager.load_pkl(standard_p1, base_checkpoints_dir) # Load from standard
-                    updates["grouped_patches"] = data.get("grouped_patches", [])
-                    skip_current = True
+            # Try standard dir for reuse
+            elif not force and os.path.exists(os.path.join(base_checkpoints_dir, p1_filename)):
+                print(f"    [Skip] Phase 1 found in standard dir (Reusing).")
+                data = CheckpointManager.load_pkl(p1_filename, base_checkpoints_dir)
+                updates["grouped_patches"] = data.get("grouped_patches", [])
+                skip_current = True
         
-        # Phase 2
+        # Phase 2 (May be baseline or full depending on ablation)
         elif current_phase == 2:
-            p2_suffix = f"_{ablation}" if ablation == "phase2" else ""
             p2_filename = f"{vul_id}_phase2.pkl"
             
+            # Try current dir first
             if os.path.exists(os.path.join(output_dir, p2_filename)) and not force:
-                print(f"    [Skip] Phase 2 found in ablation dir.")
+                print(f"    [Skip] Phase 2 found in current dir.")
                 data = CheckpointManager.load_pkl(p2_filename, output_dir)
                 updates["analyzed_features"] = data.get("analyzed_features", [])
                 skip_current = True
-            elif ablation != "phase2" and not force:
-                 standard_p2 = f"{vul_id}_phase2.pkl"
-                 if os.path.exists(os.path.join(base_checkpoints_dir, standard_p2)):
-                    print(f"    [Skip] Phase 2 found in standard dir (Reusing).")
-                    data = CheckpointManager.load_pkl(standard_p2, base_checkpoints_dir)
+            # If using full P2, can try to reuse from standard checkpoints
+            elif config['p2'] == 'full' and not force:
+                if os.path.exists(os.path.join(base_checkpoints_dir, p2_filename)):
+                    print(f"    [Skip] Phase 2 (full) found in standard dir (Reusing).")
+                    data = CheckpointManager.load_pkl(p2_filename, base_checkpoints_dir)
                     updates["analyzed_features"] = data.get("analyzed_features", [])
                     skip_current = True
             
-            # If we decide to RUN Phase 2 (not skipping), we need P1 data loaded
-            if not skip_current:
-                # Load P1 from ablation dir (if ablated) OR standard dir 
-                target_p1_dir = output_dir if ablation == "phase1" else base_checkpoints_dir
-                target_p1_file = f"{vul_id}_{ablation}_phase1.pkl" if ablation == "phase1" else f"{vul_id}_phase1.pkl"
-                
-                if "grouped_patches" not in updates:
-                     if os.path.exists(os.path.join(target_p1_dir, target_p1_file)):
-                        p1 = CheckpointManager.load_pkl(target_p1_file, target_p1_dir)
-                        updates["grouped_patches"] = p1.get("grouped_patches")
+            # If we decide to RUN Phase 2, ensure P1 data is loaded
+            if not skip_current and "grouped_patches" not in updates:
+                p1_file = f"{vul_id}_phase1.pkl"
+                # Try current dir first, then standard
+                for check_dir in [output_dir, base_checkpoints_dir]:
+                    if os.path.exists(os.path.join(check_dir, p1_file)):
+                        p1 = CheckpointManager.load_pkl(p1_file, check_dir)
+                        updates["grouped_patches"] = p1.get("grouped_patches", [])
+                        break
 
-        # Phase 3
+        # Phase 3 (Always Full - can reuse from standard checkpoints)
         elif current_phase == 3:
-            p3_filename = f"{vul_id}_{mode}_phase3.pkl" 
+            p3_filename = f"{vul_id}_{mode}_phase3.pkl"
             
+            # Try current dir first
             if os.path.exists(os.path.join(output_dir, p3_filename)) and not force:
-                print(f"    [Skip] Phase 3 found in ablation dir.") # Unlikely unless copied
+                print(f"    [Skip] Phase 3 found in current dir.")
                 data = CheckpointManager.load_pkl(p3_filename, output_dir)
                 updates["search_candidates"] = data.get("search_candidates", [])
                 skip_current = True
-            # Reuse Standard Phase 3
-            elif not force:
-                 if os.path.exists(os.path.join(base_checkpoints_dir, p3_filename)):
-                    print(f"    [Skip] Phase 3 found in standard dir (Reusing).")
-                    data = CheckpointManager.load_pkl(p3_filename, base_checkpoints_dir)
-                    updates["search_candidates"] = data.get("search_candidates", [])
-                    skip_current = True
+            # Try standard dir for reuse
+            elif not force and os.path.exists(os.path.join(base_checkpoints_dir, p3_filename)):
+                print(f"    [Skip] Phase 3 found in standard dir (Reusing).")
+                data = CheckpointManager.load_pkl(p3_filename, base_checkpoints_dir)
+                updates["search_candidates"] = data.get("search_candidates", [])
+                skip_current = True
 
-            if not skip_current:
-                 # Ensure P2 exists
-                 target_p2_dir = output_dir if ablation == "phase2" else base_checkpoints_dir
-                 target_p2_file = f"{vul_id}_{ablation}_phase2.pkl" if ablation == "phase2" else f"{vul_id}_phase2.pkl"
-                 if "analyzed_features" not in updates:
-                    p2 = CheckpointManager.load_pkl(target_p2_file, target_p2_dir)
-                    updates["analyzed_features"] = p2.get("analyzed_features", [])
+            # If we decide to RUN Phase 3, ensure P2 data is loaded
+            if not skip_current and "analyzed_features" not in updates:
+                p2_file = f"{vul_id}_phase2.pkl"
+                # Try current dir first, then standard
+                for check_dir in [output_dir, base_checkpoints_dir]:
+                    if os.path.exists(os.path.join(check_dir, p2_file)):
+                        p2 = CheckpointManager.load_pkl(p2_file, check_dir)
+                        updates["analyzed_features"] = p2.get("analyzed_features", [])
+                        break
 
-        # Phase 4
+        # Phase 4 (May be baseline or full depending on ablation)
         elif current_phase == 4:
-            p4_suffix = f"_{ablation}" if ablation != "none" else ""
             p4_filename = f"{vul_id}_{mode}_phase4.pkl"
             
+            # Try current dir first
             if os.path.exists(os.path.join(output_dir, p4_filename)) and not force:
-                print(f"    [Skip] Phase 4 result found ({p4_filename}).")
+                print(f"    [Skip] Phase 4 found in current dir.")
                 skip_current = True
-            else:
-                # Load dependencies for RUNNING Phase 4
-                # P2
-                target_p2_dir = output_dir if ablation == "phase2" else base_checkpoints_dir
-                target_p2_file = f"{vul_id}_{ablation}_phase2.pkl" if ablation == "phase2" else f"{vul_id}_phase2.pkl"
+            # If using full P4, can try to reuse from standard checkpoints
+            elif config['p4'] == 'full' and not force:
+                if os.path.exists(os.path.join(base_checkpoints_dir, p4_filename)):
+                    print(f"    [Skip] Phase 4 (full) found in standard dir (Reusing).")
+                    skip_current = True
+            
+            # If we decide to RUN Phase 4, ensure P2 and P3 data are loaded
+            if not skip_current:
+                # Load P2
                 if "analyzed_features" not in updates:
-                    p2 = CheckpointManager.load_pkl(target_p2_file, target_p2_dir)
-                    updates["analyzed_features"] = p2.get("analyzed_features", [])
+                    p2_file = f"{vul_id}_phase2.pkl"
+                    for check_dir in [output_dir, base_checkpoints_dir]:
+                        if os.path.exists(os.path.join(check_dir, p2_file)):
+                            p2 = CheckpointManager.load_pkl(p2_file, check_dir)
+                            updates["analyzed_features"] = p2.get("analyzed_features", [])
+                            break
                 
-                # P3
-                # Assuming P3 never ablated (standard)
-                target_p3_dir = base_checkpoints_dir
-                target_p3_file = f"{vul_id}_{mode}_phase3.pkl"
+                # Load P3
                 if "search_candidates" not in updates:
-                    p3 = CheckpointManager.load_pkl(target_p3_file, target_p3_dir)
-                    updates["search_candidates"] = p3.get("search_candidates", [])
+                    p3_file = f"{vul_id}_{mode}_phase3.pkl"
+                    for check_dir in [output_dir, base_checkpoints_dir]:
+                        if os.path.exists(os.path.join(check_dir, p3_file)):
+                            p3 = CheckpointManager.load_pkl(p3_file, check_dir)
+                            updates["search_candidates"] = p3.get("search_candidates", [])
+                            break
 
         if skip_current:
             current_phase += 1
@@ -230,8 +245,7 @@ def validation_subgraph_finalizer(state: VerificationState):
     return {"final_findings": state.get("final_findings", [])}
 
 def phase1_checkpoint_node(state: WorkflowState):
-    ablation = state.get("ablation", "none")
-    p1_suffix = f"_{ablation}" if ablation == "phase1" else ""
+    """Phase 1 checkpoint - always uses full version"""
     p1_filename = f"{state['vul_id']}_phase1.pkl"
     
     count = len(state.get('grouped_patches', []))
@@ -240,30 +254,26 @@ def phase1_checkpoint_node(state: WorkflowState):
     return {}
 
 def phase2_checkpoint_node(state: WorkflowState):
-    ablation = state.get("ablation", "none")
-    p2_suffix = f"_{ablation}" if ablation == "phase2" else ""
+    """Phase 2 checkpoint - may be baseline or full depending on ablation"""
     p2_filename = f"{state['vul_id']}_phase2.pkl"
     p2_json = f"{state['vul_id']}_features.json"
     
     count = len(state.get('analyzed_features', []))
     print(f"[*] Phase 2 Completed. Total features: {count}")
     CheckpointManager.save_pkl(state, p2_filename, state["output_dir"])
-    if ablation == "phase2":
-        CheckpointManager.save_json(state.get('analyzed_features', []), p2_json, state["result_dir"])
+    # Always save JSON for easier inspection
+    CheckpointManager.save_json(state.get('analyzed_features', []), p2_json, state["result_dir"])
     return {}
 
 def phase3_checkpoint_node(state: WorkflowState):
-    # Usually no ablation for P3, but if P2 was ablated, P3 candidates might differ?
-    # For now, keep standard naming unless we explicitly add P3 ablation later.
+    """Phase 3 checkpoint - always uses full version"""
     count = len(state.get('search_candidates', []))
     print(f"[*] Phase 3 Completed. Total candidates: {count}")
     CheckpointManager.save_pkl(state, f"{state['vul_id']}_{state['mode']}_phase3.pkl", state["output_dir"])
     return {}
 
 def phase4_checkpoint_node(state: WorkflowState):
-    ablation = state.get("ablation", "none")
-    p4_suffix = f"_{ablation}" if ablation != "none" else ""
-    
+    """Phase 4 checkpoint - may be baseline or full depending on ablation"""
     p4_filename = f"{state['vul_id']}_{state['mode']}_phase4.pkl"
     p4_json = f"{state['vul_id']}_{state['mode']}_findings.json"
     
@@ -309,24 +319,56 @@ def build_validation_subgraph(use_baseline_phase4: bool):
 def build_ablation_pipeline(ablation_type: str):
     """
     Constructs the pipeline based on the selected ablation type.
-    ablation_type: 'phase1', 'phase2', 'phase4', or 'none' (standard)
+    
+    Ablation Design (2x2 Combinations):
+    - Phase 1 & 3: Always use full version (no ablation)
+    - Phase 2: baseline or full
+    - Phase 4: baseline or full
+    
+    ablation_type options:
+    - 'ablation1' or 'plain': P2 baseline + P4 baseline (最简版本)
+    - 'ablation2' or 'with_extraction': P2 full + P4 baseline (+提取)
+    - 'ablation3' or 'with_validation': P2 baseline + P4 full (+验证)
+    - 'ablation4' or 'full' or 'none': P2 full + P4 full (完整版)
+    
+    Legacy options (for backward compatibility):
+    - 'phase2': Same as ablation3 (P2 baseline)
+    - 'phase4': Same as ablation2 (P4 baseline)
     """
     print(f"[*] Building Pipeline with Ablation: {ablation_type}")
+    
+    # Map ablation types to P2/P4 configuration
+    ablation_map = {
+        'ablation1': {'p2': 'baseline', 'p4': 'baseline'},  # plain
+        'plain': {'p2': 'baseline', 'p4': 'baseline'},
+        'ablation2': {'p2': 'full', 'p4': 'baseline'},      # +提取
+        'with_extraction': {'p2': 'full', 'p4': 'baseline'},
+        'ablation3': {'p2': 'baseline', 'p4': 'full'},      # +验证
+        'with_validation': {'p2': 'baseline', 'p4': 'full'},
+        'ablation4': {'p2': 'full', 'p4': 'full'},          # 完整
+        'full': {'p2': 'full', 'p4': 'full'},
+        'none': {'p2': 'full', 'p4': 'full'},
+        # Legacy compatibility
+        'phase2': {'p2': 'baseline', 'p4': 'full'},  # Only P2 baseline
+        'phase4': {'p2': 'full', 'p4': 'baseline'},  # Only P4 baseline
+    }
+    
+    config = ablation_map.get(ablation_type, {'p2': 'full', 'p4': 'full'})
+    use_baseline_p2 = (config['p2'] == 'baseline')
+    use_baseline_p4 = (config['p4'] == 'baseline')
+    
+    print(f"    [Config] Phase 2: {'BASELINE' if use_baseline_p2 else 'FULL'}, Phase 4: {'BASELINE' if use_baseline_p4 else 'FULL'}")
     
     workflow = StateGraph(WorkflowState)
     workflow.add_node("loader", loader_node)
     
-    # --- P1 Construction ---
-    if ablation_type == 'phase1':
-        # Baseline phase1: skip preprocessing, only add grouping node
-        workflow.add_node("phase1_preprocess", baseline_phase1_node)
-    else:
-        workflow.add_node("phase1_preprocess", preprocessing_node)
-        workflow.add_node("phase1_grouping", grouping_node)
+    # --- P1 Construction (Always Full) ---
+    workflow.add_node("phase1_preprocess", preprocessing_node)
+    workflow.add_node("phase1_grouping", grouping_node)
     workflow.add_node("phase1_checkpoint", phase1_checkpoint_node)
     
-    # --- P2 Construction ---
-    if ablation_type == 'phase2':
+    # --- P2 Construction (Baseline or Full) ---
+    if use_baseline_p2:
         # Baseline Phase 2: Use Agent-based total extraction (integrated slicing/semantics)
         workflow.add_node("phase2_extraction", baseline_extraction_node)
     else:
@@ -335,13 +377,11 @@ def build_ablation_pipeline(ablation_type: str):
         
     workflow.add_node("phase2_checkpoint", phase2_checkpoint_node)
     
-    # --- P3 Construction ---
-    # (Assuming no baseline for P3 requested yet, using standard matching)
+    # --- P3 Construction (Always Full) ---
     workflow.add_node("phase3_search", matching_node)
     workflow.add_node("phase3_checkpoint", phase3_checkpoint_node)
     
-    # --- P4 Construction ---
-    use_baseline_p4 = (ablation_type == 'phase4')
+    # --- P4 Construction (Baseline or Full) ---
     workflow.add_node("phase4_validation", build_validation_subgraph(use_baseline_p4))
     workflow.add_node("phase4_checkpoint", phase4_checkpoint_node)
 
@@ -372,12 +412,9 @@ def build_ablation_pipeline(ablation_type: str):
         ["phase1_preprocess", "phase2_extraction", "phase3_search", "phase4_validation", "phase4_checkpoint", END]
     )
     
-    if ablation_type == 'phase1':
-        # Directly connect grouping to checkpoint
-        workflow.add_edge("phase1_preprocess", "phase1_checkpoint")
-    else:
-        workflow.add_edge("phase1_preprocess", "phase1_grouping")
-        workflow.add_edge("phase1_grouping", "phase1_checkpoint")
+    # P1 always uses full version (preprocessing + grouping)
+    workflow.add_edge("phase1_preprocess", "phase1_grouping")
+    workflow.add_edge("phase1_grouping", "phase1_checkpoint")
     def route_p1(state):
         if state["end_phase"] < 2: return END
         return extraction_dispatcher(state) 
@@ -411,16 +448,37 @@ def build_ablation_pipeline(ablation_type: str):
     return workflow.compile()
 
 def setup_directories(base_output_dir: str, repo_name: str, vul_id: str, ablation: str = "none"):
+    """
+    Create directory structure for ablation experiments.
+    
+    Directory naming convention:
+    - none/full/ablation4: checkpoints/, results/ (standard full version)
+    - ablation1/plain: checkpoints_ablation1/, results_ablation1/
+    - ablation2/with_extraction: checkpoints_ablation2/, results_ablation2/
+    - ablation3/with_validation: checkpoints_ablation3/, results_ablation3/
+    """
     # Determine base folder names
     ckpt_folder_name = "checkpoints"
     res_folder_name = "results"
     
-    if ablation != "none":
-        # e.g., checkpoints_phase4 -> user asked for checkpoints_ablation4? 
-        # User request: "checkpoints_ablation4", "results_ablation4"
-        # However, ablation arg is 'phase4' (from choices).
-        # Let's map 'phase4' -> 'ablation4' to match your requested naming convention.
-        suffix = ablation.replace("phase", "ablation") 
+    # Map ablation type to directory suffix
+    ablation_dir_map = {
+        'ablation1': 'ablation1',
+        'plain': 'ablation1',
+        'ablation2': 'ablation2',
+        'with_extraction': 'ablation2',
+        'ablation3': 'ablation3',
+        'with_validation': 'ablation3',
+        'ablation4': '',  # Use standard directories
+        'full': '',
+        'none': '',
+        # Legacy compatibility
+        'phase2': 'ablation3',  # P2 baseline
+        'phase4': 'ablation2',  # P4 baseline
+    }
+    
+    suffix = ablation_dir_map.get(ablation, '')
+    if suffix:
         ckpt_folder_name = f"checkpoints_{suffix}"
         res_folder_name = f"results_{suffix}"
 
@@ -446,10 +504,18 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--output_dir', type=str, default=OUTPUT_DIR_PATH)
     parser.add_argument('-f', '--force', action='store_true', help="Force execution even if checkpoint exists")
     
-    # New Argument for Ablation
-    parser.add_argument('--ablation', type=str, default='none', 
-                        choices=['none', 'phase1', 'phase2', 'phase4'],
-                        help="Select ablation experiment type")
+    # Ablation Experiment Argument
+    # 2x2 Combinations: P2 (baseline/full) × P4 (baseline/full)
+    parser.add_argument('--ablation', type=str, default='none',
+                        choices=['none', 'full',
+                                 'ablation1', 'plain',           # P2=baseline, P4=baseline
+                                 'ablation2', 'with_extraction', # P2=full, P4=baseline
+                                 'ablation3', 'with_validation', # P2=baseline, P4=full
+                                 'ablation4',                     # P2=full, P4=full (same as none/full)
+                                 'phase2', 'phase4'],            # Legacy options
+                        help="Select ablation experiment type: "
+                             "ablation1 (plain), ablation2 (+extraction), "
+                             "ablation3 (+validation), ablation4/none (full)")
     
     args = parser.parse_args()
     load_dotenv()

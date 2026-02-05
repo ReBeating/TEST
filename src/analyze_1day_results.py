@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from typing import Dict, Set, Tuple
+from typing import Dict, Set, Tuple, List
 from core.state import WorkflowState
 from core.models import VulnerabilityFinding, PatchFeatures, SearchResultItem
 from core.utils import read_json
@@ -219,6 +219,10 @@ def benchmark_result_analyzer(benchmark_dir: str, output_report_dir: str = "outp
     pkl_paths: Dict[str, str] = {}
     # 跟踪哪些 vul_id 有 findings 文件（成功完成分析）
     vul_ids_with_findings: Set[str] = set()
+    # vul_id 到 repo 的映射
+    vul_id_to_repo: Dict[str, str] = {}
+    # 收集 TP 和 FP 的记录用于生成 verdict CSV
+    verdict_records: List[Dict[str, str]] = []
 
     # 1. 收集实际运行结果
     for root, dirs, files in os.walk(benchmark_dir):
@@ -267,6 +271,8 @@ def benchmark_result_analyzer(benchmark_dir: str, output_report_dir: str = "outp
                 
                 # 记录该 vul_id 有 findings 文件（成功完成分析）
                 vul_ids_with_findings.add(vul_id)
+                # 记录 vul_id 到 repo 的映射
+                vul_id_to_repo[vul_id] = repo
                 
                 # 构建 pkl 路径
                 pkl_path = os.path.join('outputs', 'checkpoints', repo_name, vul_id, f"{vul_id}_benchmark_phase4.pkl")
@@ -418,6 +424,14 @@ def benchmark_result_analyzer(benchmark_dir: str, output_report_dir: str = "outp
                 if actual_vuln:
                     tp += 1
                     if by_type: get_type_stat(vtype)['tp'] += 1
+                    # 记录 TP 到 verdict_records
+                    repo = vul_id_to_repo.get(vul_id, "Unknown")
+                    verdict_records.append({
+                        'repo': repo,
+                        'cve': vul_id,
+                        'type': tag,
+                        'version': ver
+                    })
                 else:
                     fn += 1
                     if by_type: get_type_stat(vtype)['fn'] += 1
@@ -435,6 +449,14 @@ def benchmark_result_analyzer(benchmark_dir: str, output_report_dir: str = "outp
                     fp += 1
                     if by_type: get_type_stat(vtype)['fp'] += 1
                     error_type = "FP"
+                    # 记录 FP 到 verdict_records
+                    repo = vul_id_to_repo.get(vul_id, "Unknown")
+                    verdict_records.append({
+                        'repo': repo,
+                        'cve': vul_id,
+                        'type': tag,
+                        'version': ver
+                    })
                     if tag == 'pre':
                         fp_pre += 1
                         if by_type: get_type_stat(vtype)['fp_pre'] += 1
@@ -627,13 +649,31 @@ def benchmark_result_analyzer(benchmark_dir: str, output_report_dir: str = "outp
         total_fp_fix_pct = f"{total_fp_fix/total_fix*100:.1f}%" if total_fix > 0 else "-"
         
         print(f"{'TOTAL':<25} | {total_vul:>4} | {total_tp:>4} {total_tp_pct:>7} | {total_fn:>4} {total_fn_pct:>7} | {total_fn_s:>4} {total_fn_v:>4} | {total_pre:>4} | {total_fp_pre:>4} {total_fp_pre_pct:>7} | {total_fix:>4} | {total_fp_fix:>4} {total_fp_fix_pct:>7} | {precision:>6.3f} {recall:>6.3f} {f1_score:>6.3f}")
+    
+    # 生成 verdict CSV 文件
+    verdict_csv_path = "results/1day/verdict_1day_res.csv"
+    ensure_dir(os.path.dirname(verdict_csv_path))
+    
+    if verdict_records:
+        print(f"\n[*] Saving verdict results to {verdict_csv_path}...")
+        try:
+            import csv
+            with open(verdict_csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=['repo', 'cve', 'type', 'version'])
+                writer.writeheader()
+                writer.writerows(verdict_records)
+            print(f"[+] Saved {len(verdict_records)} TP/FP records to {verdict_csv_path}")
+        except Exception as e:
+            print(f"[!] Error saving verdict CSV: {e}")
+    else:
+        print(f"\n[!] No TP/FP records to save to verdict CSV")
 
 if __name__ == "__main__":
     import argparse
     import csv
     
     parser = argparse.ArgumentParser(description='Analyze 1-day benchmark results.')
-    parser.add_argument('results_dir', nargs='?', default="outputs/results", help='Directory containing benchmark results')
+    parser.add_argument('--results_dir', nargs='?', default="outputs/results", help='Directory containing benchmark results')
     parser.add_argument('--csv', help='Path to CSV file containing allowed CVEs', default='inputs/1day_vul_list.csv')
     parser.add_argument('--by-type', action='store_true', help='Output statistics grouped by vulnerability type')
     

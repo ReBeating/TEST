@@ -1,0 +1,31 @@
+Tool,four_type,TP,Total,Precision
+FIRE,Access-Validity Violations,4,47,8.51%
+FIRE,Control-Logic Violations,1,12,8.33%
+FIRE,Numeric-Domain Violations,1,2,50.00%
+FIRE,Resource-Lifecycle Violations,0,28,0.00%
+FIRE,ALL,6,89,6.74%
+Movery,Access-Validity Violations,1,37,2.70%
+Movery,Control-Logic Violations,0,34,0.00%
+Movery,Numeric-Domain Violations,0,4,0.00%
+Movery,Resource-Lifecycle Violations,3,60,5.00%
+Movery,ALL,4,135,2.96%
+V1SCAN,Access-Validity Violations,1,96,1.04%
+V1SCAN,Control-Logic Violations,0,39,0.00%
+V1SCAN,Numeric-Domain Violations,0,9,0.00%
+V1SCAN,Resource-Lifecycle Violations,1,64,1.56%
+V1SCAN,ALL,2,208,0.96%
+VERDICT,Access-Validity Violations,90,130,69.23%
+VERDICT,Control-Logic Violations,8,14,57.14%
+VERDICT,Numeric-Domain Violations,22,27,81.48%
+VERDICT,Resource-Lifecycle Violations,38,57,66.67%
+VERDICT,ALL,158,228,69.30%
+VUDDY,Access-Validity Violations,0,43,0.00%
+VUDDY,Control-Logic Violations,0,14,0.00%
+VUDDY,Numeric-Domain Violations,0,5,0.00%
+VUDDY,Resource-Lifecycle Violations,0,28,0.00%
+VUDDY,ALL,0,90,0.00%
+VulTURE,Access-Validity Violations,0,108,0.00%
+VulTURE,Control-Logic Violations,0,72,0.00%
+VulTURE,Numeric-Domain Violations,0,15,0.00%
+VulTURE,Resource-Lifecycle Violations,0,104,0.00%
+VulTURE,ALL,0,299,0.00%

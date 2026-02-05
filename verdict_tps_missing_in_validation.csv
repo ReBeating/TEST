@@ -1,0 +1,19 @@
+vul_id,repo,fixed_commit_sha,patch_file,patch_func,target_file,target_func,CWE,vuln_type
+CVE-2020-22043,FFmpeg/FFmpeg,b288a7eb3d963a175e177b6219c8271076ee8590,libavformat/mpegenc.c,mpeg_mux_end,libavformat/oggdec.c,ogg_restore,CWE-401,Memory Leak
+CVE-2021-31261,gpac/gpac,cd3738dea038dbd12e603ad48cd7373ae0440f65,src/media_tools/isom_hinter.c,gf_hinter_track_new,applications/testapps/hevcbench/main.c,main,CWE-119,Null Pointer Dereference
+CVE-2023-1654,gpac/gpac,2c055153d401b8c49422971e3a0159869652d3da,src/filter_core/filter_pid.c,gf_filter_pid_inst_del,src/filter_core/filter_pid.c,filter_pck_check_prop_change,CWE-400,Memory Leak
+CVE-2023-1654,gpac/gpac,2c055153d401b8c49422971e3a0159869652d3da,src/filter_core/filter_pid.c,gf_filter_pid_inst_del,src/filter_core/filter_pid.c,gf_filter_pid_configure,CWE-400,Memory Leak
+CVE-2023-1654,gpac/gpac,2c055153d401b8c49422971e3a0159869652d3da,src/filter_core/filter_pid.c,gf_filter_pid_inst_del,src/filter_core/filter.c,gf_filter_check_output_reconfig,CWE-400,Memory Leak
+CVE-2017-6197,radareorg/radare2,1ea23bd6040441a21fbcfba69dce9a01af03f989,libr/include/r_endian.h,r_read_at_le32,libr/include/r_endian.h,r_read_at_be64,CWE-476,Null Pointer Dereference
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/can/slcan.c,slcan_close,net/nfc/nci/uart.c,nci_uart_tty_close,CWE-362,Use After Free
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/can/slcan.c,slcan_write_wakeup,drivers/net/can/slcan/slcan-core.c,slcan_close,CWE-362,Use After Free
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/can/slcan.c,slcan_close,drivers/bluetooth/hci_ldisc.c,hci_uart_tty_close,CWE-362,Use After Free
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/can/slcan.c,slcan_close,drivers/tty/n_hdlc.c,n_hdlc_tty_close,CWE-362,Use After Free
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/slip/slip.c,slip_write_wakeup,drivers/net/mctp/mctp-serial.c,mctp_serial_tty_write_wakeup,CWE-362,Use After Free
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/slip/slip.c,slip_write_wakeup,drivers/net/can/can327.c,can327_ldisc_tx_wakeup,CWE-362,Use After Free
+CVE-2020-14416,torvalds/linux,0ace17d56824165c7f4c68785d6b58971db954dd,drivers/net/slip/slip.c,slip_close,net/phonet/pep-gprs.c,gprs_detach,CWE-362,Use After Free
+CVE-2021-47112,torvalds/linux,8b79feffeca28c5459458fe78676b081e87c93a4,arch/x86/kernel/kvm.c,kvm_resume,arch/x86/kernel/cpu/vmware.c,vmware_smp_prepare_boot_cpu,CWE-416,Use After Free
+CVE-2022-20565,torvalds/linux,bce1305c0ece3dc549663605e567655dd701752c,drivers/hid/hid-core.c,hid_output_report,drivers/hid/i2c-hid/i2c-hid-core.c,i2c_hid_get_report_length,CWE-787,Buffer Overflow
+CVE-2022-20565,torvalds/linux,bce1305c0ece3dc549663605e567655dd701752c,drivers/hid/hid-core.c,hid_output_report,drivers/hid/hid-goodix-spi.c,goodix_hid_get_report_length,CWE-787,Buffer Overflow
+CVE-2022-3532,torvalds/linux,6e8280b958c5d7edc514cf347a800b23b7732b2b,tools/testing/selftests/bpf/prog_tests/tracing_struct.c,test_fentry,tools/testing/selftests/bpf/prog_tests/wq.c,serial_test_wq,CWE-401,Memory Leak
+CVE-2017-14040,uclouvain/openjpeg,2cd30c2b06ce332dede81cccad8b334cde997281,src/bin/jp2/convert.c,tgatoimage,src/bin/jp2/converttif.c,tiftoimage,CWE-787,Buffer Overflow

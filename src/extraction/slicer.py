@@ -2631,32 +2631,101 @@ class AgentExtractionOutput(BaseModel):
     root_cause: str
     attack_path: str
     fix_mechanism: str
+    vuln_type: str = Field(description="Specific vulnerability type from the predefined list")
     cwe_info: Optional[str] = Field(description="CWE ID and name if applicable (e.g. 'CWE-416: Use After Free').")
 
 def baseline_extraction_node(state: PatchExtractionState) -> Dict:
     """
-    Baseline Method: Agent-driven end-to-end extraction
+    Baseline Method: Agent-driven end-to-end extraction with tools
     
     For comparison experiments, skip phased analysis, let LLM complete in one go:
     - Slice extraction (identify vulnerability-related code)
     - Semantic analysis (extract root cause, attack path, fix mechanism)
+    - Tool support: Agent can access code navigation tools
     
     Returns:
         Dict containing analyzed_features (encapsulated as PatchFeatures)
     """
     patches = state['patches']
     commit_msg = state['commit_message']
+    vul_id = state.get('vul_id', '')
+    repo_path = state.get('repo_path', '')
 
     print(f"!!! [BASELINE] Running Agent-based Phase 2 Extraction for group: {state['group_id']} !!!")
 
-    # Prepare Context
+    # Load metadata for CWE information
+    from extraction.taxonomy import load_metadata
+    metadata = load_metadata(vul_id) if vul_id else None
+    
+    cwe_id_meta = None
+    cwe_name_meta = None
+    description_meta = ""
+    
+    if metadata:
+        cwe_id_meta = metadata.get('cwe_ids', [None])[0] if metadata.get('cwe_ids') else None
+        cwe_name_meta = metadata.get('cwe_names', [None])[0] if metadata.get('cwe_names') else None
+        description_meta = metadata.get('description', '')
+        print(f"    [Baseline] Loaded metadata for {vul_id} (CWE: {cwe_id_meta})")
+
+    # Initialize CodeNavigator for tool support
+    from core.navigator import CodeNavigator
+    navigator = CodeNavigator(repo_path)
+    
+    # Create tools for the agent
+    def create_baseline_tools(current_file: str):
+        """Create code navigation tools for baseline extraction"""
+        
+        @tool
+        def read_file(start: int, end: int, file_path: str) -> str:
+            """Read specific lines from a file.
+            
+            Args:
+                start: Start line number
+                end: End line number
+                file_path: Target file path (REQUIRED)
+            """
+            try:
+                return navigator.read_code_window(file_path, start, end)
+            except Exception as e:
+                return f"Error: {e}"
+        
+        @tool
+        def find_definition(symbol_name: str, file_path: str) -> str:
+            """Find definition of a symbol (function, struct, macro).
+            
+            Args:
+                symbol_name: Name of the symbol
+                file_path: Context file path (REQUIRED)
+            """
+            try:
+                result = navigator.find_definition(symbol_name, context_path=file_path)
+                return json.dumps(result[:3])  # Top 3 results
+            except Exception as e:
+                return json.dumps({"error": str(e)})
+        
+        @tool
+        def grep(pattern: str, file_path: str) -> str:
+            """Search for a pattern in a file.
+            
+            Args:
+                pattern: Search pattern (variable/function name)
+                file_path: Target file path (REQUIRED)
+            """
+            try:
+                result = navigator.grep(pattern, file_path, mode="word")
+                return json.dumps(result)
+            except Exception as e:
+                return json.dumps({"error": str(e)})
+        
+        return [read_file, find_definition, grep]
+
+    # Prepare LLM with tools
     llm = ChatOpenAI(
             base_url=os.getenv("API_BASE"),
             api_key=os.getenv("API_KEY"),
-            model=os.getenv("MODEL_NAME", "gpt-4o"), 
+            model=os.getenv("MODEL_NAME", "gpt-4o"),
             temperature=0
         )
-    structured_llm = llm.with_structured_output(AgentExtractionOutput)
 
     # Gather Full Code for each function
     func_contexts = []
@@ -2679,19 +2748,90 @@ File: {patch.file_path}
 {patch.raw_diff}
 """)
 
-    system_prompt = """You are a security expert analyzing a software patch.
+    # Get list of vulnerability types for the prompt
+    from core.models import GeneralVulnType
+    vuln_types_list = [vt.value for vt in GeneralVulnType]
+    vuln_types_str = ", ".join(vuln_types_list)
+    
+    # Build metadata hint
+    metadata_hint = ""
+    if metadata:
+        metadata_hint = f"""
+**CVE Metadata** (Use as hints but verify against code):
+- CVE ID: {vul_id}
+- CWE ID: {cwe_id_meta or 'N/A'}
+- CWE Name: {cwe_name_meta or 'N/A'}
+- Description: {description_meta or 'N/A'}
+"""
+
+    system_prompt = f"""You are a security expert analyzing a software patch.
 Your goal is to identify the core vulnerability and the fix logic.
 
-Task 1: For EACH function provided, identify a "slice" (subset of lines) that effectively explains:
-- The Vulnerability (Pre-Patch Version)
-- The Fix (Post-Patch Version)
-Return list of indices (0-based) for these logic chains.
+{metadata_hint}
 
-Task 2: Provide a GLOBAL summary for the entire patch group:
-- Root Cause: What fundamental error caused this?
-- Vuln Logic: How is it triggered (step-by-step)?
-- Fix Logic: How does the patch remediate it?
-- CWE Info: The most appropriate CWE ID and name.
+### Core Concepts
+
+**Anchors** - Critical operations that embody the vulnerability mechanism:
+- **Origin Anchors**: Operations that CREATE the vulnerable state
+  Examples: memory allocation, resource initialization, state assignment, lock acquisition
+- **Impact Anchors**: Operations that TRIGGER/EXPLOIT the vulnerability
+  Examples: memory deref/use, resource access, state read, lock release
+- **Vulnerability Chain**: Origin → [data/control flow] → Impact
+
+**Slices** - Code subsets that explain the vulnerability:
+- **Pre-Patch Slice (s_pre)**: Lines showing the vulnerability trigger path
+  - Should include Origin anchors, Impact anchors, and the path connecting them
+  - Focus on the minimal code that demonstrates the vulnerability
+- **Post-Patch Slice (s_post)**: Lines showing how the fix blocks the vulnerability
+  - Should include modified lines and their context
+  - Demonstrates where/how the attack chain is broken
+
+### Available Tools
+
+You have access to code navigation tools:
+- `read_file(start, end, file_path)`: Read specific lines from a file
+- `find_definition(symbol_name, file_path)`: Find where a symbol is defined
+- `grep(pattern, file_path)`: Search for a pattern in a file
+
+Use these tools to:
+- Check definitions of functions/structs/macros
+- Understand cross-file references
+- Trace variable usage and data flow
+
+### Your Tasks
+
+**Task 1**: For EACH function, identify slices by finding anchors:
+
+1. **Find Origin Anchors** (where vulnerable state is created):
+   - Look at deleted lines and their context
+   - Identify operations that create problematic state
+   - Common origins: alloc, init, assign, acquire
+
+2. **Find Impact Anchors** (where vulnerability is triggered):
+   - Look at where the vulnerable state is used
+   - Identify operations that exploit the problem
+   - Common impacts: deref, access, use, free
+
+3. **Extract Slice Indices**:
+   - `vulnerable_logic_indices`: Lines in PRE-patch showing Origin→Impact path (0-based)
+   - `fix_logic_indices`: Lines in POST-patch showing the fix (0-based)
+   - Include anchors + minimal connecting path
+
+**You may use tools to verify your understanding and trace data/control flow.**
+
+**Task 2**: Provide a GLOBAL summary:
+- **Vulnerability Type**: Choose the MOST SPECIFIC type from: {vuln_types_str}
+- **Root Cause**: What fundamental defect enabled this? (e.g., "missing null check after allocation")
+- **Attack Path**: How does Origin→Impact manifest? (e.g., "allocation failure → null return → unchecked dereference")
+- **Fix Mechanism**: How does the patch break the chain? (e.g., "adds null check after allocation, returns error")
+- **CWE Info**: Most appropriate CWE ID and name (use metadata if available, otherwise infer)
+
+### Important Notes
+
+- Focus on the SPECIFIC vulnerability this patch fixes
+- Anchors must be in the analyzed function (use call sites for cross-function cases)
+- Slices should be minimal but complete (show the vulnerability chain)
+- Use tools when uncertain about definitions or data flow
 """
 
     user_prompt = f"""
@@ -2701,14 +2841,67 @@ Functions to Analyze:
 {" ".join(func_contexts)}
 """
 
+    # Run agent loop with tools
     try:
-        output: AgentExtractionOutput = retry_on_connection_error(
-            lambda: structured_llm.invoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ]),
-            max_retries=3
-        )
+        # Get the first patch's file path for tool context
+        main_file = patches[0].file_path if patches else ""
+        tools = create_baseline_tools(main_file)
+        
+        # Bind tools to LLM
+        llm_with_tools = llm.bind_tools(tools)
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        # Agent loop: allow up to 5 tool calls
+        max_iterations = 10
+        for iteration in range(max_iterations):
+            response = llm_invoke_with_retry(llm_with_tools, messages)
+            
+            if not response:
+                raise Exception("LLM invocation failed after retries")
+            
+            # Check if agent wants to use tools
+            if not response.tool_calls:
+                # No more tool calls, get final answer
+                structured_llm = llm.with_structured_output(AgentExtractionOutput)
+                output: AgentExtractionOutput = llm_invoke_with_retry(
+                    structured_llm,
+                    messages + [response]
+                )
+                break
+            
+            # Execute tool calls
+            messages.append(response)
+            for tool_call in response.tool_calls:
+                tool_name = tool_call['name']
+                tool_args = tool_call['args']
+                
+                # Find and execute the tool
+                selected_tool = next((t for t in tools if t.name == tool_name), None)
+                if selected_tool:
+                    try:
+                        tool_result = selected_tool.invoke(tool_args)
+                        messages.append(ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_call['id']
+                        ))
+                    except Exception as e:
+                        messages.append(ToolMessage(
+                            content=f"Tool error: {e}",
+                            tool_call_id=tool_call['id']
+                        ))
+        else:
+            # Max iterations reached, force final answer
+            print(f"    [Baseline] Max tool iterations reached, forcing final answer")
+            structured_llm = llm.with_structured_output(AgentExtractionOutput)
+            output: AgentExtractionOutput = llm_invoke_with_retry(
+                structured_llm,
+                [SystemMessage(content="Provide your final analysis based on the information gathered."),
+                 HumanMessage(content=user_prompt)]
+            )
     except Exception as e:
         print(f"Error in Baseline Phase 2 LLM call after retries: {e}")
         # Fallback empty structure
@@ -2765,13 +2958,31 @@ Functions to Analyze:
         )
 
     # Simplified Semantics (Directly from Agent Output)
-    cwe_match = re.search(r'CWE-(\d+)', output.cwe_info or "")
-    cwe_id = f"CWE-{cwe_match.group(1)}" if cwe_match else None
-    cwe_name = output.cwe_info.split(':')[-1].strip() if output.cwe_info and ':' in output.cwe_info else None
+    # First try to use metadata CWE if available
+    if metadata and cwe_id_meta:
+        cwe_id = cwe_id_meta
+        cwe_name = cwe_name_meta
+    else:
+        # Parse from agent output
+        cwe_match = re.search(r'CWE-(\d+)', output.cwe_info or "")
+        cwe_id = f"CWE-{cwe_match.group(1)}" if cwe_match else None
+        cwe_name = output.cwe_info.split(':')[-1].strip() if output.cwe_info and ':' in output.cwe_info else None
 
-    # Map to GeneralVulnType (baseline fallback)
+    # Map to GeneralVulnType from agent output
     from core.models import GeneralVulnType
     vuln_type = GeneralVulnType.UNKNOWN
+    
+    # Try to match the agent's vuln_type string to our enum
+    try:
+        for vt in GeneralVulnType:
+            if vt.value.lower() == output.vuln_type.lower():
+                vuln_type = vt
+                break
+    except:
+        pass
+    
+    if vuln_type == GeneralVulnType.UNKNOWN:
+        print(f"    [Warning] Could not map vuln_type '{output.vuln_type}' to GeneralVulnType enum, using UNKNOWN")
     
     semantics = SemanticFeature(
         vuln_type=vuln_type,
@@ -2784,9 +2995,13 @@ Functions to Analyze:
     )
 
     # [Fix] Need to satisfy strict PatchFeatures schema which requires TaxonomyFeature
+    # Determine type_confidence based on whether we used metadata
+    from core.models import TypeConfidence
+    type_confidence = TypeConfidence.HIGH if (metadata and cwe_id_meta) else TypeConfidence.MEDIUM
+    
     dummy_taxonomy = TaxonomyFeature(
-        fix_type=FixType.UNKNOWN,
-        vuln_type=VulnType.UNKNOWN,
+        vuln_type=vuln_type,
+        type_confidence=type_confidence,
         cwe_id=cwe_id,
         cwe_name=cwe_name,
         reasoning="Baseline Agent Inference (Skipped Taxonomy Phase)",
