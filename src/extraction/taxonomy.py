@@ -20,7 +20,7 @@ from core.configs import VUL_METADATA_PATH
 
 
 # ==============================================================================
-# 重连重试工具函数
+# Connection retry utility functions
 # ==============================================================================
 
 def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_factor=2.0):
@@ -67,7 +67,7 @@ def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_fa
     # All retries exhausted
     raise last_exception
 
-# --- 锚点规范映射表 ---
+# --- Anchor Specification Mapping Table ---
 
 ANCHOR_SPECIFICATIONS: Dict[GeneralVulnType, Dict[str, Any]] = {
     # 1. Memory Safety (7)

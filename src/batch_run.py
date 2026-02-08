@@ -9,28 +9,28 @@ from run import build_pipeline as build_single_vuln_pipeline, setup_directories
 from core.configs import OUTPUT_DIR_PATH, REPO_DIR_PATH
 
 # ==========================================
-# 1. 任务处理函数
+# 1. Task Processing Function
 # ==========================================
 
 def process_vuln(item, args):
     """
-    单个漏洞处理任务，供进程池调用
-    注意：app 对象无法跨进程传递，必须在子进程内部初始化。
+    Single vulnerability processing task, called by the process pool.
+    Note: The app object cannot be passed across processes and must be initialized inside the child process.
     """
     vul_id = item["vul_id"]
     repo_name = item["repo"]
     commit_sha = item["fixed_commit_sha"]
 
     try:
-        # 在子进程内初始化 app，避免 PickleError
-        # 假设 build_single_vuln_pipeline 开销可接受
+        # Initialize app within the child process to avoid PickleError
+        # Assuming build_single_vuln_pipeline overhead is acceptable
         app = build_single_vuln_pipeline()
 
-        # 路径生成
+        # Path generation
         ckpt_dir, res_dir = setup_directories(args.output_dir, repo_name, vul_id)
         full_repo_path = os.path.join(args.repo_path, repo_name)
         
-        # 构造子图状态
+        # Construct sub-graph state
         vuln_state = {
             "repo_name": repo_name,
             "vul_id": vul_id,
@@ -51,7 +51,7 @@ def process_vuln(item, args):
         }
         
         print(f">>> [Start] Processing {vul_id}...")
-        # 这里的 recursion_limit 是针对单个漏洞处理的步数
+        # recursion_limit here is for the steps of a single vulnerability processing
         app.invoke(vuln_state, {"recursion_limit": 10000})
         print(f">>> [Done] {vul_id} Finished.")
         return vul_id, True
@@ -60,12 +60,12 @@ def process_vuln(item, args):
         return vul_id, False
 
 # ==========================================
-# 2. 运行入口
+# 2. Execution Entry Point
 # ==========================================
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--csv", required=True)
+    parser.add_argument("-c", "--csv", default="inputs/0day_vul_list.csv", help="CSV file with vulnerability list")
     parser.add_argument("-s", "--start", type=int, default=1)
     parser.add_argument("-e", "--end", type=int, default=4)
     parser.add_argument("-r", "--repo_path", default=REPO_DIR_PATH, help="Base path containing cloned repos")
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     load_dotenv()
     
     df = pd.read_csv(args.csv)
-    df = df.drop_duplicates(subset=["vul_id"])
+    df = df.drop_duplicates(subset=["repo", "vul_id"])
     all_records = df.to_dict(orient="records")
     
     if args.vul_id:
@@ -90,15 +90,15 @@ if __name__ == "__main__":
     
     print(f"=== Parallel Pipeline Started: {total} items | Max Workers: {max_workers} ===")
     start_time = time()
-    # 使用 ProcessPoolExecutor 进行多进程并行
-    # Python 的 GIL 会限制 ThreadPoolExecutor 在 CPU 密集型任务上的并行能力
+    # Use ProcessPoolExecutor for multi-process parallelism
+    # Python's GIL limits ThreadPoolExecutor's parallelism on CPU-bound tasks
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         # submit all tasks
         futures = {executor.submit(process_vuln, item, args): item["vul_id"] for item in all_records}
         
         print(f"[*] Submitted {len(futures)} tasks to executor...")
         
-        # 处理结果
+        # Process results
         completed_count = 0
         for future in concurrent.futures.as_completed(futures):
             vul_id = futures[future]

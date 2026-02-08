@@ -6,31 +6,31 @@ from enum import Enum
 from typing import List, Set, Optional, Tuple, Dict, Any
 from pydantic import BaseModel, Field
 
-# --- 数据模型 ---
+# --- Data Models ---
 
 class CFGNodeType(str, Enum):
     ENTRY = "ENTRY"
     EXIT = "EXIT"
     STATEMENT = "STATEMENT"
-    PREDICATE = "PREDICATE"       # if/while/for 的条件
-    MERGE = "MERGE"               # 虚拟节点，用于汇聚
-    NO_OP = "NO_OP"               # 空操作
+    PREDICATE = "PREDICATE"       # Condition for if/while/for
+    MERGE = "MERGE"               # Virtual node for convergence
+    NO_OP = "NO_OP"               # No operation
     
-    # 结构特定
+    # Structure specific
     SWITCH_HEAD = "SWITCH_HEAD"
     CASE_LABEL = "CASE_LABEL"
     DEFAULT_LABEL = "DEFAULT_LABEL"
 
 class CFGEdgeType(str, Enum):
-    FLOW = "FLOW"                 # 顺序流
-    TRUE = "TRUE"                 # 条件真
-    FALSE = "FALSE"               # 条件假
+    FLOW = "FLOW"                 # Sequential flow
+    TRUE = "TRUE"                 # Condition true
+    FALSE = "FALSE"               # Condition false
     JUMP = "JUMP"                 # goto/break/continue/return
-    FALLTHROUGH = "FALLTHROUGH"   # Switch case 穿透
-    BACK_EDGE = "BACK_EDGE"       # 循环回边
+    FALLTHROUGH = "FALLTHROUGH"   # Switch case fallthrough
+    BACK_EDGE = "BACK_EDGE"       # Loop back edge
     
-    SWITCH_MATCH = "SWITCH_MATCH"       # Switch 头匹配到 Case
-    SWITCH_DEFAULT = "SWITCH_DEFAULT"   # Switch 头匹配到 Default
+    SWITCH_MATCH = "SWITCH_MATCH"       # Switch head matches Case
+    SWITCH_DEFAULT = "SWITCH_DEFAULT"   # Switch head matches Default
 
 class CFGNode(BaseModel):
     id: str
@@ -45,7 +45,7 @@ class CFGNode(BaseModel):
     def __hash__(self):
         return hash(self.id)
 
-# --- CFG 构建器 ---
+# --- CFG Builder ---
 
 class CFGBuilder:
     def __init__(self, lang: str = "c"):
@@ -59,7 +59,7 @@ class CFGBuilder:
         self.cfg = nx.DiGraph()
         self.source_bytes = b""
         
-        # 状态管理
+        # State management
         self.node_counter = 0
         self.labels: Dict[str, str] = {}    # label_name -> node_id
         self.gotos: List[Tuple[str, str]] = [] # (src_node_id, label_name)
@@ -72,7 +72,7 @@ class CFGBuilder:
     TERMINAL_FUNCTIONS = {"panic", "exit", "die", "BUG", "BUG_ON", "assert", "kfree_skb"}
     
     def build(self, code_str: str, target_line: Optional[int] = None) -> nx.DiGraph:
-        # [FIX 1] 彻底重置所有状态，防止跨函数污染
+        # [FIX 1] Thoroughly reset all states to prevent cross-function contamination
         self.node_counter = 0
         self.labels.clear()
         self.gotos.clear()
@@ -82,7 +82,7 @@ class CFGBuilder:
         self.source_bytes = code_str.encode('utf8')
         tree = self.parser.parse(self.source_bytes)
         
-        # 寻找函数定义
+        # Find function definition
         root = tree.root_node
         func_def = None
         
@@ -112,7 +112,7 @@ class CFGBuilder:
                 func_def = candidates[0]
         
         if func_def:
-            # 提取函数头作为 Entry
+            # Extract function header as Entry
             declarator = func_def.child_by_field_name('declarator')
             params = self._extract_parameters(declarator)
             entry_code = self._get_text(declarator) if declarator else "ENTRY"
@@ -126,7 +126,7 @@ class CFGBuilder:
             
             self.exit_id = self._create_node(None, CFGNodeType.EXIT, "EXIT")
             
-            # 处理函数体
+            # Handle function body
             body = func_def.child_by_field_name('body')
             body_entry, body_exits = self._process_node(body, context=None)
             
@@ -138,7 +138,7 @@ class CFGBuilder:
                 self.cfg.add_edge(self.entry_id, self.exit_id, type=CFGEdgeType.FLOW)
         
         else:
-            # Fallback: 代码片段
+            # Fallback: Code fragment
             self.entry_id = self._create_node(None, CFGNodeType.ENTRY, "ENTRY")
             self.exit_id = self._create_node(None, CFGNodeType.EXIT, "EXIT")
             body_entry, body_exits = self._process_node(root, context=None)
@@ -155,7 +155,7 @@ class CFGBuilder:
         self.cfg.graph['exit'] = self.exit_id
         return self.cfg
 
-    # --- 递归处理 ---
+    # --- Recursive Processing ---
 
     def _process_node(self, node: Node, context: dict) -> Tuple[Optional[str], List[str]]:
         if node is None: return None, []
@@ -164,16 +164,16 @@ class CFGBuilder:
             return None, []
         
         if node.type == 'else_clause':
-            # else_clause 的结构通常是: "else" statement
-            # 我们需要找到那个 statement 子节点并递归处理
+            # else_clause definition is usually: "else" statement
+            # We need to find that statement child node and process recursively
             for child in node.children:
                 if child.type not in ('else', 'comment'):
                     return self._process_node(child, context)
             return None, []
         
-        # 1. 容器类
+        # 1. Containers
         if node.type in ('translation_unit', 'compound_statement'):
-            # 过滤掉标点和注释
+            # Filter out punctuation and comments
             children = [c for c in node.children if c.type not in ('{', '}', 'comment')]
             if not children: return None, []
 
@@ -185,26 +185,26 @@ class CFGBuilder:
                 child = children[i]
                 next_child = children[i+1] if i + 1 < len(children) else None
                 
-                # --- 使用启发式判断 ---
+                # --- Heuristic Check ---
                 is_macro, macro_name = self._looks_like_loop_macro(child, next_child)
                 
                 if is_macro:
-                    # 命中！这是一个宏循环
-                    # child 是 Header (Init/Cond), next_child 是 Body
+                    # Hit! This is a macro loop
+                    # child is Header (Init/Cond), next_child is Body
                     body_node = next_child
                     
-                    # 1. 处理宏循环
+                    # 1. Process macro loop
                     entry, exits = self._process_macro_loop(child, body_node, context, macro_name)
                     
-                    # 2. 关键：跳过下一个节点，因为它是 Body，已经被融合进宏逻辑了
+                    # 2. Key: Skip next node, because it's Body, already fused in macro logic
                     i += 2
                 else:
-                    # 普通节点
+                    # Normal node
                     entry, exits = self._process_node(child, context)
                     i += 1
 
-                # --- 连接逻辑 (不变) ---
-                if not entry: continue # 可能是声明或空语句
+                # --- Connection Logic (Unchanged) ---
+                if not entry: continue # Could be declaration or empty statement
                 
                 if first_entry is None: first_entry = entry
                 
@@ -216,14 +216,14 @@ class CFGBuilder:
             
             return first_entry, current_exits
 
-        # 2. 函数定义 (如果在内部)
+        # 2. Function definition (if internal)
         if node.type == 'function_definition':
             body = node.child_by_field_name('body')
             return self._process_node(body, context)
 
-        # 3. 表达式/声明
+        # 3. Expression/Declaration
         if node.type in ('expression_statement', 'declaration'):
-            # 检查是否是 Call
+            # Check if it is Call
             is_terminal = False
             if node.type == 'expression_statement':
                 child = node.children[0]
@@ -238,7 +238,7 @@ class CFGBuilder:
             
             if is_terminal:
                 self.cfg.add_edge(nid, self.exit_id, type=CFGEdgeType.JUMP)
-                return nid, [] # 没有出口，流程在此终结
+                return nid, [] # No exit, flow terminates here
             
             return nid, [nid]
 
@@ -281,7 +281,7 @@ class CFGBuilder:
             cond_entry, true_exits, false_exits = self._process_condition(cond_node)
             
             loop_breaks = []
-            # 嵌套关键：使用新的 break list，但继承/覆盖 continue target
+            # Nested Key: Use new break list, but inherit/overwrite continue target
             new_ctx = self._update_context(context, break_targets=loop_breaks, continue_target=cond_entry)
             
             body_entry, body_exits = self._process_node(body_node, new_ctx)
@@ -378,7 +378,7 @@ class CFGBuilder:
             
             switch_breaks = []
             switch_state = {"last_exits": []} 
-            # 嵌套关键：break 指向 switch_breaks，continue 保持不变 (继承自外层 Loop)
+            # Nested Key: break points to switch_breaks, continue remains unchanged (inherited from outer Loop)
             new_ctx = self._update_context(context, break_targets=switch_breaks, switch_state=switch_state)
             
             children = [c for c in body_node.children if c.type not in ('{', '}', 'comment')]
@@ -454,29 +454,29 @@ class CFGBuilder:
 
     def _process_macro_loop(self, header_node: Node, body_node: Node, context: dict, macro_name: str):
         """
-        处理 list_for_each_entry 等宏。
-        Header: 宏调用本身 (充当 Init + Cond + Step)
-        Body: 宏后面的语句块
+        Handle list_for_each_entry and similar macros.
+        Header: The macro call itself (Acts as Init + Cond + Step)
+        Body: The statement block following the macro
         """
-        # 1. 创建 Header 节点
-        # 这里将其标记为 PREDICATE，因为它决定了循环是否继续
-        # 或者增加一个新的类型 MACRO_LOOP_HEAD
+        # 1. Create Header Node
+        # Mark it as PREDICATE because it decides if the loop continues
+        # Or add a new type MACRO_LOOP_HEAD
         header_id = self._create_node(
             header_node, 
-            CFGNodeType.PREDICATE, # 或 LOOP_COND
+            CFGNodeType.PREDICATE, # Or LOOP_COND
             code=f"MACRO: {self._get_text(header_node).splitlines()[0]}"
         )
         
-        # 2. 准备 Context (处理 Body 内的 break/continue)
-        # Continue 跳回 Header
-        # Break 跳出 Loop
+        # 2. Prepare Context (Handle break/continue inside Body)
+        # Continue jumps back to Header
+        # Break jumps out of Loop
         loop_breaks = []
         new_ctx = self._update_context(context, break_targets=loop_breaks, continue_target=header_id)
         
-        # 3. 处理 Body
+        # 3. Process Body
         body_entry, body_exits = self._process_node(body_node, new_ctx)
         
-        # 4. 构建拓扑
+        # 4. Build Topology
         # True: Header -> Body
         if body_entry:
             self.cfg.add_edge(header_id, body_entry, type=CFGEdgeType.TRUE)
@@ -485,40 +485,40 @@ class CFGBuilder:
             for be in body_exits:
                 self.cfg.add_edge(be, header_id, type=CFGEdgeType.BACK_EDGE)
         else:
-            # 空 Body，死循环或纯副作用
+            # Empty Body, infinite loop or pure side effect
             # Header -> Header
             self.cfg.add_edge(header_id, header_id, type=CFGEdgeType.BACK_EDGE)
             
-        # False Exits: Header 本身也是退出点 (当列表遍历完时)
-        # 所以该结构的出口包含：
-        # 1. 正常循环结束 (Header -> Next) -> 我们把 header_id 返回作为出口之一
+        # False Exits: Header itself is also an exit point (when list traversal completes)
+        # So the exits of this structure include:
+        # 1. Normal loop end (Header -> Next) -> We return header_id as one of the exits
         # 2. Break (Break -> Next)
         return header_id, [header_id] + loop_breaks
     
     def _looks_like_loop_macro(self, node: Node, next_node: Optional[Node]) -> Tuple[bool, str]:
         """
-        启发式判断：
-        1. 名字包含 'for_each' (不区分大小写)
-        2. 结构上看起来像函数调用
-        3. (关键) 后面紧跟了一个节点作为 Body
+        Heuristic check:
+        1. Name contains 'for_each' (case-insensitive)
+        2. Structurally looks like a function call
+        3. (Critical) Followed immediately by a node serving as Body
         
         Returns: (is_loop, macro_name)
         """
         if not next_node:
             return False, ""
 
-        # 1. 提取函数名
+        # 1. Extract function name
         macro_name = ""
         
-        # 情况 A: 直接是 call_expression
+        # Case A: Directly a call_expression
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function')
             if func_node: macro_name = self._get_text(func_node)
             
-        # 情况 B: expression_statement 包裹 call_expression (最常见)
+        # Case B: expression_statement wraps call_expression (Most common)
         elif node.type == 'expression_statement':
-            # 通常结构: expression_statement -> call_expression
-            # 我们只看第一个 child
+            # Usually structure: expression_statement -> call_expression
+            # We only look at the first child
             if node.child_count > 0:
                 child = node.children[0]
                 if child.type == 'call_expression':
@@ -528,17 +528,17 @@ class CFGBuilder:
         if not macro_name:
             return False, ""
 
-        # 2. 命名检查 (Heuristic 1)
+        # 2. Naming Check (Heuristic 1)
         name_lower = macro_name.lower()
-        # 涵盖 for_each, foreach, list_entry_loop 等变体
+        # Covers for_each, foreach, list_entry_loop variants
         is_name_match = "for_each" in name_lower or "foreach" in name_lower
         
         if not is_name_match:
             return False, ""
 
-        # 3. 结构检查 (Heuristic 2) - 也可以在这里加更细致的校验
-        # 既然 next_node 存在，且名字像循环，我们大概率可以认为它是
-        # 甚至可以检查 next_node 是不是 compound_statement，但 C 语言允许单行循环，所以只要有 next 就行
+        # 3. Structure Check (Heuristic 2) - can add more detailed validation here
+        # Since next_node exists, and name looks like loop, we assume it is highly probable
+        # Can even check if next_node is compound_statement, but C allows single-line loop, so just having next is enough
         
         return True, macro_name
     
@@ -564,7 +564,7 @@ class CFGBuilder:
         return first_entry, current_exits
 
     def _process_condition(self, node: Node) -> Tuple[str, List[str], List[str]]:
-        if node.type == 'parenthesized_expression': # 处理 (a && b)
+        if node.type == 'parenthesized_expression': # Handle (a && b)
             return self._process_condition(node.children[1])
             
         if node.type == 'binary_expression':
@@ -592,43 +592,43 @@ class CFGBuilder:
         self.node_counter += 1
         
         if code is None and node:
-            # 提取单行代码并截断，防止 code 字段过长
+            # Extract single line code and truncate to prevent code field from being too long
             code = self._get_text(node).split('\n')[0][:50]
         
         start_line = node.start_point[0] + 1 if node else 0
         end_line = node.end_point[0] + 1 if node else 0
         ast_type = node.type if node else "virtual"
         
-        # 初始为空字典
+        # Initial empty dictionary
         defs: Dict[str, Set[str]] = {}
         uses: Dict[str, Set[str]] = {}
 
-        # --- 针对不同类型的节点处理 Def/Use ---
+        # --- Handle Def/Use for different node types ---
         if type == CFGNodeType.ENTRY:
-            # 入口节点：将函数参数标记为初始定值
-            # 此时参数既提供了初始值 (VALUE)，也代表了资源生命周期的起点 (STATE)
+            # Entry node: Mark function parameters as initial definitions
+            # Parameters provide both initial value (VALUE) and represent resource lifecycle start (STATE)
             if extra_defs:
                 for v in extra_defs:
                     defs[v] = {"VALUE", "STATE"}
-            uses = {} # Entry 节点不使用任何变量
+            uses = {} # Entry node does not use any variables
 
         elif type in (CFGNodeType.EXIT, CFGNodeType.MERGE, CFGNodeType.NO_OP):
-            # 虚拟节点：不产生任何数据流
+            # Virtual node: No data flow
             defs = {}
             uses = {}
 
         else:
-            # 普通代码节点：调用修改后的提取函数
-            # defs/uses 现在都是 Dict[str, Set[str]]
+            # Normal code node: Call modified extraction function
+            # defs/uses are now Dict[str, Set[str]]
             defs, uses = self._extract_def_use(node) if node else ({}, {})
             
-            # 如果有额外的定义（例如通过参数传入的特定标志）
+            # If there are extra definitions (e.g., specific flags passed via parameters)
             if extra_defs:
                 for v in extra_defs:
-                    # 默认标记为 VALUE 定义
+                    # Default marked as VALUE definition
                     defs.setdefault(v, set()).add("VALUE")
         
-        # 创建节点对象
+        # Create node object
         cfg_node = CFGNode(
             id=nid, 
             type=type, 
@@ -640,7 +640,7 @@ class CFGBuilder:
             uses=uses
         )
         
-        # 将节点存入 NetworkX 图中
+        # Add node to NetworkX graph
         self.cfg.add_node(nid, **cfg_node.dict())
         return nid
 
@@ -662,8 +662,8 @@ class CFGBuilder:
         if not declarator: return params
         
         param_list = None
-        # 寻找 parameter_list
-        # 注意：函数指针或复杂声明可能层级较深，这里简化处理
+        # Find parameter_list
+        # Note: Function pointers or complex declarations might be deep, simplified handling here
         stack = [declarator]
         while stack:
             curr = stack.pop()
@@ -675,30 +675,30 @@ class CFGBuilder:
         if param_list:
             for param in param_list.children:
                 if param.type == 'parameter_declaration':
-                    # 提取类型
+                    # Extract type
                     type_node = param.child_by_field_name('type')
                     type_str = self._get_text(type_node) if type_node else "void"
                     
-                    # 提取变量名
+                    # Extract variable name
                     decl = param.child_by_field_name('declarator')
                     if decl:
-                        # declarator 可能是 "pointer_declarator" -> "*name"
-                        # 我们需要最里面的 identifier
+                        # declarator might be "pointer_declarator" -> "*name"
+                        # We need the innermost identifier
                         var_name = self._get_text(decl)
-                        # 如果包含 *，说明是指针类型
+                        # If contains *, it means pointer type
                         if "*" in var_name or decl.type == 'pointer_declarator':
                             type_str += "*"
-                            # 清洗变量名，去除 *
+                            # Clean variable name, remove *
                             var_name = var_name.replace("*", "").strip()
                         
                         params.add(var_name)
-                        # [FIX] 填充符号表
+                        # [FIX] Fill symbol table
                         self.symbol_table[var_name] = type_str
                         
         return params
 
     def _is_resource_type(self, type_str: str) -> bool:
-        # 启发式判断：指针、结构体指针、特定的内核句柄
+        # Heuristic judgment: pointers, structure pointers, specific kernel handles
         if "*" in type_str: return True
         resource_keywords = {"fd", "handle", "lock", "socket", "request"}
         return any(kw in type_str.lower() for kw in resource_keywords)
@@ -718,7 +718,7 @@ class CFGBuilder:
         def visit(n: Node, is_call_arg: bool = False, is_deref: bool = False):
             if n is None: return
             
-            # 1. 处理赋值 (a = b)
+            # 1. Handle assignment (a = b)
             if n.type == 'assignment_expression':
                 left = n.child_by_field_name('left')
                 right = n.child_by_field_name('right')
@@ -730,13 +730,13 @@ class CFGBuilder:
                 if def_path:
                     local_defs.setdefault(def_path, set()).add("VALUE")
                 
-                # [USE] 右值
+                # [USE] R-value
                 visit(right, is_call_arg=False, is_deref=False)
                 
-                # [USE] 左值复杂结构处理
+                # [USE] L-value complex structure handling
                 if left.type != 'identifier':
                     if left.type == 'subscript_expression':
-                        # [FIX] 字段名改为 argument
+                        # [FIX] Field name changed to argument
                         visit(left.child_by_field_name('argument'), is_deref=True)
                         visit(left.child_by_field_name('index'), is_deref=False)
                     elif left.type == 'pointer_expression':
@@ -751,30 +751,30 @@ class CFGBuilder:
                         local_uses.setdefault(def_path, set()).add("VALUE")
                 return
                         
-            # 2. 函数调用
+            # 2. Function calls
             elif n.type == 'call_expression':
                 args = n.child_by_field_name('arguments')
                 if args:
                     for arg in args.children:
                         if arg.type not in (',', '(', ')', 'comment'):
                             arg_path = self._get_var_path(arg)
-                            # 清洗得到基变量名用于查表
+                            # Clean to get base variable name for table lookup
                             base_var = arg_path.split('->')[0].split('.')[0].replace('*', '').replace('&', '').split('[')[0].strip()
                             var_type = self.symbol_table.get(base_var, "")
                             
                             is_resource = self._is_resource_type(var_type)
-                            is_pointer = "*" in var_type or "struct" in var_type # 简化判断
+                            is_pointer = "*" in var_type or "struct" in var_type # Simplified check
                             
                             # Use (Argument passing)
                             if arg_path:
                                 local_uses.setdefault(arg_path, set()).add("VALUE")
                             
                             # Def (Side effects)
-                            # 如果是取地址 &a，或者是指针变量 p，视为 Def
+                            # If address-of &a, or pointer variable p, treat as Def
                             is_address_of = arg.type in ('unary_expression', 'pointer_expression') and self._get_text(arg.child_by_field_name('operator')) == '&'
                             
                             if is_pointer or is_address_of:
-                                # [重要] 标记为 VALUE DEF，防止切片在 func(a) 处断裂
+                                # [Important] Mark as VALUE DEF to prevent slice from breaking at func(a)
                                 if arg_path:
                                     local_defs.setdefault(arg_path, set()).add("VALUE")
                             
@@ -786,42 +786,42 @@ class CFGBuilder:
                             visit(arg, is_call_arg=True, is_deref=False)
                 return
             
-            # 3. 指针/数组/成员访问 (右值)
+            # 3. Pointer/Array/Member access (R-value)
             elif n.type in ('pointer_expression', 'unary_expression'): 
                 op_node = n.child_by_field_name('operator')
                 arg = n.child_by_field_name('argument')
                 op_text = self._get_text(op_node) if op_node else ""
                 
-                # Case A: 解引用 (*p)
+                # Case A: Dereference (*p)
                 if op_text == '*':
                     visit(arg, is_call_arg=is_call_arg, is_deref=True)
                     return
 
-                # Case B: 取地址 (&a)
+                # Case B: Address-of (&a)
                 elif op_text == '&':
-                    # 关键逻辑：如果 &a 作为函数参数传入，视为对 a 的赋值 (Value Def)
-                    # 例如: scanf("%d", &a) -> Def a
+                    # Key Logic: If &a is passed as function argument, treat as assignment to a (Value Def)
+                    # Example: scanf("%d", &a) -> Def a
                     if is_call_arg:
                         def_path = self._get_var_path(arg)
                         if def_path:
                             local_defs.setdefault(def_path, set()).add("VALUE")
                             
-                            # 注意：如果是 &obj->lock，这同时也是对 lock 的 STATE 使用/修改
-                            # 如果 arg 是资源类型，我们已经在 call_expression 层处理了 STATE 标记
-                            # 这里主要补全 VALUE DEF
+                            # Note: If &obj->lock, this is also STATE USE/MODIFICATION of lock
+                            # If arg is resource type, we already handled STATE marking at call_expression level
+                            # Here mainly completing VALUE DEF
                     
-                    # 无论是否是参数，&a 都意味着我们需要用到 a 的地址 (Value Use)
-                    # visit arg 时 is_deref=False (因为只是取地址，没读内存)
+                    # Regardless of whether it's an argument, &a means we need to use address of a (Value Use)
+                    # When visiting arg, is_deref=False (Because just taking address, not reading memory)
                     visit(arg, is_call_arg=is_call_arg, is_deref=False)
                     return
                 
-                # Case C: 其他一元运算 (!a, -a, ~a)
+                # Case C: Other unary operations (!a, -a, ~a)
                 else:
                     visit(arg, is_call_arg=is_call_arg, is_deref=is_deref)
                     return
 
             elif n.type == 'subscript_expression': 
-                # [FIX] 字段名改为 argument
+                # [FIX] Field name changed to argument
                 visit(n.child_by_field_name('argument'), is_call_arg=is_call_arg, is_deref=True)
                 visit(n.child_by_field_name('index'), is_call_arg=is_call_arg, is_deref=False)
                 return
@@ -830,7 +830,7 @@ class CFGBuilder:
                 visit(n.child_by_field_name('argument'), is_call_arg=is_call_arg, is_deref=True)
                 return
                 
-            # 4. 更新 (i++)
+            # 4. Updates (i++)
             elif n.type == 'update_expression':
                 arg = n.child_by_field_name('argument')
                 path = self._get_var_path(arg)
@@ -839,7 +839,7 @@ class CFGBuilder:
                     local_uses.setdefault(path, set()).add("VALUE")
                 return
             
-            # 5. 声明
+            # 5. Declarations
             elif n.type == 'declaration':
                 base_type = self._get_type_str(n)
                 for child in n.children:
@@ -871,7 +871,7 @@ class CFGBuilder:
                         local_defs.setdefault(var_name, set()).add("VALUE")
                 return
             
-            # 6. 标识符
+            # 6. Identifiers
             elif n.type == 'identifier':
                 var_name = self._get_text(n)
                 var_type = self.symbol_table.get(var_name, "")
@@ -885,7 +885,7 @@ class CFGBuilder:
                         local_defs.setdefault(var_name, set()).add("STATE")
                 return
             
-            # 7. 递归
+            # 7. Recursion
             else:
                 for child in n.children:
                     if child.type not in ('comment', ';', '{', '}', '(', ')'):
@@ -902,7 +902,7 @@ class CFGBuilder:
         return local_defs, local_uses
     
     def _get_var_path(self, node: Node) -> str:
-        """递归提取完整变量路径 (e.g. obj->member, *p, arr[i])"""
+        """Recursively extract full variable path (e.g. obj->member, *p, arr[i])"""
         if not node: return ""
         text = self._get_text(node)
         
@@ -914,7 +914,7 @@ class CFGBuilder:
             field = node.child_by_field_name('field')
             return f"{self._get_var_path(arg)}->{self._get_text(field)}"
         
-        # [FIX] 需要检查操作符，区分 *p (解引用) 和 &a (取地址)
+        # [FIX] Need to check operator to distinguish *p (dereference) and &a (address-of)
         elif node.type in ('pointer_expression', 'unary_expression'):
             op = node.child_by_field_name('operator')
             arg = node.child_by_field_name('argument')
@@ -923,9 +923,9 @@ class CFGBuilder:
             if op_text == '*':
                 return f"*{self._get_var_path(arg)}"
             elif op_text == '&':
-                # 取地址通常不作为变量路径的一部分 (def &a 其实是 def a)
-                # 或者返回 &a 也可以，取决于你的符号表怎么存
-                # 这里建议：返回去掉 & 的路径，因为我们追踪的是变量本身
+                # Address-of usually not part of variable path (def &a is actually def a)
+                # Or return &a works too, depends on how your symbol table stores it
+                # Suggestion here: return path without &, because we track the variable itself
                 return self._get_var_path(arg)
                 
         elif node.type == 'subscript_expression':
@@ -935,22 +935,22 @@ class CFGBuilder:
         return text
 
     def _get_type_str(self, node: Node) -> str:
-        """从声明节点提取类型字符串 (增强版)"""
+        """Extract type string from declaration node (Enhanced)"""
         if not node: return ""
-        # 收集所有相关的类型描述符
+        # Collect all relevant type descriptors
         parts = []
-        # 遍历 type 节点的子节点 (处理 const unsigned int 等)
+        # Iterate over children of type node (Handle const unsigned int, etc.)
         type_node = node.child_by_field_name('type')
         if type_node:
-            # 如果是 primitive_type 或 struct_specifier，直接取文本
+            # If primitive_type or struct_specifier, get text directly
             return self._get_text(type_node)
         
-        # Fallback: 线性扫描 (针对复杂的声明结构)
+        # Fallback: Linear scan (For complex declaration structures)
         for child in node.children:
             if child.type in ('type_identifier', 'primitive_type', 'struct_specifier', 
                               'union_specifier', 'enum_specifier', 'type_qualifier', 'sized_type_specifier'):
                 parts.append(self._get_text(child))
-            # 碰到 declarator 就停止
+            # Stop when encountering declarator
             if child.type == 'declarator':
                 break
         return " ".join(parts) if parts else "unknown"

@@ -3,21 +3,21 @@ from typing import List, Dict
 from core.models import AtomicPatch, TaxonomyFeature, SlicingInstruction
 
 class CodeAligner:
-    """负责代码行的模糊匹配"""
+    """Responsible for fuzzy matching of code lines"""
     
     @staticmethod
     def normalize_string(s: str) -> str:
-        """移除空白字符，用于模糊匹配"""
+        """Remove whitespace characters, used for fuzzy matching"""
         return re.sub(r'\s+', '', s).strip()
 
     @staticmethod
     def find_line_number(source_code: str, target_snippet: str) -> int:
         """
-        在源代码中寻找目标片段的行号 (1-based)
-        策略：
-        1. 单行精确匹配
-        2. 单行模糊匹配
-        3. 跨行模糊匹配 (针对被换行符切断的长语句)
+        Find line number of target snippet in source code (1-based)
+        Strategy:
+        1. Single line exact match
+        2. Single line fuzzy match
+        3. Cross-line fuzzy match (for long statements cut by newlines)
         """
         if not source_code or not target_snippet:
             return -1
@@ -25,12 +25,12 @@ class CodeAligner:
         lines = source_code.splitlines()
         target_norm = CodeAligner.normalize_string(target_snippet)
         
-        # 1. 尝试直接包含匹配 (最快)
+        # 1. Try direct inclusion match (fastest)
         for i, line in enumerate(lines):
             if target_snippet in line:
                 return i + 1
         
-        # 2. 尝试去空格匹配 (鲁棒)
+        # 2. Try whitespace-removed match (robust)
         if not target_norm:
             return -1
             
@@ -39,8 +39,8 @@ class CodeAligner:
             if target_norm in line_norm:
                 return i + 1
         
-        # 3. 跨行模糊匹配 (新增)
-        # 将源码和目标都归一化为无空格字符串，但保留源码的行号映射
+        # 3. Cross-line fuzzy match (new)
+        # Normalize source and target to whitespace-free string, but keep source line number mapping
         full_norm = ""
         line_map = [] # index -> line_number
         
@@ -48,8 +48,8 @@ class CodeAligner:
             norm = CodeAligner.normalize_string(line)
             start_idx = len(full_norm)
             full_norm += norm
-            # 记录这一段归一化字符对应的行号
-            # 简单起见，这段字符的每个位置都映射到行 i+1
+            # Record the line number corresponding to this normalized segment
+            # For simplicity, each position of this segment maps to line i+1
             line_map.extend([i + 1] * len(norm))
             
         idx = full_norm.find(target_norm)
@@ -59,15 +59,15 @@ class CodeAligner:
         return -1
 
 class PatchAnalyzer:
-    """分析补丁特征，决定主切片方向 (参考 PDF Step 0)"""
+    """Analyze patch features, decide primary slicing direction (refer to PDF Step 0)"""
     
     @staticmethod
     def determine_primary_version(diff_text: str) -> str:
         """
-        根据 Diff 统计决定主切片侧:
-        - Additive (新增为主) -> NEW (Post-Patch)
-        - Subtractive (删除为主) -> OLD (Pre-Patch)
-        - Modificative (修改) -> NEW (默认)
+        Decide primary slicing side based on Diff statistics:
+        - Additive (Mostly additions) -> NEW (Post-Patch)
+        - Subtractive (Mostly deletions) -> OLD (Pre-Patch)
+        - Modificative (Modifications) -> NEW (Default)
         """
         added_lines = 0
         removed_lines = 0
@@ -78,16 +78,16 @@ class PatchAnalyzer:
             elif line.startswith('-') and not line.startswith('---'):
                 removed_lines += 1
         
-        # 启发式阈值：如果删除行数远多于新增，且新增很少，视为删除型补丁
-        # 例如：移除了一个 buggy function call
+        # Heuristic threshold: If removed lines are much more than added lines, and added lines are few, treat as subtractive patch
+        # Example: Removed a buggy function call
         if removed_lines > 0 and added_lines == 0:
             return "OLD"
         
-        # 默认偏向修复后的逻辑 (Fix View)
+        # Default bias towards fixed logic (Fix View)
         return "NEW"
 
 class SlicePreprocessor:
-    """Phase 3.2.2 的前置处理器"""
+    """Phase 3.2.2 Preprocessor"""
     
     def __init__(self, patch: AtomicPatch, taxonomy: TaxonomyFeature):
         self.patch = patch
@@ -96,9 +96,9 @@ class SlicePreprocessor:
 
     def generate_instructions(self) -> Dict[str, List[SlicingInstruction]]:
         """
-        生成切片指令：
-        策略 1 (Physical): 从 Patch Diff 中提取被修改的行作为直接锚点。
-        策略 2 (Semantic): 从 Hypothesis.expected_key_lines 中提取关键语义行。
+        Generate slicing instructions:
+        Strategy 1 (Physical): Extract modified lines from Patch Diff as direct anchors.
+        Strategy 2 (Semantic): Extract critical semantic lines from Hypothesis.expected_key_lines.
         """
         instructions_map = {}
         patch = self.patch

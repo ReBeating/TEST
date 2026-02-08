@@ -53,7 +53,7 @@ class RepoManager:
 
 class CodeParser:
     def normalize(self, code: str) -> str:
-        """Tier 0: 去注释 + 压缩空白 + indent 规范化"""
+        """Tier 0: Remove comments + compress whitespace + normalize indentation"""
         if not code: return ""
         code = remove_comments(code)
         code = '\n'.join([line for line in code.split('\n') if line.strip() != ''])
@@ -61,7 +61,7 @@ class CodeParser:
 
     def extract_functions(self, file_content: str, suffix: str = '.c') -> Dict[str, Dict[str, Any]]:
         funcs = CtagsParser.parse_code(file_content, suffix=suffix)['functions']
-        return funcs # Directly return the dict with metadata (code, start_line)
+        return funcs # Directly return a dictionary containing metadata (code, start_line)
 
     def generate_diff(self, file_path: str, name: str, old_code: str, new_code: str, old_start: int = 1, new_start: int = 1) -> Optional[str]:
         diff_iter = difflib.unified_diff(
@@ -71,39 +71,39 @@ class CodeParser:
             tofile=f"b/{file_path}:{name}"
         )
         
-        # Stream processing to patch the Hunk Headers
+        # Stream process to patch Hunk header
         patched_lines = []
         header_pattern = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)")
         
         for line in diff_iter:
             match = header_pattern.match(line)
             if match:
-                # Original relative lines
+                # Original relative line number
                 orig_old_start = int(match.group(1))
                 orig_old_len = match.group(2) if match.group(2) else "1"
                 orig_new_start = int(match.group(3))
                 orig_new_len = match.group(4) if match.group(4) else "1"
                 suffix = match.group(5)
                 
-                # Adjust to absolute
-                # The 'orig_old_start' is relative to the start of the 'old_code' string (Function Start).
-                # So if old_start=100 (Function starts at line 100) and Hunk says -10, it means line 100+10-1 = 109.
+                # Adjust to absolute line number
+                # 'orig_old_start' is relative to 'old_code' string (function start).
+                # So if old_start=100 (function starts at line 100) and Hunk shows -10, it means line 100+10-1 = 109.
                 # Logic: absolute_line = function_start_line + relative_offset - 1
                 
                 abs_old = orig_old_start + old_start - 1
                 abs_new = orig_new_start + new_start - 1
                 
-                # Correction: If orig_old_start is 0 (empty file/hunk start edge case), handle carefully.
-                # However, unified_diff usually is 1-based.
+                # Fix: if orig_old_start is 0 (empty file/hunk start edge case), handle carefully.
+                # However, unified_diff is usually 1-based.
                 # Example:
                 # Function starts at 100.
-                # Change at line 5 of function (104 absolute).
-                # Orig Hunk: @@ -5,1 +5,1 @@
-                # Calc: 5 + 100 - 1 = 104. Correct.
+                # Modification at line 5 of function (absolute 104).
+                # Original Hunk: @@ -5,1 +5,1 @@
+                # Calculation: 5 + 100 - 1 = 104. Correct.
                 
                 # Reconstruct header
-                # Note: unified diff format is @@ -old_start,old_len +new_start,new_len @@
-                # If len is 1, it's often omitted, but let's keep it consistent or follow matched logic
+                # Note: Unified diff format is @@ -old_start,old_len +new_start,new_len @@
+                # If len is 1, it is usually omitted, but for consistency or matching logic
                 new_header = f"@@ -{abs_old},{orig_old_len} +{abs_new},{orig_new_len} @@{suffix}\n"
                 patched_lines.append(new_header)
             else:
@@ -166,7 +166,7 @@ class DiffProcessor:
         return "\n".join(final_lines) if has_content else None
 
 def is_pure_static_noise(hunk: HunkObj) -> bool:
-    """Tier 1 Check: 静态规则过滤"""
+    """Tier 1 Check: Static rule filtering"""
     added = [l[1:].strip() for l in hunk.content if l.startswith('+')]
     deleted = [l[1:].strip() for l in hunk.content if l.startswith('-')]
     
@@ -175,13 +175,13 @@ def is_pure_static_noise(hunk: HunkObj) -> bool:
             if not s: continue
             if s.startswith('//'): continue
             if s.startswith('/*'):
-                # Check for code after inline comment block
+                # Check code after inline comment block
                 end_idx = s.find('*/')
                 if end_idx == -1: continue # Open block or multi-line
                 if not s[end_idx+2:].strip(): continue # Pure comment line
                 return False
             if s.startswith('*'):
-                 # Heuristic for block comment continuations vs pointer dereferences
+                 # Heuristic for block comment continuation vs pointer dereference
                  if s.startswith('*/'): continue
                  if s == '*': continue
                  if s.startswith('* ') or s.startswith('*\t'): continue
@@ -255,7 +255,7 @@ class SemanticCleaner:
             return {}
 
 def preprocessing_node(state: WorkflowState) -> Dict:
-    """Phase 3.1.1 节点入口"""
+    """Phase 3.1.1 Node Entry"""
     print(f"--- Phase 1: Denoising Commit {state['commit_hash']} ---")
     
     repo_mgr = RepoManager(state['repo_path'])
@@ -269,7 +269,7 @@ def preprocessing_node(state: WorkflowState) -> Dict:
 
     lang = 'c'
     
-    # 1. 采集与 Tier 0/1 过滤
+    # 1. Collection and Tier 0/1 Filtering
     commit_message = repo_mgr.get_commit_message(state['commit_hash'])
     files = repo_mgr.get_changed_files(state['commit_hash'])
     for file_path in files:
@@ -291,16 +291,16 @@ def preprocessing_node(state: WorkflowState) -> Dict:
             old_func_data = old_funcs.get(func_name, {})
             old_code = old_func_data.get('code', "")
             
-            # Tier 0: Normalize 比较
+            # Tier 0: Normalization comparison
             
             norm_old = parser.normalize(old_code)
             norm_new = parser.normalize(new_code)
             if norm_old == norm_new:
                 continue
             
-            # Diff Gen
-            # [修改] 使用原始代码生成 Diff，确保行号和内容与 Agent 看到的上下文一致
-            # 同时传入 absolute start lines 进行 patch
+            # Generate Diff
+            # [Modified] Use original code to generate Diff, ensuring line numbers and content match context seen by Agent
+            # Also pass absolute start line for patching
             sl_old = old_func_data.get('start_line', 1)
             sl_new = new_func_data.get('start_line', 1)
             
@@ -311,15 +311,15 @@ def preprocessing_node(state: WorkflowState) -> Dict:
             func_hunk_ids = []
             
             for h in local_hunks:
-                # Tier 1: 静态过滤
-                # [Fix] Offset Hunk Lines with start_line
-                # HunkObj store raw_text and content
-                # We don't necessarily need to change the HunkObj indices if they are relative to the function.
-                # The GlobalHunkContext stores the function name and we have start_line in metadata.
+                # Tier 1: Static filtering
+                # [Fix] Use start_line to offset Hunk line
+                # HunkObj stores original text and content
+                # If HunkObj index is relative to function, we don't necessarily need to change them.
+                # GlobalHunkContext stores function name, we have start_line in metadata.
                 # So we can map later.
                 
                 if is_pure_static_noise(h):
-                    func_hunk_ids.append(-1) # 标记为直接删除
+                    func_hunk_ids.append(-1) # Mark as direct deletion
                 else:
                     g_hunk = GlobalHunkContext(global_id_counter, h, file_path, func_name)
                     global_hunk_registry.append(g_hunk)
@@ -334,13 +334,13 @@ def preprocessing_node(state: WorkflowState) -> Dict:
 
     print(f"Total Hunks: {len(global_hunk_registry)} (after static filtering)")
 
-    # 2. Tier 2: AI 批处理
+    # 2. Tier 2: AI Batch Processing
     all_decisions = {}
     batches = cleaner.batch_hunks_dynamic(global_hunk_registry)
     for batch in batches:
         all_decisions.update(cleaner.clean_batch_hunks(batch))
 
-    # 3. 重组
+    # 3. Reassembly
     final_patches = []
     for bp in patch_blueprints:
         file_path, func_name, raw_diff, old_code, new_code, sl_old, sl_new = bp['meta']
@@ -350,7 +350,7 @@ def preprocessing_node(state: WorkflowState) -> Dict:
             if g_id == -1:
                 local_decisions.append(HunkDecision(hunk_index=local_hunk.index, classification="REMOVE_ALL", reasoning="Tier 1"))
             elif g_id in all_decisions:
-                # 映射回 Local Hunk Index
+                # Map back to Local Hunk Index
                 d = all_decisions[g_id]
                 local_decisions.append(HunkDecision(hunk_index=local_hunk.index, classification=d.classification, noise_lines=d.noise_lines, reasoning=d.reasoning))
         
@@ -365,7 +365,7 @@ def preprocessing_node(state: WorkflowState) -> Dict:
                 start_line_new=sl_new
             ))
 
-    # Fallback: If denoising filtered everything but there were valid changes
+    # Fallback: If denoising filtered everything but valid changes exist
     if not final_patches and patch_blueprints:
         print("    [Warn] Denoising removed all content. Falling back to raw diffs.")
         for bp in patch_blueprints:
@@ -383,7 +383,7 @@ def preprocessing_node(state: WorkflowState) -> Dict:
     return {"atomic_patches": final_patches, "commit_message": commit_message, "lang": lang}
 
 def baseline_phase1_node(state: WorkflowState) -> Dict:
-    """Phase 3.1.2 Baseline (No Denoising) 节点入口"""
+    """Phase 3.1.2 Baseline (No Denoising) Node Entry"""
     print(f"--- Phase 1 Baseline: Commit {state['commit_hash']} ---")
     
     repo_mgr = RepoManager(state['repo_path'])

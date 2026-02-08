@@ -1,0 +1,16 @@
+repository,version
+apache/httpd,2.4.65
+curl/curl,curl-8_15_0
+FFmpeg/FFmpeg,n7.0.3
+FreeRDP/FreeRDP,3.16.0
+gnutls/gnutls,3.7.11
+gpac/gpac,abi-12.25
+ImageMagick/ImageMagick,7.1.2-0
+ImageMagick/ImageMagick6,6.9.13-25
+kamailio/kamailio,6.0.2
+libarchive/libarchive,v3.8.1
+LibreDWG/libredwg,0.13.3.7792
+radareorg/radare2,6.0.0
+torvalds/linux,v6.15
+uclouvain/openjpeg,v2.5.4
+wireshark/wireshark,wireshark-4.4.8

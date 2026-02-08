@@ -1,11 +1,9 @@
 **/__pycache__/
 **/*.pyc
-*databases*/**
-outputs*/**
-inputs*/**
+databases/
+outputs/
+inputs_*/
 .gitignore
 .env
-references*/**
-paper*/**
-# results*/**
-# scripts*/**
+results/
+scripts/

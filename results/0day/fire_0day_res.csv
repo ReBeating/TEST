@@ -5,8 +5,6 @@ CVE-2016-7524,ImageMagick/ImageMagick,f8c318d462270b03e77f082e2a3a32867cacd3c6,c
 CVE-2016-9559,ImageMagick/ImageMagick,b61d35eaccc0a7ddeff8a1c3abfcd0a43ccf210b,MagickCore/property.c,SetImageProperty,MagickCore/property.c,SetImageProperty,函数名相同,FP
 CVE-2019-15139,ImageMagick/ImageMagick,c78993d138bf480ab4652b5a48379d4ff75ba5f7,coders/xwd.c,RegisterXWDImage,coders/xwd.c,RegisterXWDImage,函数名相同,FP
 CVE-2020-25663,ImageMagick/ImageMagick,a47e7a994766b92b10d4a87df8c1c890c8b170f3,MagickCore/channel.c,SetImageAlphaChannel,MagickCore/channel.c,SetImageAlphaChannel,,FP
-CVE-2021-20224,ImageMagick/ImageMagick6,553054c1cb1e4e05ec86237afef76a32cd7c464d,magick/quantum-export.c,ExportRGBQuantum,magick/quantum-export.c,ExportBGRQuantum,找错vul function,FP
-CVE-2021-3574,ImageMagick/ImageMagick6,cd7f9fb7751b0d59d5a74b12d971155caad5a792,coders/tiff.c,ReadTIFFImage,coders/tiff.c,ReadTIFFImage,函数名相同,FP
 OSV-2023-1051,LibreDWG/libredwg,5b4c2fce7262b2bec00fa679e472559ab268d0c7,src/decode.c,dwg_decode_unknown_rest,src/decode.c,dwg_decode_unknown_bits,,TP
 OSV-2023-758,LibreDWG/libredwg,3a37ad736c87393c9f88396f03f0ba69a54fcf9b,src/bits.c,bit_TV_to_utf8,src/bits.c,bit_TV_to_utf8,函数名相同,FP
 CVE-2020-11993,apache/httpd,971fc8f5b5d664ddeb5d22f8adef2137c7980fc7,modules/http2/h2_util.c,h2_req_add_header,modules/http2/h2_proxy_util.c,h2_headers_add_h1,,TP
@@ -87,7 +85,7 @@ CVE-2022-1205,torvalds/linux,fc6d01ff9ef03b66d4a3a23b46fc3c3d8cf92009,net/ax25/a
 CVE-2022-1263,torvalds/linux,5593473a1e6c743764b08e3b6071cb43b5cfa6c4,virt/kvm/kvm_main.c,kvm_vcpu_destroy,virt/kvm/kvm_main.c,kvm_vcpu_destroy,,FP
 CVE-2022-1679,torvalds/linux,0ac4827f78c7ffe8eef074bc010e7e34bc22f533,drivers/net/wireless/ath/ath9k/htc_drv_init.c,ath9k_htc_probe_device,drivers/net/wireless/ath/ath9k/htc_drv_init.c,ath9k_htc_probe_device,,FP
 CVE-2022-1973,torvalds/linux,f26967b9f7a830e228bb13fb41bd516ddd9d789d,fs/ntfs3/fslog.c,log_replay,fs/ntfs3/fslog.c,log_replay,,FP
-CVE-2022-1975,torvalds/linux,4071bf121d59944d5cd2238de0642f3d7995a997,net/nfc/netlink.c,nfc_genl_fw_download_done,net/nfc/netlink.c,nfc_genl_se_removed,,TP
+CVE-2022-1975,torvalds/linux,4071bf121d59944d5cd2238de0642f3d7995a997,net/nfc/netlink.c,nfc_genl_fw_download_done,net/nfc/netlink.c,nfc_genl_se_removed,,FP
 CVE-2022-1975,torvalds/linux,4071bf121d59944d5cd2238de0642f3d7995a997,net/nfc/netlink.c,nfc_genl_fw_download_done,net/nfc/netlink.c,nfc_genl_tm_activated,,FP
 CVE-2022-1975,torvalds/linux,4071bf121d59944d5cd2238de0642f3d7995a997,net/nfc/netlink.c,nfc_genl_fw_download_done,net/nfc/netlink.c,nfc_genl_se_added,,FP
 CVE-2022-1975,torvalds/linux,4071bf121d59944d5cd2238de0642f3d7995a997,net/nfc/netlink.c,nfc_genl_fw_download_done,net/nfc/netlink.c,nfc_genl_tm_deactivated,,FP

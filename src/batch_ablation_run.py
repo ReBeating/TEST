@@ -2,19 +2,19 @@
 """
 Batch Ablation Experiment Runner
 
-运行消融实验，对指定漏洞列表执行所有4个消融版本的分析。
+Run ablation experiments, executing analysis for all 4 ablation versions on a specified vulnerability list.
 
 Usage:
-    # 运行所有版本
+    # Run all versions
     python src/batch_ablation_run.py -c inputs/merged_0day_vul_list.csv
     
-    # 只运行特定版本
+    # Run only specific versions
     python src/batch_ablation_run.py -c inputs/merged_0day_vul_list.csv --versions ablation1 ablation2
     
-    # 指定并行度
+    # Specify parallelism
     python src/batch_ablation_run.py -c inputs/merged_0day_vul_list.csv -b 4
     
-    # 只运行特定漏洞
+    # Run only specific vulnerability
     python src/batch_ablation_run.py -c inputs/merged_0day_vul_list.csv -v CVE-2024-1234
 """
 
@@ -31,17 +31,17 @@ from run_ablation import build_ablation_pipeline, setup_directories
 from core.configs import OUTPUT_DIR_PATH, REPO_DIR_PATH
 
 # ==========================================
-# 1. 任务处理函数
+# 1. Task Processing Functions
 # ==========================================
 
 def process_vuln_ablation(item, args, ablation_type):
     """
-    单个漏洞的单个消融版本处理任务
+    Processing task for a single ablation version of a single vulnerability
     
     Args:
-        item: 漏洞记录（包含vul_id, repo, fixed_commit_sha）
-        args: 命令行参数
-        ablation_type: 消融类型（ablation1, ablation2, ablation3, none）
+        item: Vulnerability record (containing vul_id, repo, fixed_commit_sha)
+        args: Command line arguments
+        ablation_type: Ablation type (ablation1, ablation2, ablation3, none)
     
     Returns:
         (vul_id, ablation_type, success, error_msg)
@@ -51,14 +51,14 @@ def process_vuln_ablation(item, args, ablation_type):
     commit_sha = item["fixed_commit_sha"]
 
     try:
-        # 在子进程内初始化 app
+        # Initialize app within the child process
         app = build_ablation_pipeline(ablation_type)
 
-        # 路径生成（会根据ablation_type自动选择正确的目录）
+        # Path generation (automatically selects the correct directory based on ablation_type)
         ckpt_dir, res_dir = setup_directories(args.output_dir, repo_name, vul_id, ablation_type)
         full_repo_path = os.path.join(args.repo_path, repo_name)
         
-        # 构造状态
+        # Construct state
         vuln_state = {
             "repo_name": repo_name,
             "vul_id": vul_id,
@@ -70,7 +70,7 @@ def process_vuln_ablation(item, args, ablation_type):
             "start_phase": args.start,
             "end_phase": args.end,
             "force_execution": args.force,
-            "ablation": ablation_type,  # 关键：传入ablation参数
+            "ablation": ablation_type,  # Key: pass ablation parameter
             "lang": "c",
             "atomic_patches": [],
             "grouped_patches": [],
@@ -91,9 +91,9 @@ def process_vuln_ablation(item, args, ablation_type):
 
 def process_vuln_all_ablations(item, args):
     """
-    处理单个漏洞的所有消融版本（顺序执行）
+    Process all ablation versions for a single vulnerability (sequentially)
     
-    这个函数会被多进程池调用，每个进程处理一个漏洞的所有版本。
+    This function will be called by the multiprocessing pool, each process handles all versions of a single vulnerability.
     """
     vul_id = item["vul_id"]
     results = []
@@ -106,11 +106,11 @@ def process_vuln_all_ablations(item, args):
 
 
 # ==========================================
-# 2. 结果统计
+# 2. Result Statistics
 # ==========================================
 
 def save_summary(all_results, output_path):
-    """保存运行摘要"""
+    """Save run summary"""
     summary = {
         "total_vulnerabilities": len(set(r[0] for r in all_results)),
         "total_tasks": len(all_results),
@@ -120,7 +120,7 @@ def save_summary(all_results, output_path):
         "timestamp": datetime.now().isoformat()
     }
     
-    # 按消融类型统计
+    # Statistics by ablation type
     for ablation in ["ablation1", "ablation2", "ablation3", "none"]:
         abl_results = [r for r in all_results if r[1] == ablation]
         summary["by_ablation"][ablation] = {
@@ -129,7 +129,7 @@ def save_summary(all_results, output_path):
             "failed": sum(1 for r in abl_results if not r[2])
         }
     
-    # 记录失败的任务
+    # Record failed tasks
     failed_tasks = [(r[0], r[1], r[3]) for r in all_results if not r[2]]
     if failed_tasks:
         summary["failed_tasks"] = [
@@ -144,12 +144,12 @@ def save_summary(all_results, output_path):
 
 
 # ==========================================
-# 3. 运行入口
+# 3. Execution Entry Point
 # ==========================================
 
 def load_failed_tasks(summary_path, csv_path):
     """
-    从 summary 文件中加载失败的任务，并与 CSV 匹配获取完整信息
+    Load failed tasks from summary file and match with CSV to get full information
     
     Returns:
         List of (item_dict, ablation_type) tuples
@@ -162,7 +162,7 @@ def load_failed_tasks(summary_path, csv_path):
         print("[!] No failed tasks found in summary file.")
         return []
     
-    # 读取 CSV 获取完整的漏洞信息
+    # Read CSV to get full vulnerability information
     df = pd.read_csv(csv_path)
     df = df.drop_duplicates(subset=["vul_id"])
     records_map = {row["vul_id"]: row.to_dict() for _, row in df.iterrows()}
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     
     load_dotenv()
     
-    # 标准化版本名称
+    # Normalize version names
     version_map = {
         "plain": "ablation1",
         "with_extraction": "ablation2",
@@ -217,15 +217,15 @@ if __name__ == "__main__":
         "ablation4": "none"
     }
     args.versions = [version_map.get(v, v) for v in args.versions]
-    args.versions = list(dict.fromkeys(args.versions))  # 去重并保持顺序
+    args.versions = list(dict.fromkeys(args.versions))  # Dereplicate and keep order
     
     # ==========================================
-    # 模式选择：重试失败任务 vs 正常运行
+    # Mode selection: Retry failed tasks vs Normal run
     # ==========================================
     retry_mode = args.retry_failed is not None
     
     if retry_mode:
-        # 重试失败任务模式
+        # Retry failed tasks mode
         print("=" * 70)
         print("Batch Ablation Experiment - RETRY FAILED TASKS")
         print("=" * 70)
@@ -235,8 +235,8 @@ if __name__ == "__main__":
             print("[!] No tasks to retry. Exiting.")
             exit(0)
         
-        # 如果指定了 --versions，只重试对应版本的失败任务
-        # 注意：默认 args.versions 包含所有4个版本，需要检查用户是否显式指定
+        # If --versions is specified, only retry failed tasks for those versions
+        # Note: default args.versions includes all 4 versions, need to check if user explicitly set it
         if args.versions != ["ablation1", "ablation2", "ablation3", "none"]:
             original_count = len(failed_tasks)
             failed_tasks = [(item, abl) for item, abl in failed_tasks if abl in args.versions]
@@ -257,13 +257,13 @@ if __name__ == "__main__":
         print(f"Force Re-run: {args.force}")
         print("=" * 70 + "\n")
         
-        # 强制开启 force 模式，覆盖之前失败的输出
+        # Force enable force mode to overwrite previously failed outputs
         args.force = True
         
         start_time = time()
         all_results = []
         
-        # 使用 parallel 策略直接分发失败任务
+        # Use parallel strategy to directly distribute failed tasks
         print("[*] Retrying failed tasks with PARALLEL strategy...")
         
         with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
@@ -290,11 +290,12 @@ if __name__ == "__main__":
         end_time = time()
         elapsed = end_time - start_time
         
-        # 保存重试结果摘要
+        # Save retry results summary
         retry_summary_path = os.path.join(args.output_dir, "ablation_retry_summary.json")
         retry_summary = save_summary(all_results, retry_summary_path)
+
         
-        # 打印结果
+        # Print results
         print("\n" + "=" * 70)
         print("Retry Failed Tasks Completed")
         print("=" * 70)
@@ -315,19 +316,19 @@ if __name__ == "__main__":
         exit(0)
     
     # ==========================================
-    # 正常运行模式
+    # Normal Run Mode
     # ==========================================
     
-    # 读取漏洞列表
+    # Read vulnerability list
     df = pd.read_csv(args.csv)
-    df = df.drop_duplicates(subset=["vul_id"])
+    df = df.drop_duplicates(subset=["repo", "vul_id"])
     all_records = df.to_dict(orient="records")
     
-    # 过滤特定漏洞
+    # Filter specific vulnerabilities
     if args.vul_id:
         all_records = [item for item in all_records if item.get("vul_id") == args.vul_id]
     
-    # 限制处理数量
+    # Limit number of processed items
     if args.limit:
         all_records = all_records[:args.limit]
     
@@ -348,8 +349,8 @@ if __name__ == "__main__":
     all_results = []
     
     if args.strategy == "sequential":
-        # 策略1：每个worker处理一个漏洞的所有版本（推荐）
-        # 优点：可以复用Phase 1和Phase 3的checkpoint
+        # Strategy 1: Each worker processes all versions of one vulnerability (Recommended)
+        # Pros: Can reuse checkpoints from Phase 1 and Phase 3
         print("[*] Using SEQUENTIAL strategy: each worker processes all versions of one vulnerability")
         
         with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
@@ -366,7 +367,7 @@ if __name__ == "__main__":
                     all_results.extend(results)
                     completed_vulns += 1
                     
-                    # 统计该漏洞的成功率
+                    # Calculate success rate for this vulnerability
                     success_count = sum(1 for r in results if r[2])
                     total_count = len(results)
                     print(f"[{completed_vulns}/{total_vulns}] Completed: {vul_id} ({success_count}/{total_count} versions successful)")
@@ -375,12 +376,12 @@ if __name__ == "__main__":
                     print(f"!!! [Exception] {vul_id} generated an exception: {exc}")
     
     else:  # parallel
-        # 策略2：所有任务（漏洞×版本）并行分发
-        # 优点：最大化并行度
-        # 缺点：无法跨版本复用checkpoint
+        # Strategy 2: All tasks (vulnerability x version) distributed in parallel
+        # Pros: Maximize parallelism
+        # Cons: Cannot reuse checkpoints across versions
         print("[*] Using PARALLEL strategy: distributing all tasks to workers")
         
-        # 生成所有任务
+        # Generate all tasks
         tasks = []
         for item in all_records:
             for ablation_type in args.versions:
@@ -409,11 +410,11 @@ if __name__ == "__main__":
     end_time = time()
     elapsed = end_time - start_time
     
-    # 保存摘要
+    # Save summary
     summary_path = os.path.join(args.output_dir, "ablation_batch_summary.json")
     summary = save_summary(all_results, summary_path)
     
-    # 打印结果
+    # Print results
     print("\n" + "=" * 70)
     print("Batch Ablation Experiment Completed")
     print("=" * 70)

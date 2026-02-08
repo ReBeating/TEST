@@ -11,7 +11,7 @@ from core.state import WorkflowState, PatchExtractionState, VerificationState
 from core.checkpoint import CheckpointManager
 from core.models import PatchFeatures
 
-# 引入节点逻辑
+# Import node logic
 from preprocessing.denoising import preprocessing_node
 from preprocessing.grouping import grouping_node
 from extraction.taxonomy import taxonomy_node
@@ -25,18 +25,18 @@ from dotenv import load_dotenv
 from core.configs import REPO_DIR_PATH, OUTPUT_DIR_PATH
 
 # ==============================================================================
-# 1. 节点定义 (Nodes)
+# 1. Node Definitions (Nodes)
 # ==============================================================================
 
 # ==============================================================================
-# 1. 节点定义 (Nodes) - 修改 loader_node
+# 1. Node Definitions (Nodes) - Modify loader_node
 # ==============================================================================
 
 def loader_node(state: WorkflowState):
     """
-    智能加载器：
-    1. 支持断点续跑。
-    2. 检测到结果文件存在且 force=False 时，自动加载数据并跳过该阶段（快进）。
+    Smart Loader:
+    1. Supports resuming from breakpoints.
+    2. Automatically loads data and skips the stage (fast-forward) if result file exists and force=False.
     """
     vul_id = state["vul_id"]
     current_phase = state["start_phase"]
@@ -45,13 +45,13 @@ def loader_node(state: WorkflowState):
     output_dir = state["output_dir"]
     force = state.get("force_execution", False)
     print(f'Force execution: {force}')
-    updates = {} # 用于更新 State 的数据
+    updates = {} # Used to update State data
     
     print(f"[*] Pipeline Init: {vul_id} | Request Start: P{current_phase} | Force: {force}")
 
-    # 定义检查和加载逻辑的循环
-    # 我们尝试从 current_phase 开始快进，直到 end_phase
-    # 注意：我们检查的是 "当前阶段的产出文件" 是否存在
+    # Define loop for check and load logic
+    # We attempt to fast-forward from current_phase until end_phase
+    # Note: We check if the "output file of the current phase" exists
     
     while current_phase <= end_phase:
         skip_current = False
@@ -71,24 +71,24 @@ def loader_node(state: WorkflowState):
         
         # --- Check Phase 2 Output ---
         elif current_phase == 2:
-            # 进入 P2 前必须确保 P1 数据在内存中 (如果是从 P1 跳过来的，updates里已经有了；如果是直接从 P2 start 的，需要补加载)
-            # 但这里的逻辑是：如果 P2 产物存在，我们加载 P2 产物并跳过 P2 执行
+            # Before entering P2, ensure P1 data is in memory (if jumped from P1, updates already has it; if starting directly from P2, need to reload)
+            # The logic here is: if P2 output exists, we load P2 output and skip P2 execution
             path = f"{vul_id}_phase2.pkl"
             full_path = os.path.join(output_dir, path)
             
-            # 如果仅仅是从 P1 快进过来，还没加载 P1 数据用于 P2 运行？ 
-            # 不需要，因为如果 P2 也跳过，就不需要 P1 数据。
-            # 如果 P2 不跳过，state 会保留 P1 的 update。
-            
-            # 只有当我们需要真正运行 P2 时，才需要从 P1.pkl 恢复（如果不是刚才加载的）
-            # 这里先判断是否跳过 P2
+            # If just fast-forwarded from P1, and P1 data hasn't been loaded for P2 execution?
+            # Not needed, because if P2 is also skipped, P1 data is not needed.
+            # If P2 is not skipped, state will retain P1's update.
+
+            # We only need to restore from P1.pkl when we actually need to run P2 (if not just loaded)
+            # Check if P2 should be skipped first here
             if os.path.exists(full_path) and not force:
                 print(f"    [Skip] Phase 2 result found. Loading data...")
                 data = CheckpointManager.load_pkl(path, output_dir)
                 updates["analyzed_features"] = data.get("analyzed_features", [])
                 skip_current = True
             else:
-                # 决定运行 P2。如果 updates 里没有 P1 数据（即直接从 P2 启动），需要补加载前序依赖
+                # Decided to run P2. If P1 data is not in updates (i.e., started directly from P2), need to reload preceding dependencies
                 if "grouped_patches" not in updates: 
                     p1_path = f"{vul_id}_phase1.pkl"
                     if os.path.exists(os.path.join(output_dir, p1_path)):
@@ -107,7 +107,7 @@ def loader_node(state: WorkflowState):
                 updates["search_candidates"] = data.get("search_candidates", [])
                 skip_current = True
             else:
-                # 决定运行 P3。需确保 P2 数据存在
+                # Decided to run P3. Need to ensure P2 data exists
                 if "analyzed_features" not in updates:
                     p2_path = f"{vul_id}_phase2.pkl"
                     if os.path.exists(os.path.join(output_dir, p2_path)):
@@ -124,7 +124,7 @@ def loader_node(state: WorkflowState):
                 updates["final_findings"] = data.get("final_findings", [])
                 skip_current = True
             else:
-                # 决定运行 P4。需要 P2 (features) 和 P3 (candidates)
+                # Decided to run P4. Need P2 (features) and P3 (candidates)
                 if "analyzed_features" not in updates:
                     p2_path = f"{vul_id}_phase2.pkl"
                     if os.path.exists(os.path.join(output_dir, p2_path)):
@@ -134,19 +134,19 @@ def loader_node(state: WorkflowState):
                     if os.path.exists(os.path.join(output_dir, p3_path)):
                         updates["search_candidates"] = CheckpointManager.load_pkl(p3_path, output_dir).get("search_candidates", [])
 
-        # --- 决策 ---
+        # --- Decision ---
         if skip_current:
-            current_phase += 1 # 快进到下一阶段
+            current_phase += 1 # Fast-forward to next phase
         else:
-            break # 无法跳过当前阶段，停止快进，准备执行
+            break # Cannot skip current phase, stop fast-forwarding, prepare to execute
             
-    # 更新 state 中的 start_phase，这样 router 就会把我们发配到正确的地方
+    # Update start_phase in state so router dispatches us to the correct place
     updates["start_phase"] = current_phase
     print(f"[*] Pipeline Logic: Jumping to Phase {current_phase}")
     
     return updates
 
-# --- Dispatchers (用于 Map) ---
+# --- Dispatchers (For Map) ---
 
 def extraction_dispatcher(state: WorkflowState):
     tasks = []
@@ -164,14 +164,14 @@ def extraction_dispatcher(state: WorkflowState):
 def validation_dispatcher(state: WorkflowState):
     tasks = []
     features_map = {f.group_id: f for f in state["analyzed_features"]}
-    # 按 group_id 聚合
+    # Aggregate by group_id
     group_map = defaultdict(list)
     for cand in state["search_candidates"]:
         group_map[cand.group_id].append(cand)
     for group_id, cands in group_map.items():
         feat = features_map.get(group_id)
         if feat:
-            # [修改] 不再此处筛选，全部送入 Phase 4，由 validation_node 内部根据 verdict 和 confidence 筛选
+            # [Modify] Do not filter here, send all to Phase 4, validation_node filters internally based on verdict and confidence
             tasks.append(Send("phase4_validation", {
                 "candidates": cands,
                 "feature_context": feat,
@@ -182,7 +182,7 @@ def validation_dispatcher(state: WorkflowState):
 
 
 def _calc_p4_expected_tasks(state: WorkflowState) -> int:
-    """计算 Phase 4 预期的子图任务数量（与 validation_dispatcher 逻辑一致）"""
+    """Calculate expected subgraph task count for Phase 4 (consistent with validation_dispatcher logic)"""
     features_map = {f.group_id: f for f in state.get("analyzed_features", [])}
     group_map = defaultdict(list)
     for cand in state.get("search_candidates", []):
@@ -193,10 +193,10 @@ def _calc_p4_expected_tasks(state: WorkflowState) -> int:
             count += 1
     return count
 
-# --- Finalizers (用于 Reduce & Save) ---
+# --- Finalizers (For Reduce & Save) ---
 
 def extraction_subgraph_finalizer(state: PatchExtractionState):
-    # 子图内部的打包节点
+    # Packing node within subgraph
     feat = PatchFeatures(
         group_id=state["group_id"],
         patches=state["patches"],
@@ -208,36 +208,36 @@ def extraction_subgraph_finalizer(state: PatchExtractionState):
     return {"analyzed_features": [feat]}
 
 def validation_subgraph_finalizer(state: VerificationState):
-    # 子图内部的打包节点，同时返回完成标记用于同步
+    # Packing node within subgraph, also returns completion marker for synchronization
     return {
         "final_findings": state.get("final_findings", []),
-        "p4_done_markers": [1]  # 每个子图完成时添加一个标记
+        "p4_done_markers": [1]  # Add a marker when each subgraph completes
     }
 
 def phase1_checkpoint_node(state: WorkflowState):
     """
-    [新增] Phase 1 结束后的收口节点：负责保存和日志。
-    LangGraph 会在所有并行子图完成后，且数据聚合到 state 后执行此节点。
+    [New] Closing node after Phase 1 ends: responsible for saving and logging.
+    LangGraph executes this node after all parallel subgraphs complete and data is aggregated into state.
     """
     count = len(state.get('grouped_patches', []))
     print(f"[*] Phase 1 Completed. Total patch groups: {count}")
     CheckpointManager.save_pkl(state, f"{state['vul_id']}_phase1.pkl", state["output_dir"])
-    return {} # 不修改状态
+    return {} # Do not modify state
 
 def phase2_checkpoint_node(state: WorkflowState):
     """
-    [新增] Phase 2 结束后的收口节点：负责保存和日志。
-    LangGraph 会在所有并行子图完成后，且数据聚合到 state 后执行此节点。
+    [New] Closing node after Phase 2 ends: responsible for saving and logging.
+    LangGraph executes this node after all parallel subgraphs complete and data is aggregated into state.
     """
     count = len(state.get('analyzed_features', []))
     print(f"[*] Phase 2 Completed. Total features: {count}")
     CheckpointManager.save_pkl(state, f"{state['vul_id']}_phase2.pkl", state["output_dir"])
     CheckpointManager.save_json(state.get('analyzed_features', []), f"{state['vul_id']}_features.json", state["result_dir"])
-    return {} # 不修改状态
+    return {} # Do not modify state
 
 def phase3_checkpoint_node(state: WorkflowState):
     """
-    [新增] Phase 3 结束后的收口节点。
+    [New] Closing node after Phase 3 ends.
     """
     count = len(state.get('search_candidates', []))
     print(f"[*] Phase 3 Completed. Total candidates: {count}")
@@ -247,19 +247,19 @@ def phase3_checkpoint_node(state: WorkflowState):
 
 def phase4_checkpoint_node(state: WorkflowState):
     """
-    [新增] Phase 4 结束后的收口节点。
-    使用计数机制确保只在所有子图完成后才保存结果，避免并发子图导致的覆盖问题。
+    [New] Closing node after Phase 4 ends.
+    Use counting mechanism to ensure saving results only after all subgraphs complete, avoiding overwrite issues caused by concurrent subgraphs.
     """
-    # 计算预期任务数和已完成任务数
+    # Calculate expected task count and completed task count
     expected = _calc_p4_expected_tasks(state)
     done = len(state.get('p4_done_markers', []))
     
-    # 如果还有子图未完成，仅打印进度，不保存
+    # If there are unfinished subgraphs, only print progress, do not save
     if done < expected:
         print(f"[*] Phase 4 Progress: {done}/{expected} subgraphs completed")
         return {}
     
-    # 所有子图都完成，执行最终保存
+    # All subgraphs completed, execute final save
     count = len(state.get('final_findings', []))
     print(f"[*] Phase 4 Completed. Total findings: {count}")
     CheckpointManager.save_pkl(state, f"{state['vul_id']}_{state['mode']}_phase4.pkl", state["output_dir"])
@@ -267,7 +267,7 @@ def phase4_checkpoint_node(state: WorkflowState):
     return {}
 
 # ==============================================================================
-# 2. 图构建逻辑
+# 2. Graph Construction Logic
 # ==============================================================================
 
 def build_extraction_subgraph():
@@ -297,27 +297,27 @@ def build_validation_subgraph():
 def build_pipeline():
     workflow = StateGraph(WorkflowState)
     
-    # --- 注册节点 ---
+    # --- Register Nodes ---
     workflow.add_node("loader", loader_node)
     
     # P1
     workflow.add_node("phase1_preprocess", preprocessing_node) 
     workflow.add_node("phase1_grouping", grouping_node)
-    workflow.add_node("phase1_checkpoint", phase1_checkpoint_node) # 新增收口点
+    workflow.add_node("phase1_checkpoint", phase1_checkpoint_node) # New closing point
     
     # P2
     workflow.add_node("phase2_extraction", build_extraction_subgraph())
-    workflow.add_node("phase2_checkpoint", phase2_checkpoint_node) # 新增收口点
+    workflow.add_node("phase2_checkpoint", phase2_checkpoint_node) # New closing point
     
     # P3
     workflow.add_node("phase3_search", matching_node)
-    workflow.add_node("phase3_checkpoint", phase3_checkpoint_node) # 新增收口点
+    workflow.add_node("phase3_checkpoint", phase3_checkpoint_node) # New closing point
     
     # P4
     workflow.add_node("phase4_validation", build_validation_subgraph())
-    workflow.add_node("phase4_checkpoint", phase4_checkpoint_node) # 新增收口点
+    workflow.add_node("phase4_checkpoint", phase4_checkpoint_node) # New closing point
     
-    # --- 流程编排 ---
+    # --- Workflow Orchestration ---
     workflow.set_entry_point("loader")
     
     # 1. Router: After Loader
@@ -332,8 +332,8 @@ def build_pipeline():
         
         if s <= 1: return "phase1_preprocess"
         if s == 2: 
-            # 恢复时如果需要分发，必须在这里做，或者跳到一个专门的分发节点
-            # 简单起见，如果从 P2 开始，我们复用 extraction_dispatcher
+            # If distribution is needed when resuming, it must be done here or jump to a dedicated dispatcher node
+            # For simplicity, if starting from P2, we reuse extraction_dispatcher
             return extraction_dispatcher(state)
         if s == 3: return "phase3_search"
         if s == 4: 
@@ -359,11 +359,11 @@ def build_pipeline():
     workflow.add_conditional_edges("phase1_checkpoint", route_p1, ["phase2_extraction", END])
     
     # 3. P2 Flow
-    # P2 子图并发运行 -> 聚合 -> 进入 Checkpoint Node
+    # P2 Subgraphs run concurrently -> Aggregate -> Enter Checkpoint Node
     workflow.add_edge("phase2_extraction", "phase2_checkpoint")
     
     def route_p2(state):
-        # 纯路由逻辑，不含副作用
+        # Pure routing logic, no side effects
         if state["end_phase"] < 3: return END
         return "phase3_search"
 
@@ -392,25 +392,25 @@ def build_pipeline():
 
 def setup_directories(base_output_dir: str, repo_name: str, vul_id: str):
     """
-    构建分离式的目录路径：
+    Build separated directory paths:
     - Checkpoints: base/checkpoints/repo/vul_id
     - Results:     base/results/repo
     """
-    # 1. Checkpoints 目录（保持深层结构，因为文件多且杂）
+    # 1. Checkpoints Directory (Keep deep structure as there are many diverse files)
     ckpt_dir = os.path.join(base_output_dir, "checkpoints", repo_name, vul_id)
     
-    # 2. Results 目录（扁平化结构，方便查看）
-    # 这里我们把结果放在 outputs/results/repo_name/ 下
+    # 2. Results Directory (Flat structure for easy viewing)
+    # Here we place results under outputs/results/repo_name/
     res_dir = os.path.join(base_output_dir, "results", repo_name)
     
-    # 3. 自动创建目录
+    # 3. Automatically create directories
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(res_dir, exist_ok=True)
     
     return ckpt_dir, res_dir
 
 # ==============================================================================
-# 4. 运行入口
+# 4. Run Entry Point
 # ==============================================================================
 
 if __name__ == "__main__":
@@ -435,7 +435,7 @@ if __name__ == "__main__":
     print(f"[*] Checkpoints Dir: {checkpoint_dir}")
     print(f"[*] Results Dir:     {result_dir}")
     
-    # 初始化 State
+    # Initialize State
     initial_state = {
         "repo_name": args.repo,
         "vul_id": args.vul_id,
@@ -447,14 +447,14 @@ if __name__ == "__main__":
         "start_phase": args.start,
         "end_phase": args.end,
         "force_execution": args.force,
-        "lang": "c",  # 假设 C 语言
-        # 列表字段初始化为空，防止 append 错误
+        "lang": "c",  # Assume C language
+        # Initialize list fields as empty to prevent append errors
         "atomic_patches": [],
         "grouped_patches": [],
         "analyzed_features": [],
         "search_candidates": [],
         "final_findings": [],
-        # Phase 4 同步控制
+        # Phase 4 Synchronization Control
         "p4_total_tasks": 0,
         "p4_done_markers": []
     }
@@ -462,7 +462,7 @@ if __name__ == "__main__":
     print(f"=== Starting Pipeline for {args.vul_id} ===")
     
     app = build_pipeline()
-    # 增加 recursion_limit 因为 map-reduce 步骤多
+    # Increase recursion_limit due to many map-reduce steps
     result = app.invoke(initial_state, {"recursion_limit": 100})
     
     print("=== Pipeline Finished ===")

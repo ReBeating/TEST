@@ -5,15 +5,15 @@ from typing import Any, Type, TypeVar
 from pydantic import BaseModel, TypeAdapter
 from core.configs import OUTPUT_DIR_PATH
 
-# 定义泛型，用于类型提示
+# Define generic type for type hinting
 T = TypeVar("T")
 
 class CheckpointManager:
     @staticmethod
     def save_pkl(data: Any, filename: str, output_dir: str = OUTPUT_DIR_PATH):
         """
-        通用保存：保存为二进制 Pickle 文件
-        优点：保留所有 Python 原生类型 (Set, Tuple, Custom Objects)
+        General saving: Save as a binary Pickle file
+        Pros: Retains all Python native types (Set, Tuple, Custom Objects)
         """
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -30,7 +30,7 @@ class CheckpointManager:
 
     @staticmethod
     def load_pkl(filename: str, output_dir: str = OUTPUT_DIR_PATH) -> Any:
-        """通用加载：从 Pickle 恢复"""
+        """General loading: Restore from Pickle"""
         file_path = os.path.join(output_dir, filename)
         if not file_path.endswith(".pkl"):
             file_path += ".pkl"
@@ -47,8 +47,8 @@ class CheckpointManager:
     @staticmethod
     def save_json(data: Any, filename: str, output_dir: str = OUTPUT_DIR_PATH):
         """
-        调试用保存：保存为 JSON
-        注意：这主要用于人工检查，Set 会被转为 List，加载回来可能需要重新转换类型
+        Debugging save: Save as JSON
+        Note: This is mainly for manual inspection, Sets will be converted to Lists, reloading may require type reconversion
         """
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -57,8 +57,8 @@ class CheckpointManager:
         if not file_path.endswith(".json"):
             file_path += ".json"
         
-        # 使用 Pydantic 的 TypeAdapter 来处理复杂对象的序列化
-        # 它能自动处理 Pydantic Model, Dict, List 等
+        # Use Pydantic's TypeAdapter to handle serialization of complex objects
+        # It can automatically handle Pydantic Model, Dict, List, etc.
         adapter = TypeAdapter(type(data))
         json_bytes = adapter.dump_json(data, indent=2)
         

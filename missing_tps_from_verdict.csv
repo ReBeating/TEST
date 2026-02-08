@@ -1,2 +1,0 @@
-vul_id,repo,patch_file,patch_func,target_file,target_func
-CVE-2017-6197,radareorg/radare2,libr/include/r_endian.h,r_read_at_le16,libr/include/r_endian.h,r_read_at_be64

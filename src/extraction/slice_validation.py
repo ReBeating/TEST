@@ -1,16 +1,16 @@
 """
-Slice Validation 辅助函数
+Slice Validation Helper Functions
 
-基于 Methodology §3.3.2 实现切片质量验证
-策略重构：从验证anchor连贯性 → 验证生成切片的质量
+Based on Methodology §3.3.2 Implementation of Slice Quality Validation
+Strategy Refactoring: Validation of anchor coherence → Validation of generated slice quality
 
-验证时机：在切片提取后，而非anchor识别后
-验证内容：
-1. Slice Coverage - 切片包含关键代码（diff修改行、anchor位置）
-2. Slice Completeness - 切片大小合理（不为空、不过小）
-3. Anchor Presence - 识别的anchors在切片中可见
+Validation Timing: After slice extraction, not after anchor identification
+Validation Content:
+1. Slice Coverage - Slice contains critical code (diff modification lines, anchor positions)
+2. Slice Completeness - Slice size is reasonable (not empty, not too small)
+3. Anchor Presence - Identified anchors are visible in the slice
 
-如果切片质量不佳 → 说明anchor识别有问题 → 触发重新发现
+If slice quality is poor → Indicates issues with anchor identification → Trigger rediscovery
 """
 
 import time
@@ -21,7 +21,7 @@ from core.navigator import CodeNavigator
 
 
 # ==============================================================================
-# 重连重试工具函数
+# Connection retry utility functions
 # ==============================================================================
 
 def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_factor=2.0):
@@ -74,23 +74,23 @@ def extract_slice_for_validation(
     pdg: nx.MultiDiGraph
 ) -> Set[str]:
     """
-    提取简化切片用于验证 anchor 连贯性
+    Extract simplified slice for validation of anchor coherence
     
-    这是临时切片，仅用于检查 Origin→Impact 的连接性
-    使用双向切片的交集
+    This is a temporary slice, only used to check the connectivity of Origin→Impact
+    Uses the intersection of bidirectional slices
     
     Args:
-        anchor_result: Anchor 识别结果
-        slicer: Slicer 实例
+        anchor_result: Anchor identification result
+        slicer: Slicer instance
         pdg: Program Dependence Graph
         
     Returns:
-        切片节点集合
+        Set of slice nodes
     """
     if not anchor_result.origin_anchors or not anchor_result.impact_anchors:
         return set()
     
-    # 1. 提取 Origin 节点和变量
+    # 1. Extract Origin nodes and variables
     origin_nodes = []
     origin_vars = set()
     
@@ -98,13 +98,13 @@ def extract_slice_for_validation(
         nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
         origin_nodes.extend(nodes)
         
-        # 提取 Origin 定义的变量
+        # Extract variables defined in Origin
         for nid in nodes:
             if nid in pdg.nodes:
                 defs = pdg.nodes[nid].get('defs', {})
                 origin_vars.update(defs.keys())
     
-    # 2. 提取 Impact 节点和变量
+    # 2. Extract Impact nodes and variables
     impact_nodes = []
     impact_vars = set()
     
@@ -112,13 +112,13 @@ def extract_slice_for_validation(
         nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
         impact_nodes.extend(nodes)
         
-        # 提取 Impact 使用的变量
+        # Extract variables used in Impact
         for nid in nodes:
             if nid in pdg.nodes:
                 uses = pdg.nodes[nid].get('uses', {})
                 impact_vars.update(uses.keys())
     
-    # 3. 双向切片
+    # 3. Bidirectional slicing
     fwd_slice = set()
     if origin_nodes and origin_vars:
         fwd_slice = slicer.forward_slice_pruned(origin_nodes, origin_vars)
@@ -127,11 +127,11 @@ def extract_slice_for_validation(
     if impact_nodes and impact_vars:
         bwd_slice = slicer.backward_slice_pruned(impact_nodes, impact_vars)
     
-    # 4. 交集 = Origin→Impact 路径上的节点
+    # 4. Intersection = Nodes on the Origin→Impact path
     if fwd_slice and bwd_slice:
         return fwd_slice.intersection(bwd_slice)
     else:
-        # 如果其中一个切片为空，返回两者的并集
+        # If one of the slices is empty, return their union
         return fwd_slice.union(bwd_slice)
 
 
@@ -143,26 +143,26 @@ def check_path_reachability(
     require_data_flow: bool = True
 ) -> Dict[str, Any]:
     """
-    检查 Origin 到 Impact 的路径可达性
+    Check path reachability from Origin to Impact
     
-    实现 Methodology §3.3.2 中的约束2（Data-flow Connectivity）
+    Implements Constraint 2 (Data-flow Connectivity) from Methodology §3.3.2
     
-    检查策略：
-    - require_data_flow=True: 检查 DATA 边路径（用于 UAF、NPD、Buffer Overflow 等）
-    - require_data_flow=False: 检查 CONTROL 边路径（理论设计，实际未使用）
+    Check Strategy:
+    - require_data_flow=True: Check DATA edge paths (used for UAF, NPD, Buffer Overflow, etc.)
+    - require_data_flow=False: Check CONTROL edge paths (theoretical design, not actually used)
     
-    注意：
-    - PDG 的 CONTROL 边表示控制依赖（control dependence），不是 CFG 的顺序流
-    - 对于顺序执行的代码（如 alloc; stmt; return），它们之间可能不存在控制依赖关系
-    - 因此 CONTROL 边检查不能有效验证 control-flow reachability
-    - 缺失操作类漏洞（Memory Leak）应跳过此函数，直接通过验证
+    Note:
+    - PDG's CONTROL edges represent control dependence, not CFG's sequential flow
+    - For sequentially executed code (e.g., alloc; stmt; return), there may be no control dependence between them
+    - Therefore, CONTROL edge checks cannot effectively validate control-flow reachability
+    - Missing operation vulnerabilities (Memory Leak) should skip this function and pass validation directly
     
     Args:
         origin_anchors: Origin anchors
         impact_anchors: Impact anchors
         pdg: Program Dependence Graph
-        slicer: Slicer 实例
-        require_data_flow: 是否要求数据流连接性
+        slicer: Slicer instance
+        require_data_flow: Whether data flow connectivity is required
         
     Returns:
         {
@@ -171,7 +171,7 @@ def check_path_reachability(
             "details": str
         }
     """
-    # 获取 Origin 和 Impact 的 PDG 节点
+    # Get PDG nodes for Origin and Impact
     origin_node_ids = set()
     for anchor in origin_anchors:
         nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
@@ -189,9 +189,9 @@ def check_path_reachability(
             "details": "Could not map anchors to PDG nodes"
         }
     
-    # 根据 require_data_flow 选择检查策略
+    # Select check strategy based on require_data_flow
     if require_data_flow:
-        # 策略1：检查 DATA 路径（用于 UAF, NPD, Buffer Overflow 等）
+        # Strategy 1: Check DATA path (used for UAF, NPD, Buffer Overflow, etc.)
         for origin_nid in origin_node_ids:
             if origin_nid not in pdg.nodes:
                 continue
@@ -201,7 +201,7 @@ def check_path_reachability(
                     continue
                 
                 try:
-                    # 只考虑 DATA 边
+                    # Only consider DATA edges
                     data_edges = [(u, v, k) for u, v, k, data in pdg.edges(keys=True, data=True)
                                  if data.get('relationship') == 'DATA']
                     if data_edges:
@@ -221,9 +221,9 @@ def check_path_reachability(
             "details": "No DATA flow path found from Origin to Impact"
         }
     else:
-        # 策略2：检查 CONTROL 边路径（理论设计，实际不推荐）
-        # PDG 的 CONTROL 边表示控制依赖，不是 CFG 的顺序流
-        # 对于顺序代码（如 alloc; return），可能不存在控制依赖关系
+        # Strategy 2: Check CONTROL edge paths (theoretical design, not recommended)
+        # PDG's CONTROL edges represent control dependence, not CFG's sequential flow
+        # For sequential code (e.g., alloc; return), control dependence may not exist
         for origin_nid in origin_node_ids:
             if origin_nid not in pdg.nodes:
                 continue
@@ -233,7 +233,7 @@ def check_path_reachability(
                     continue
                 
                 try:
-                    # 检查 CONTROL 路径（通过 CFG 可达）
+                    # Check CONTROL path (reachable via CFG)
                     control_edges = [(u, v, k) for u, v, k, data in pdg.edges(keys=True, data=True)
                                     if data.get('relationship') == 'CONTROL']
                     if control_edges:
@@ -258,21 +258,21 @@ def validate_anchor_completeness(
     anchor_result: AnchorResult
 ) -> Dict[str, Any]:
     """
-    轻量级Anchor完整性检查（仅验证Role Completeness）
+    Lightweight Anchor Completeness Check (Only Role Completeness Validation)
     
-    策略重构：放弃复杂的静态路径验证，改为后验切片质量检查
+    Strategy Refactoring: Abandon complex static path validation in favor of posterior slice quality check
     
-    此函数仅验证：
-    - 至少有一个 Origin anchor
-    - 至少有一个 Impact anchor
+    This function only verifies:
+    - At least one Origin anchor
+    - At least one Impact anchor
     
-    详细的质量验证将在切片生成后进行（validate_slice_quality）
+    Detailed quality validation will be performed after slice generation (validate_slice_quality)
     
     Args:
-        anchor_result: Anchor 识别结果
+        anchor_result: Anchor identification result
         
     Returns:
-        验证结果字典：
+        Validation result dictionary:
         {
             "is_valid": bool,
             "reason": str
@@ -280,7 +280,7 @@ def validate_anchor_completeness(
     """
     from core.models import AnchorRole
     
-    # [DEBUG] 打印详细的 Anchor 信息
+    # [DEBUG] Print detailed Anchor information
     print(f"\n      [Validation] ===== Anchor Completeness Check =====")
     print(f"      [Validation] Origin Anchors ({len(anchor_result.origin_anchors)}):")
     for i, anchor in enumerate(anchor_result.origin_anchors, 1):
@@ -328,22 +328,22 @@ def validate_slice_quality(
     llm = None
 ) -> Dict[str, Any]:
     """
-    验证生成切片的质量（后验检查）
+    Validate quality of generated slice (Posterior check)
     
-    基于 Methodology §3.3.2 重构后的验证策略：
-    1. Anchor Presence: 识别的anchors在切片中可见（简单检查）
-    2. Semantic Adequacy: 切片能够说明漏洞逻辑（LLM语义判断）
+    Refactored validation strategy based on Methodology §3.3.2:
+    1. Anchor Presence: Identified anchors are visible in the slice (simple check)
+    2. Semantic Adequacy: The slice can explain the vulnerability logic (LLM semantic judgment)
     
-    如果切片质量不佳 → 说明anchor识别有问题 → 可触发重新发现
+    If slice quality is poor → Indicates issues with anchor identification → Trigger rediscovery
     
     Args:
-        slice_code: 生成的切片代码
-        anchor_result: Anchor 识别结果
-        taxonomy: 漏洞类型分类信息
-        llm: LLM实例（用于语义验证）
+        slice_code: Generated slice code
+        anchor_result: Anchor identification result
+        taxonomy: Vulnerability taxonomy information
+        llm: LLM instance (for semantic validation)
         
     Returns:
-        验证结果字典：
+        Validation result dictionary:
         {
             "is_valid": bool,
             "anchor_present": bool,
@@ -359,7 +359,7 @@ def validate_slice_quality(
             "reason": "Empty slice generated"
         }
     
-    # 提取切片中的行号
+    # Extract line numbers from slice
     import re
     slice_lines = set()
     for line in slice_code.splitlines():
@@ -375,7 +375,7 @@ def validate_slice_quality(
             "reason": "No valid code lines in slice"
         }
     
-    # Check 1: Anchor Presence - 识别的anchors在切片中可见
+    # Check 1: Anchor Presence - Identified anchors are visible in the slice
     anchor_lines = set()
     for anchor in anchor_result.origin_anchors + anchor_result.impact_anchors:
         anchor_lines.add(anchor.line)
@@ -385,7 +385,7 @@ def validate_slice_quality(
         anchor_msg = "No anchors identified"
     else:
         covered_anchors = anchor_lines.intersection(slice_lines)
-        anchor_present = len(covered_anchors) > 0  # 至少有一个anchor在切片中
+        anchor_present = len(covered_anchors) > 0  # At least one anchor present in slice
         anchor_msg = f"{len(covered_anchors)}/{len(anchor_lines)} anchors present"
     
     print(f"      [SliceValidation] Anchor presence: {'✓' if anchor_present else '✗'} ({anchor_msg})")
@@ -398,17 +398,17 @@ def validate_slice_quality(
             "reason": f"Anchors not visible in slice ({anchor_msg})"
         }
     
-    # Check 2: Semantic Adequacy - 切片能够说明漏洞逻辑（LLM判断）
-    semantic_adequate = True  # 默认通过（如果没有LLM或跳过语义检查）
+    # Check 2: Semantic Adequacy - The slice can explain the vulnerability logic (LLM judgment)
+    semantic_adequate = True  # Pass by default (if no LLM or semantic check skipped)
     semantic_msg = "Assumed adequate (semantic check skipped)"
     
     if llm:
         try:
             from langchain_core.prompts import ChatPromptTemplate
             
-            # [改进] 构建包含跨函数信息的anchor描述
+            # [Enhanced] Build anchor description containing cross-function information
             def format_anchor_desc(anchors, max_show=5):
-                """格式化anchor描述，包含跨函数信息"""
+                """Format anchor description, including cross-function information"""
                 if not anchors:
                     return "None identified"
                 
@@ -417,10 +417,10 @@ def validate_slice_quality(
                     role_str = a.role.value if hasattr(a.role, 'value') else str(a.role)
                     scope_str = f" [{a.scope}]" if hasattr(a, 'scope') and a.scope != "local" else ""
                     
-                    # 基本信息
+                    # Basic information
                     line_desc = f"{i}. Line {a.line}: {role_str}{scope_str}"
                     
-                    # 添加跨函数信息（如果有）
+                    # Add cross-function information (if any)
                     if hasattr(a, 'cross_function_info') and a.cross_function_info:
                         cf = a.cross_function_info
                         if cf.callee_function:
@@ -440,10 +440,10 @@ def validate_slice_quality(
             origin_desc = format_anchor_desc(anchor_result.origin_anchors)
             impact_desc = format_anchor_desc(anchor_result.impact_anchors)
             
-            # 直接使用 taxonomy 中的假设信息（已经在 §3.2.1 分析过）
+            # Directly use hypothesis information from taxonomy (already analyzed in §3.2.1)
             vuln_type_str = taxonomy.vuln_type.value if hasattr(taxonomy.vuln_type, 'value') else str(taxonomy.vuln_type)
             
-            # 获取 anchor roles 描述（来自 taxonomy）
+            # Get anchor roles description (from taxonomy)
             origin_roles_str = ", ".join([r.value for r in taxonomy.origin_roles]) if hasattr(taxonomy, 'origin_roles') and taxonomy.origin_roles else "N/A"
             impact_roles_str = ", ".join([r.value for r in taxonomy.impact_roles]) if hasattr(taxonomy, 'impact_roles') and taxonomy.impact_roles else "N/A"
             
@@ -527,7 +527,7 @@ Answer with a JSON object:
             
         except Exception as e:
             print(f"      [SliceValidation] Semantic check failed: {e}")
-            semantic_adequate = True  # 出错时默认通过
+            semantic_adequate = True  # Default to pass on error
             semantic_msg = f"Check error (assuming adequate): {str(e)[:50]}"
     
     print(f"      [SliceValidation] Semantic adequacy: {'✓' if semantic_adequate else '✗'} ({semantic_msg})")

@@ -76,7 +76,7 @@ def tokenize_code(code: str) -> List[str]:
     return list(final_tokens)
 
 def chunked_iterable(iterable, size):
-    """将列表切割为固定大小的块"""
+    """Split the list into chunks of fixed size"""
     chunk = []
     for item in iterable:
         chunk.append(item)
@@ -88,17 +88,17 @@ def chunked_iterable(iterable, size):
 
 def find_source_files(repo_path: str) -> List[str]:
     """
-    快速查找所有源文件。
-    优先使用 git ls-files (极快)，失败则回退到 os.walk
+    Quickly find all source files.
+    Prefer git ls-files (extremely fast), fall back to os.walk if it fails.
     """
-    extensions = {'.c', '.h', '.cpp', '.hpp', '.cc', '.cc', '.cxx'} # 根据需要添加
+    extensions = {'.c', '.h', '.cpp', '.hpp', '.cc', '.cc', '.cxx'} # Add as needed
     files = []
     
-    # 方法1: 尝试 git (Linux内核通常是git仓库)
+    # Method 1: Try git (Linux kernel is usually a git repo)
     try:
         cmd = ["git", "ls-files"]
-        # 限制只查找相关后缀，或者全部拿出来后再过滤
-        # git ls-files 输出的是相对路径
+        # Limit to finding relevant extensions only, or get all and filter later
+        # git ls-files outputs relative paths
         process = subprocess.Popen(
             cmd, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
         )
@@ -112,10 +112,10 @@ def find_source_files(repo_path: str) -> List[str]:
     except Exception:
         pass
 
-    # 方法2: os.walk 回退
+    # Method 2: Fallback to os.walk
     print("[*] 'git ls-files' failed or not a git repo. Falling back to os.walk...")
     for root, dirs, filenames in os.walk(repo_path):
-        # 排除常见非代码目录
+        # Exclude common non-code directories
         dirs[:] = [d for d in dirs if d not in ('.git', 'Documentation', 'scripts', 'tools')]
         
         for name in filenames:
@@ -128,9 +128,9 @@ def find_source_files(repo_path: str) -> List[str]:
 
 def process_file_chunk_robust(repo_path: str, file_chunk: List[str], chunk_id: int) -> Tuple[List[Tuple], str | None]:
     """
-    [Worker 进程入口]
-    增强了错误捕获和 ctags 进程状态检查。
-    返回: (结果列表, 错误信息字符串 or None)
+    [Worker Process Entry]
+    Enhanced error catching and ctags process status check.
+    Return: (result list, error message string or None)
     """
     results = []
     if not file_chunk:
@@ -141,13 +141,13 @@ def process_file_chunk_robust(repo_path: str, file_chunk: List[str], chunk_id: i
         "--languages=C,C++",
         "--output-format=json",
         "--fields=+ne",
-        "--c-kinds=+f-p", # 只看函数定义，排除原型
+        "--c-kinds=+f-p", # Only look for function definitions, exclude prototypes
         "--extras=+q",
-        "-f", "-",        # 输出到 stdout
-        "-L", "-"         # 从 stdin 读取文件列表
+        "-f", "-",        # Output to stdout
+        "-L", "-"         # Read file list from stdin
     ]
     
-    # ctags 进程的 PID，用于之后检查
+    # PID of the ctags process, used for later check
     ctags_pid = None
 
     try:
@@ -155,27 +155,27 @@ def process_file_chunk_robust(repo_path: str, file_chunk: List[str], chunk_id: i
             cmd, cwd=repo_path,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, # 捕获 stderr
+            stderr=subprocess.PIPE, # Capture stderr
             text=True, encoding='utf-8', errors='replace',
             bufsize=1024*1024
         )
-        ctags_pid = process.pid # 获取 ctags 进程 ID
+        ctags_pid = process.pid # Get ctags process ID
 
-        # 使用 communicate 设置超时，例如 5 分钟
-        # 注意：ctags 解析 Linux 内核可能非常耗时，需要根据实际情况调整
-        # 如果是某个超大文件，可能需要更长，甚至取消超时（但风险大）
-        # 更好的方法是：不直接用 communicate，而是轮询 stdout 和 stderr
-        # 但这里为了简化，我们先尝试用 timeout
+        # Use communicate to set timeout, e.g., 5 minutes
+        # Note: ctags parsing of Linux kernel may be very time-consuming, adjust according to actual situation
+        # If it is a huge file, it may take longer, or even cancel the timeout (but high risk)
+        # A better way is: do not use communicate directly, but poll stdout and stderr
+        # But for simplicity here, we try to use timeout first
         try:
             input_str = "\n".join(file_chunk)
-            stdout_data, stderr_data = process.communicate(input=input_str, timeout=300) # 5分钟超时
+            stdout_data, stderr_data = process.communicate(input=input_str, timeout=300) # 5 minutes timeout
             
             if process.returncode != 0:
                 error_msg = f"ctags exited with code {process.returncode}. Stderr:\n{stderr_data.strip()}"
                 print(f"[WARN] Chunk {chunk_id} ctags error: {error_msg}")
-                return (results, error_msg) # 返回错误信息
+                return (results, error_msg) # Return error message
 
-            # --- 解析 stdout_data ---
+            # --- Parse stdout_data ---
             file_tags_map = {}
             for line in stdout_data.splitlines():
                 try:
@@ -230,32 +230,32 @@ def process_file_chunk_robust(repo_path: str, file_chunk: List[str], chunk_id: i
                                 results.append((name, f_path, start, end, kind, code_content, tokens))
                                 
                 except Exception:
-                    # 文件读取或处理单个 tag 出错，忽略该 tag
+                    # Error reading file or processing single tag, ignore that tag
                     pass
             
-            return (results, None) # 成功
+            return (results, None) # Success
 
         except subprocess.TimeoutExpired:
             error_msg = f"ctags process timed out after 300s. Stderr:\n{stderr_data.strip()}"
             print(f"[ERROR] Chunk {chunk_id} timeout: {error_msg}")
-            # 尝试终止 ctags 进程
+            # Try to terminate ctags process
             if ctags_pid:
                 try:
                     p = psutil.Process(ctags_pid)
                     p.terminate()
-                    p.wait(timeout=5) # 等待终止
+                    p.wait(timeout=5) # Wait for termination
                 except (psutil.NoSuchProcess, psutil.AccessDenied, TimeoutError):
-                    pass # 忽略终止错误
-            return ([], error_msg) # 返回超时错误
+                    pass # Ignore termination error
+            return ([], error_msg) # Return timeout error
         
         except Exception as e:
-            # 其他 Python 异常
+            # Other Python exceptions
             error_msg = f"Unexpected error in worker process: {e}. Stderr:\n{stderr_data.strip()}"
             print(f"[ERROR] Chunk {chunk_id} worker error: {error_msg}")
-            return ([], error_msg) # 返回通用错误
+            return ([], error_msg) # Return general error
 
     except Exception as e:
-        # Popen 阶段出错
+        # Error during Popen stage
         error_msg = f"Failed to start ctags process: {e}"
         print(f"[ERROR] Chunk {chunk_id} setup error: {error_msg}")
         return ([], error_msg)
@@ -333,7 +333,7 @@ class GlobalSymbolIndexer:
         start_time = time.time()
         print(f"[*] Building global symbol index (Parallel Map-Reduce Robust) for {self.repo_path} ...")
         
-        # 1. 准备数据库
+        # 1. Prepare database
         if not os.path.exists(self.cache_dir): os.makedirs(self.cache_dir)
         if os.path.exists(self.db_file): os.remove(self.db_file)
         
@@ -376,13 +376,13 @@ class GlobalSymbolIndexer:
         
         conn.commit()
 
-        # 2. 获取文件列表
+        # 2. Get file list
         all_files = find_source_files(self.repo_path)
         if not all_files:
             print("[!] No source files found.")
             return
 
-        # 3. 过滤过大的文件
+        # 3. Filter out large files
         MAX_FILE_SIZE = 30 * 1024 * 1024  # 30MB
         valid_files = []
         skipped_count = 0
@@ -392,30 +392,30 @@ class GlobalSymbolIndexer:
         for f_path in all_files:
             full_path = os.path.join(self.repo_path, f_path)
             try:
-                # 检查文件大小
+                # Check file size
                 size = os.path.getsize(full_path)
                 if size > MAX_FILE_SIZE:
-                    # 打印一下跳过了哪些大文件，通常能看到 amdgpu 等 generated headers
+                    # Print which large files were skipped, usually see generated headers like amdgpu
                     print(f"    [SKIP] Too large ({size/1024/1024:.2f}MB): {f_path}") 
                     skipped_count += 1
                     continue
                 valid_files.append(f_path)
             except OSError:
-                # 文件可能被删除了或由软链接导致的问题
+                # File may have been deleted or caused by soft links
                 continue
                 
         print(f"[*] Filtered out {skipped_count} huge files. Remaining: {len(valid_files)}")
-        all_files = valid_files # 更新列表
+        all_files = valid_files # Update list
 
         CHUNK_SIZE = 10
         chunks = list(chunked_iterable(all_files, CHUNK_SIZE))
         print(f"[*] Split into {len(chunks)} chunks (size {CHUNK_SIZE}). Launching workers...")
 
         total_symbols = 0
-        failed_chunks = [] # 记录失败的 chunk ID
+        failed_chunks = [] # Record failed chunk ID
         
         with ProcessPoolExecutor(max_workers=16) as executor:
-            # 提交任务时带上 chunk_id，用于错误报告
+            # Include chunk_id when submitting task for error reporting
             future_to_chunk_id = {
                 executor.submit(process_file_chunk_robust, self.repo_path, chunk, i): i 
                 for i, chunk in enumerate(chunks)
@@ -424,7 +424,7 @@ class GlobalSymbolIndexer:
             batch_buffer = []
             BATCH_WRITE_SIZE = 5000
             
-            # 修改 tqdm 迭代方式，处理 f.result() 的返回值
+            # Modify tqdm iteration method to handle f.result() return value
             pbar = tqdm(as_completed(future_to_chunk_id), total=len(chunks), unit="chunk", desc="Indexing")
             
             processed_count = 0
@@ -539,12 +539,12 @@ class GlobalSymbolIndexer:
                 chunk_id = future_to_chunk_id[future]
                 try:
                     results, error_msg = future.result()
-                    processed_count += 1 # 无论成功失败，都计数
+                    processed_count += 1 # Count regardless of success or failure
                     
                     if error_msg:
                         failed_chunks.append((chunk_id, error_msg))
-                        # 可以在这里选择是否继续，或者记录后继续
-                        print(f"[FAIL] Chunk {chunk_id} failed: {error_msg[:200]}...") # 打印部分错误信息
+                        # Can choose to continue here, or record and continue
+                        print(f"[FAIL] Chunk {chunk_id} failed: {error_msg[:200]}...") # Print partial error message
                     
                     if results:
                         batch_buffer.extend(results)
@@ -554,17 +554,17 @@ class GlobalSymbolIndexer:
                             flush_buffer()
                         
                 except Exception as e:
-                    # 捕获 future.result() 本身的异常 (理论上 process_file_chunk_robust 应该都捕获了)
+                    # Capture future.result() exception itself (theoretically process_file_chunk_robust should have captured it)
                     failed_chunks.append((chunk_id, f"Exception getting result: {e}"))
                     print(f"[FAIL] Chunk {chunk_id} unexpected result error: {e}")
                 
-                # 更新进度条显示
+                # Update progress bar display
                 pbar.set_postfix({"processed": processed_count, "total": len(chunks), "symbols": total_symbols})
             
             # Flush remaining
             flush_buffer()
 
-        # 4. 创建索引
+        # 4. Create index
         print("[*] Creating DB indices (symbols, symbol_tokens)...")
         cursor.execute("CREATE INDEX idx_name ON symbols(name);")
         cursor.execute("CREATE INDEX idx_path ON symbols(path);")
@@ -583,7 +583,7 @@ class GlobalSymbolIndexer:
         
         if failed_chunks:
             print(f"\n[!] WARNING: {len(failed_chunks)} chunks failed to process.")
-            # 打印前几个失败的 chunk 信息
+            # Print information about the first few failed chunks
             for i, (chunk_id, err) in enumerate(failed_chunks[:5]):
                 print(f"  - Chunk {chunk_id}: {err}")
             if len(failed_chunks) > 5:
@@ -706,21 +706,21 @@ class GlobalSymbolIndexer:
         limit: int = 200
     ) -> List[Tuple[str, str, str, int]]:
         """
-        统一的 Token 倒排索引搜索方法（替代 search_functions_containing 和 search_functions_fuzzy）。
-        使用与 database 完全一致的 tokenize_code() 保证搜索和索引的一致性。
+        Unified Token inverted index search method (replaces search_functions_containing and search_functions_fuzzy).
+        Use tokenize_code() consistent with database to ensure consistency between search and index.
         
-        参数:
-            raw_inputs: 原始字符串列表（会自动使用 tokenize_code 处理）
-            limit: 返回结果数量上限
+        Args:
+            raw_inputs: List of raw strings (automatically processed using tokenize_code)
+            limit: Maximum number of results
         
-        返回:
+        Returns:
             List of (file_path, func_name, code_content, start_line)
         """
         self.load_index()
         conn = self._get_conn()
         cursor = conn.cursor()
         
-        # 1. Tokenize 输入（使用与 database 相同的 tokenize_code）
+        # 1. Tokenize input (using the same tokenize_code as database)
         query_tokens = []
         for item in raw_inputs:
             query_tokens.extend(tokenize_code(item))
@@ -730,18 +730,18 @@ class GlobalSymbolIndexer:
         if not unique_query_tokens:
             return []
         
-        # 2. 自适应策略：Token 太多时，选择最长的（通常更有区分度）
-        MAX_TOKENS = 30  # SQL IN 子句的实用上限
+        # 2. Adaptive strategy: When there are too many Tokens, choose the longest ones (usually more distinctive)
+        MAX_TOKENS = 30  # Practical limit for SQL IN clause
         if len(unique_query_tokens) > MAX_TOKENS:
             unique_query_tokens.sort(key=len, reverse=True)
             selected_tokens = unique_query_tokens[:MAX_TOKENS]
         else:
             selected_tokens = unique_query_tokens
         
-        # 3. 最小匹配数固定为 1（至少匹配一个 token）
+        # 3. Minimum match count fixed to 1 (match at least one token)
         min_match = 1
         
-        # 4. SQL 倒排索引查询
+        # 4. SQL inverted index query
         placeholders = ",".join(["?"] * len(selected_tokens))
         query_sql = f"""
             SELECT s.path, s.name, s.code, s.start_line, COUNT(st.token_id) as hit_count
@@ -764,7 +764,7 @@ class GlobalSymbolIndexer:
             print(f"[Indexer] Token search failed: {e}")
             return []
         
-        # 5. 直接返回（基于 SQL hit_count 排序的结果）
+        # 5. Return directly (results sorted based on SQL hit_count)
         return [(r[0], r[1], r[2], r[3]) for r in rows]
     
 class BenchmarkSymbolIndexer:
@@ -906,19 +906,19 @@ class BenchmarkSymbolIndexer:
 
     def search_functions_by_tokens(self, vul_id: str, raw_inputs: List[str], limit: int = 100) -> List[Tuple[str, str, str, int]]:
         """
-        Benchmark 专用的统一 Token 搜索方法。
-        使用与 database 一致的 tokenize_code() 保证搜索和索引的一致性。
-        至少匹配一个 token 即返回（高召回率策略）。
+        Unified Token search method dedicated to Benchmark.
+        Use tokenize_code() consistent with database to ensure consistency between search and index.
+        Return as soon as at least one token is matched (high recall strategy).
         
-        返回:
+        Returns:
             List of (file_path, compound_name, code_content, start_line)
-            注意：Benchmark 模式下，start_line 固定为 1（因为存储的是函数代码片段）
+            Note: In Benchmark mode, start_line is fixed to 1 (because function code snippets are stored)
         """
         self.load_index()
         conn = self._get_conn()
         cursor = conn.cursor()
         
-        # 1. Tokenize（使用与 database 相同的逻辑）
+        # 1. Tokenize (using the same logic as database)
         query_tokens = []
         for item in raw_inputs:
             query_tokens.extend(tokenize_code(item))
@@ -928,7 +928,7 @@ class BenchmarkSymbolIndexer:
             
         unique_query_tokens = list(set(query_tokens))
         
-        # 2. 最小匹配数固定为 1（至少匹配一个 token）
+        # 2. Minimum match count fixed to 1 (match at least one token)
         min_match = 1
         
         placeholders = ",".join(["?"] * len(unique_query_tokens))
@@ -951,7 +951,7 @@ class BenchmarkSymbolIndexer:
         try:
             rows = cursor.execute(query_sql, params).fetchall()
             # Return format: (file_path, compound_name, code, start_line)
-            # Benchmark模式下，start_line固定为1（因为存储的是函数代码片段，没有文件上下文）
+            # In Benchmark mode, start_line is fixed to 1 (because function code snippets are stored, no file context)
             return [(r[0], f"{r[1]}:{r[2]}:{r[3]}", r[4], 1) for r in rows]
         except Exception as e:
             print(f"[BenchmarkIndexer] Search failed: {e}")
@@ -959,7 +959,7 @@ class BenchmarkSymbolIndexer:
     
     def search(self, vul_id, file_path, func_name, ver = None) -> List[Tuple[str, str, str, int]]:
         """
-        基于文件路径和函数名搜索基准库中的符号。
+        Search for symbols in the benchmark library based on file path and function name.
         Returns: List of (file_path, compound_name, code_content, start_line)
         """
         self.load_index()
@@ -980,15 +980,15 @@ class BenchmarkSymbolIndexer:
         candidates = []
         for row in rows:
             vul_id, tag, version, code_content = row
-            # Benchmark模式下，start_line固定为1
+            # In Benchmark mode, start_line is fixed to 1
             candidates.append((file_path, f'{tag}:{version}:{func_name}', code_content, 1))
         return candidates
 
 class GitSymbolIndexer:
     """
-    基于 Git 的动态符号索引器。
-    不依赖预构建的数据库，而是直接使用 git grep 在指定版本中搜索符号定义。
-    适用于 Benchmark 模式下的多版本并行分析。
+    Dynamic symbol indexer based on Git.
+    Does not rely on pre-built database, but uses git grep to search for symbol definitions in specified version directly.
+    Suitable for multi-version parallel analysis in Benchmark mode.
     """
     def __init__(self, repo_path: str):
         self.repo_path = repo_path
@@ -1155,114 +1155,114 @@ class GitSymbolIndexer:
 
     def _is_valid_definition(self, code_context: str, symbol: str, symbol_type: str) -> bool:
         """
-        检查代码片段是否真的是符号的定义，而不仅仅是使用。
+        Check if the code snippet is really a definition of the symbol, not just a usage.
         
-        策略：检查符号是否在代码片段的前2行（实际定义处）出现。
+        Strategy: Check if the symbol appears in the first 2 lines of the code snippet (actual definition).
         """
         if not code_context:
             return False
         
         lines = code_context.splitlines()
         check_lines = []
-        matched_line = None  # 保存被grep匹配的那一行
+        matched_line = None  # Record the line matched by grep (with >> marker)
         
         for i, line in enumerate(lines):
             if '|' in line:
                 code_part = line.split('|', 1)[1] if len(line.split('|')) > 1 else line
                 check_lines.append(code_part)
-                # 记录被grep匹配的那一行（带 >> 标记）
+                # Record the line matched by grep (with >> marker)
                 if line.strip().startswith('>>'):
                     matched_line = code_part
         
         if not check_lines:
             return False
         
-        # 根据符号类型进行不同的验证
+        # Perform different verifications based on symbol type
         if symbol_type == "macro":
-            # 宏定义：第一行必须是 #define symbol
+            # Macro definition: first line must be #define symbol
             first_line = check_lines[0].strip()
             if first_line.startswith('#define') and symbol in first_line:
-                # 确保 symbol 紧跟在 #define 后面（不是在参数或定义体中）
+                # Ensure symbol follows #define immediately (not in parameters or definition body)
                 define_part = first_line.replace('#define', '', 1).strip()
-                # symbol 应该是第一个标识符
+                # symbol should be the first identifier
                 if define_part.startswith(symbol):
                     return True
             return False
         
         elif symbol_type == "struct":
-            # 结构体/联合体：第一行应该包含 struct/union/enum symbol
+            # Struct/Union: first line should contain struct/union/enum symbol
             first_line = check_lines[0].strip()
             for keyword in ['struct', 'union', 'enum']:
                 if keyword in first_line and symbol in first_line:
-                    # 简单检查：symbol 应该紧跟在 keyword 后面
+                    # Simple check: symbol should follow keyword immediately
                     pattern = f"{keyword}\\s+{symbol}\\b"
                     if re.search(pattern, first_line):
                         return True
             return False
         
         elif symbol_type == "function":
-            # [新增] 特殊情况：如果匹配行实际上是宏定义，这是真正的宏定义，应该保留
+            # [New] Special case: If the matched line is actually a macro definition, this is a real macro definition and should be kept
             if matched_line and matched_line.strip().startswith('#define'):
-                # 检查是否是 #define symbol(...)
-                # 这是真正的宏定义，不是函数
+                # Check if it is #define symbol(...)
+                # This is a real macro definition, not a function
                 return False
             
-            # [新增] 特殊情况：如果符号是全大写（通常是宏），且匹配行看起来是宏调用
-            if symbol.isupper() and len(symbol) > 3:  # 至少4个字符的大写才认为是宏
-                # 检查匹配行是否看起来是宏调用而非函数定义
-                # 宏调用特征：symbol( 出现在语句中间，而不是在行首作为定义
+            # [New] Special case: If the symbol is all uppercase (usually macro) and the matched line looks like a macro call
+            if symbol.isupper() and len(symbol) > 3:  # Considered a macro only if at least 4 uppercase characters
+                # Check if the matched line looks like a macro call rather than a function definition
+                # Macro call feature: symbol( appears in the middle of the statement, not at the beginning of the line as a definition
                 if matched_line:
                     line_stripped = matched_line.strip()
-                    # 如果这一行直接以符号开始（可能有空格），检查是否有返回类型
-                    # 宏调用：GF_SAFEALLOC(ptr, Type)
-                    # 函数定义：int GF_SAFEALLOC(...) 或 static void GF_SAFEALLOC(...)
+                    # If this line starts directly with the symbol (may have spaces), check if there is a return type
+                    # Macro call: GF_SAFEALLOC(ptr, Type)
+                    # Function definition: int GF_SAFEALLOC(...) or static void GF_SAFEALLOC(...)
                     if line_stripped.startswith(symbol + '(') or line_stripped.startswith(symbol + ' ('):
-                        # 这看起来是宏调用（直接以符号开头），不是函数定义
+                        # This looks like a macro call (starts directly with symbol), not a function definition
                         return False
             
-            # 函数定义通常形式：返回类型 symbol(参数)
-            # 或者直接 symbol(参数)
-            # 避免匹配函数调用，如：func_call(symbol(x))
+            # Function definition usually form: return type symbol(arguments)
+            # Or directly symbol(arguments)
+            # Avoid matching function calls, e.g.: func_call(symbol(x))
             
-            # 1. 检查是否包含符号和括号
+            # 1. Check if it contains symbol and parentheses
             check_text = '\n'.join(check_lines[:3])
             if symbol not in check_text or '(' not in check_text:
                 return False
             
-            # 2. 检查是否是真正的函数定义（而不是调用）
-            # 函数定义特征：
-            # - 第一行或前几行包含 "symbol("
-            # - 不应该在赋值语句右边
-            # - 不应该在控制流语句中（if, while, for已经在之前过滤了）
-            # - 应该看起来像函数签名（有返回类型或在行首）
+            # 2. Check if it is a real function definition (not a call)
+            # Function definition features:
+            # - The first line or the first few lines contain "symbol("
+            # - Should not be on the right side of an assignment statement
+            # - Should not be in control flow statements (if, while, for have been filtered before)
+            # - Should look like a function signature (has return type or at the beginning of the line)
             
             for i, line in enumerate(check_lines[:3]):
                 line_stripped = line.strip()
-                # 找到包含 symbol( 的行
+                # Find line with symbol(
                 if f"{symbol}(" in line_stripped or f"{symbol} (" in line_stripped:
-                    # 排除：这一行以 = 开头或中间有 = symbol
+                    # Exclude: This line starts with = or has = symbol in the middle
                     before_symbol = line_stripped.split(symbol)[0]
                     if '=' in before_symbol and not before_symbol.strip().startswith('='):
-                        # 这可能是赋值语句，如 x = symbol(...)
+                        # This may be an assignment statement, e.g., x = symbol(...)
                         continue
                     
-                    # 排除：符号直接在行首（没有返回类型）
-                    # 真正的函数定义通常前面有返回类型
-                    # 如果这是第一行且没有返回类型，很可能是宏调用或函数调用
+                    # Exclude: Symbol directly at the beginning of the line (no return type)
+                    # Real function definitions usually have a return type in front
+                    # If this is the first line and there is no return type, it is likely a macro call or function call
                     if line_stripped.startswith(symbol):
-                        # 检查前面是否有类型关键字
-                        # 如果before_symbol为空或只有空格，说明没有返回类型
+                        # Check if there is a type keyword in front
+                        # If before_symbol is empty or only spaces, there is no return type
                         if not before_symbol or not before_symbol.strip():
-                            # 没有返回类型，可能是宏调用或函数调用
+                            # No return type, may be a macro call or function call
                             return False
                     
-                    # 排除：函数调用在表达式中，如 foo(symbol(...))
-                    # 简单判断：如果 symbol 之前紧跟着其他函数调用的括号，可能是嵌套调用
+                    # Exclude: Function call in expression, e.g., foo(symbol(...))
+                    # Simple judgment: If symbol is immediately followed by parentheses of other function calls, it may be a nested call
                     if re.search(r'\w+\s*\([^)]*' + re.escape(symbol), line_stripped):
-                        # symbol 在另一个函数调用的参数中
+                        # symbol is in the parameters of another function call
                         continue
                     
-                    # 如果通过了上述检查，认为这是有效的函数定义
+                    # If passed the above checks, consider it a valid function definition
                     return True
             
             return False
@@ -1296,23 +1296,23 @@ class GitSymbolIndexer:
 
     def _read_git_file_context(self, version: str, file_path: str, line_no: int, context_lines: int = 10, smart_extract: bool = False, symbol_name: str = None, symbol_type: str = None) -> str:
         """
-        使用 git show 读取文件特定行周围的上下文。
-        如果 smart_extract=True 且提供了 symbol_name，尝试使用 CtagsParser 解析完整定义（函数、结构体、宏）。
+        Use git show to read context around specific line.
+        If smart_extract=True and symbol_name provided, try to use CtagsParser to parse full definition (function, struct, macro).
         """
         try:
             # git show version:path
             content = subprocess.check_output(["git", "show", f"{version}:{file_path}"], cwd=self.repo_path, text=True, stderr=subprocess.DEVNULL)
             
-            # [新增] 基于 Ctags 的精确提取
+            # [New] Precise extraction based on Ctags
             if smart_extract and symbol_name:
                 try:
-                    # 解析内存中的代码
+                    # Parse code in memory
                     parsed = CtagsParser.parse_code(content)
                     
-                    # 查找匹配的符号
+                    # Find matching symbol
                     target = None
                     
-                    # 优先根据类型查找
+                    # Prioritize searching by type
                     if symbol_type == "Function" and symbol_name in parsed['functions']:
                         target = parsed['functions'][symbol_name]
                     elif symbol_type == "Struct/Union" and symbol_name in parsed['structs']:
@@ -1320,13 +1320,13 @@ class GitSymbolIndexer:
                     elif symbol_type == "Macro" and symbol_name in parsed['macros']:
                         target = parsed['macros'][symbol_name]
                     
-                    # 如果类型不匹配或未指定，尝试所有类型
+                    # If type mismatch or not specified, try all types
                     if not target:
                         if symbol_name in parsed['functions']: target = parsed['functions'][symbol_name]
                         elif symbol_name in parsed['structs']: target = parsed['structs'][symbol_name]
                         elif symbol_name in parsed['macros']: target = parsed['macros'][symbol_name]
                     
-                    # 如果找到了目标，且位置接近 grep 结果
+                    # If target found and position is close to grep result
                     if target and abs(target['start_line'] - line_no) < 50:
                         lines = target['code'].splitlines()
                         numbered_snippet = []
@@ -1337,7 +1337,7 @@ class GitSymbolIndexer:
                         return "\n".join(numbered_snippet)
                         
                 except Exception as e:
-                    # Ctags 解析失败，回退到默认逻辑
+                    # Ctags parsing failed, fallback to default logic
                     pass
 
             lines = content.splitlines()
@@ -1347,7 +1347,7 @@ class GitSymbolIndexer:
             end_idx = min(total_lines, line_no - 1 + context_lines + 10)
             
             snippet = lines[start_idx:end_idx]
-            # 添加行号
+            # Add line numbers
             numbered_snippet = []
             for i, l in enumerate(snippet):
                 curr_line = start_idx + i + 1
@@ -1398,16 +1398,16 @@ class GitSymbolIndexer:
         Resolves the enclosing function (caller).
         Returns: List[Dict] with keys: file, caller, line, content
         
-        改进：
-        1. 过滤掉函数定义行（只返回真正的调用点）
-        2. 使用更精确的模式匹配来识别函数调用
+        Improvements:
+        1. Filter out function definition lines (return only real call sites)
+        2. Use more precise pattern matching to identify function calls
         """
         if not symbol or len(symbol) < 3: return []
         
         results = []
         try:
-            # 使用更精确的模式：匹配函数调用（symbol后跟括号）
-            # 这样可以减少误匹配
+            # Use more precise pattern: match function call (symbol followed by parentheses)
+            # This reduces false matches
             cmd = ["git", "grep", "-n", "-E", f"\\b{symbol}\\s*\\(", version]
             output = subprocess.check_output(cmd, cwd=self.repo_path, text=True, stderr=subprocess.DEVNULL)
             
@@ -1424,24 +1424,24 @@ class GitSymbolIndexer:
                     continue
                 content = parts[3]
                 
-                # 过滤注释行
+                # Filter comment lines
                 if content.strip().startswith(("//", "/*", "*")): continue
                 
-                # [新增] 过滤函数定义行的启发式规则
+                # [New] Heuristic rules to filter function definition lines
                 content_stripped = content.strip()
                 
-                # 规则1: 如果是静态函数定义（static ... symbol(）
+                # Rule 1: If it is a static function definition (static ... symbol()
                 if re.match(r'^static\s+\w+\s+' + re.escape(symbol) + r'\s*\(', content_stripped):
                     continue
                     
-                # 规则2: 如果看起来像函数定义（返回类型 symbol(）且在行首或接近行首
-                # 函数定义通常形式：[static] <type> symbol(...) 或 symbol(...)
-                # 排除形如 "BOOL rdp_write_logon_info_v1(wStream* s, logon_info* info)"
+                # Rule 2: If it looks like a function definition (return type symbol() and at/near start of line
+                # Function definition usually form: [static] <type> symbol(...) or symbol(...)
+                # Exclude forms like "BOOL rdp_write_logon_info_v1(wStream* s, logon_info* info)"
                 if re.match(r'^(\w+\s+)*\w+\s+' + re.escape(symbol) + r'\s*\([^)]*\)\s*$', content_stripped):
-                    # 这看起来是函数签名（参数后直接结束或只有{）
+                    # This looks like a function signature (ends directly after parameters or only {)
                     continue
                 
-                # 规则3: 如果这行以分号结束，且符号在行首附近，可能是声明
+                # Rule 3: If this line ends with a semicolon and the symbol is near the start of the line, it may be a declaration
                 if content_stripped.endswith(';') and content_stripped.startswith(symbol):
                     continue
                 
@@ -1460,29 +1460,29 @@ class GitSymbolIndexer:
                     # Find which function covers this line
                     # funcs is sorted by start_line
                     for f in funcs:
-                        # [修复] 检查该行是否是函数本身的定义
-                        # 如果匹配的行号就是函数的起始行，说明这是函数定义，跳过
+                        # [Fix] Check if the line is the definition of the function itself
+                        # If the matched line number is the function start line, it means this is a function definition, skip
                         if f['start_line'] == line_no:
-                            # 这是函数定义行，不是调用
+                            # This is a function definition line, not a call
                             caller_name = None
                             break
                         
-                        # 检查该行是否在函数范围内
+                        # Check if the line is within the function range
                         if f['start_line'] < line_no:
-                            # 如果有end_line，严格检查
+                            # If there is end_line, strict check
                             if f.get('end_line'):
                                 if line_no <= f['end_line']:
                                     caller_name = f['name']
                             else:
-                                # 没有end_line，使用近似判断
+                                # No end_line, use approximate judgment
                                 caller_name = f['name']
                         elif f['start_line'] > line_no:
-                            # 已经扫描过了可能的范围
+                            # Scanned possible range already
                             break
                     
-                    # 只添加有效的调用点（排除定义）
-                    # caller_name=None 表示这是函数定义行，应该排除
-                    # caller_name="global/unknown" 表示无法确定调用者，但仍然是有效的调用，应该保留
+                    # Only add valid call sites (exclude definitions)
+                    # caller_name=None means this is a function definition line, should be excluded
+                    # caller_name="global/unknown" means caller cannot be determined, but it is still a valid call and should be kept
                     if caller_name is not None:
                         results.append({
                             "file": path,
@@ -1494,4 +1494,4 @@ class GitSymbolIndexer:
         except subprocess.CalledProcessError:
             pass
             
-        return results[:10]  # 限制返回数量，避免过多结果
+        return results[:10]  # Limit returned quantity to avoid too many results

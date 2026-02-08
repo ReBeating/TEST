@@ -13,3 +13,5 @@ gpac/gpac,CVE-2023-5520,5692dc729491805e0e5f55c21d50ba1e6b19e88e,src/filters/ref
 LibreDWG/libredwg,OSV-2022-1251,119ef50a0b1ef395defa5ee453acd5d3c158c638,src/out_json.c,json_tables_write,CVE-2025-70415
 radareorg/radare2,CVE-2022-0523,35482cb760db10f87a62569e2f8872dbd95e9269,libr/bin/format/pyc/marshal.c,get_dict_object,CVE-2025-70417
 FreeRDP/FreeRDP,CVE-2024-32661,71e463e31b4d69f4022d36bfc814592f56600793,libfreerdp/core/info.c,rdp_write_logon_info_v2,CVE-2026-23948
+radareorg/radare2,CVE-2021-32494,a07dedb804a82bc01c07072861942dd80c6b6d62,libr/bin/p/bin_xnu_kernelcache.c,rebase_buffer_fixup,CVE-2025-70446
+gpac/gpac,CVE-2024-24267,d28d9ba45cf4f628a7b2c351849a895e6fcf2234,src/utils/os_file.c,gf_fileio_from_blob,CVE-2025-70447

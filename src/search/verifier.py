@@ -10,7 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-# 引入你的状态和模型
+# Import state and models
 from core.state import VerificationState
 from core.models import VulnerabilityFinding, SearchResultItem, PatchFeatures
 from core.navigator import CodeNavigator
@@ -19,7 +19,7 @@ from core.indexer import BenchmarkSymbolIndexer, GlobalSymbolIndexer
 from extraction.slicer import Slicer
 from extraction.pdg import PDGBuilder
 
-# 引入类型特定验证清单
+# Import type-specific verification checklists
 from search.verification_checklists import format_checklist_for_prompt
 
 class StepAnalysis(BaseModel):
@@ -170,13 +170,13 @@ class Round2JudgeOutput(BaseModel):
 
 def create_tools(navigator: CodeNavigator, current_file: str, tool_cache: Optional[Dict[str, Any]] = None):
     """
-    创建一组给 Verifier Agent 使用的工具，基于 CodeNavigator。
+    Create a set of tools for Verifier Agent, based on CodeNavigator.
     
-    设计原则（参考 anchor_analyzer.py）：
-    1. 显式 file_path 参数（除 get_callers）- 防止 Agent 忘记指定路径
-    2. 结构化错误返回 - 返回 JSON 便于 Agent 解析
-    3. 详细的 debug 日志 - 跟踪工具调用
-    4. [New] 工具调用缓存 - 避免重复读取相同内容
+    Design principles (refer to anchor_analyzer.py):
+    1. Explicit file_path parameter (except get_callers) - prevent Agent from forgetting path
+    2. Structured error return - return JSON for easy Agent parsing
+    3. Detailed debug logs - track tool calls
+    4. [New] Tool call cache - avoid reading same content repeatedly
     """
     
     # Initialize cache if not provided
@@ -496,73 +496,73 @@ def create_tools(navigator: CodeNavigator, current_file: str, tool_cache: Option
 
 def robust_json_parse(raw_content: str, output_model: BaseModel, agent_name: str = "Agent", use_fallback: bool = False) -> Optional[BaseModel]:
     """
-    健壮的 JSON 解析函数，尝试多种策略来解析 LLM 输出。
+    Robust JSON parsing function, attempting multiple strategies to parse LLM output.
     
-    解析策略（按顺序尝试）：
-    1. 直接解析清洗后的 JSON
-    2. 修复常见 JSON 错误（尾随逗号、单引号、换行等）
-    3. 提取嵌套 JSON 对象
-    4. [仅当 use_fallback=True] Fallback：创建包含原始内容的默认对象（让流程继续）
+    Parsing strategies (tried in order):
+    1. Directly parse cleaned JSON
+    2. Fix common JSON errors (trailing commas, single quotes, newlines, etc.)
+    3. Extract nested JSON objects
+    4. [Only when use_fallback=True] Fallback: Create default object with raw content (allow flow to continue)
     
     Args:
-        raw_content: LLM 输出的原始字符串
-        output_model: Pydantic 模型类
-        agent_name: Agent 名称（用于日志）
-        use_fallback: 是否在解析失败时使用 fallback（仅在重试次数用尽时设为 True）
+        raw_content: Raw output content from LLM
+        output_model: Pydantic model class
+        agent_name: Agent name (for logging)
+        use_fallback: Whether to use fallback when parsing fails (only when retries exhausted)
     
     Returns:
-        解析成功返回 Pydantic 对象
-        解析失败时：如果 use_fallback=True 返回 fallback 对象，否则返回 None
+        Return Pydantic object on success
+        On failure: if use_fallback=True return fallback object, else return None
     """
-    # === Strategy 1: 基础清洗 ===
+    # === Strategy 1: Basic Cleaning ===
     clean_content = raw_content
     
-    # 1.1 去除 Markdown 代码块
+    # 1.1 Remove Markdown code blocks
     if "```" in clean_content:
         clean_content = re.sub(r'```(?:json)?\s*(.*?)\s*```', r'\1', clean_content, flags=re.DOTALL)
     
-    # 1.2 查找 JSON 边界
+    # 1.2 Find JSON boundaries
     start_idx = clean_content.find('{')
     end_idx = clean_content.rfind('}')
     
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
         clean_content = clean_content[start_idx : end_idx+1]
     
-    # 1.3 去除 "thought:" 前缀
+    # 1.3 Remove "thought:" prefix
     if "thought:" in clean_content.lower():
         for prefix in ["thought:", "Thought:", "THOUGHT:"]:
             if prefix in clean_content:
                 clean_content = clean_content.split(prefix)[-1]
-                # 重新查找 JSON 边界
+                # Re-find JSON boundaries
                 start_idx = clean_content.find('{')
                 end_idx = clean_content.rfind('}')
                 if start_idx != -1 and end_idx != -1:
                     clean_content = clean_content[start_idx : end_idx+1]
     
-    # 尝试直接解析
+    # Attempt direct parsing
     try:
         return output_model.model_validate_json(clean_content)
     except Exception as e1:
         print(f"      [{agent_name}] Strategy 1 (basic clean) failed: {str(e1)[:100]}")
     
-    # === Strategy 2: 修复常见 JSON 错误 ===
+    # === Strategy 2: Fix Common JSON Errors ===
     fixed_content = clean_content
     
-    # 2.1 修复尾随逗号 (trailing comma before } or ])
+    # 2.1 Fix trailing commas (trailing comma before } or ])
     fixed_content = re.sub(r',\s*([\}\]])', r'\1', fixed_content)
     
-    # 2.2 修复单引号 → 双引号
-    # 注意：只替换作为字符串边界的单引号，不替换字符串内容中的单引号
-    # 这是一个简化处理，可能有边缘情况
+    # 2.2 Fix single quotes -> double quotes
+    # Note: Only replace single quotes involved in string boundaries, not within string content
+    # This is a simplified approach, edge cases may exist
     fixed_content = re.sub(r"(?<=[{\[,:\s])'([^']*)'(?=[,}\]:\s])", r'"\1"', fixed_content)
     
-    # 2.3 修复未转义的换行符在字符串中
-    # 这个比较复杂，简单处理：将字符串值中的换行替换为 \n
+    # 2.3 Fix unescaped newlines in strings
+    # This is complex, simplified handling: replace newlines in string values with \n
     def escape_newlines_in_strings(match):
         return match.group(0).replace('\n', '\\n').replace('\r', '\\r')
     fixed_content = re.sub(r'"[^"]*"', escape_newlines_in_strings, fixed_content)
     
-    # 2.4 修复 Python 布尔值 (True/False → true/false)
+    # 2.4 Fix Python booleans (True/False -> true/false)
     fixed_content = re.sub(r'\bTrue\b', 'true', fixed_content)
     fixed_content = re.sub(r'\bFalse\b', 'false', fixed_content)
     fixed_content = re.sub(r'\bNone\b', 'null', fixed_content)
@@ -572,18 +572,18 @@ def robust_json_parse(raw_content: str, output_model: BaseModel, agent_name: str
     except Exception as e2:
         print(f"      [{agent_name}] Strategy 2 (fix common errors) failed: {str(e2)[:100]}")
     
-    # === Strategy 3: 提取嵌套 JSON 对象 ===
-    # 有时 LLM 会输出 {"result": {...actual_data...}}
+    # === Strategy 3: Extract Nested JSON Objects ===
+    # Sometimes LLM outputs {"result": {...actual_data...}}
     try:
         parsed = json.loads(fixed_content)
         if isinstance(parsed, dict):
-            # 尝试直接使用
+            # Attempt direct use
             try:
                 return output_model.model_validate(parsed)
             except:
                 pass
             
-            # 尝试从嵌套结构中提取
+            # Attempt to extract from nested structure
             for key in ['result', 'output', 'response', 'data', 'json']:
                 if key in parsed and isinstance(parsed[key], dict):
                     try:
@@ -593,8 +593,8 @@ def robust_json_parse(raw_content: str, output_model: BaseModel, agent_name: str
     except Exception as e3:
         print(f"      [{agent_name}] Strategy 3 (nested extraction) failed: {str(e3)[:100]}")
     
-    # === Strategy 4: Fallback - 创建包含原始内容的默认对象 ===
-    # 仅在 use_fallback=True 时启用（通常是 max_parse_retries 达到上限时）
+    # === Strategy 4: Fallback - Create default object with raw content ===
+    # Enabled only when use_fallback=True (usually when max_parse_retries is reached)
     if use_fallback:
         print(f"      [{agent_name}] All parsing strategies failed, creating fallback with raw content")
         
@@ -612,18 +612,18 @@ def robust_json_parse(raw_content: str, output_model: BaseModel, agent_name: str
 
 def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_name: str):
     """
-    为各种 Output 模型创建包含原始内容的 fallback 对象。
-    这样即使 JSON 解析失败，agent 间的交互也能继续。
+    Create fallback object with raw content for various Output models.
+    This allows agent interaction to continue even if JSON parsing fails.
     
     Args:
-        output_model: 目标 Pydantic 模型类
-        raw_content: LLM 的原始输出内容
-        agent_name: Agent 名称
+        output_model: Target Pydantic model class
+        raw_content: Raw LLM output content
+        agent_name: Agent name
     
     Returns:
-        包含原始内容的 fallback 对象，如果无法创建则返回 None
+        Fallback object containing raw content, or None if creation fails
     """
-    # 截断过长的内容
+    # Truncate overly long content
     truncated_content = raw_content[:2000] + "..." if len(raw_content) > 2000 else raw_content
     fallback_note = f"[FALLBACK] JSON parsing failed. Raw LLM output:\n{truncated_content}"
     
@@ -636,8 +636,8 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
                 origin_mapping=None,
                 impact_mapping=None,
                 attack_path_exists=False,
-                c_cons_satisfied=False,  # 保守：不确定时认为不满足
-                verdict="PROCEED",  # 让流程继续到 Round 2
+                c_cons_satisfied=False,  # Conservative: assume not satisfied when uncertain
+                verdict="PROCEED",  # Allow flow to continue to Round 2
                 safe_reason=fallback_note
             )
         
@@ -646,13 +646,13 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
             return Round1BlueOutput(
                 refutes_mapping=False,
                 refutation_reason=fallback_note,
-                verdict="CONCEDE"  # 默认同意 Red（保守）
+                verdict="CONCEDE"  # Default concede to Red (conservative)
             )
         
         # Round1JudgeOutput fallback (simplified)
         elif model_name == "Round1JudgeOutput":
             return Round1JudgeOutput(
-                c_cons_satisfied=True,  # 保守：让流程继续
+                c_cons_satisfied=True,  # Conservative: allow flow to continue
                 verdict="PROCEED",
                 validated_origin=None,
                 validated_impact=None
@@ -663,7 +663,7 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
             return Round2RedOutput(
                 attack_path=[],
                 c_reach_satisfied=False,
-                verdict="NOT_VULNERABLE",  # 保守：不确定时认为安全
+                verdict="NOT_VULNERABLE",  # Conservative: assume safe when uncertain
                 failure_reason=fallback_note
             )
         
@@ -674,19 +674,19 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
                 path_blockers=[],
                 defense_checks=[],
                 any_defense_found=False,
-                verdict="CONTESTED",  # 让 Round 3 决定
+                verdict="CONTESTED",  # Let Round 3 decide
                 safe_reason=fallback_note
             )
         
         # Round2JudgeOutput fallback (simplified)
         elif model_name == "Round2JudgeOutput":
             return Round2JudgeOutput(
-                c_cons_satisfied=True,  # 保守：让流程继续
+                c_cons_satisfied=True,  # Conservative: allow flow to continue
                 c_reach_satisfied=False,
                 c_def_satisfied=False,
                 origin_in_function=True,
                 impact_in_function=True,
-                verdict="PROCEED",  # 让 Round 3 决定
+                verdict="PROCEED",  # Let Round 3 decide
                 validated_defense=None
             )
         
@@ -696,7 +696,7 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
                 c_cons_satisfied=False,
                 c_reach_satisfied=False,
                 c_def_satisfied=False,
-                is_vulnerable=False,  # 保守：默认安全
+                is_vulnerable=False,  # Conservative: default safe
                 verdict_category="SAFE-Unknown",
                 origin_anchor=None,
                 impact_anchor=None,
@@ -706,7 +706,7 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
             )
         
         else:
-            # 未知模型类型，无法创建 fallback
+            # Unknown model type, cannot create fallback
             print(f"      [{agent_name}] Unknown model type: {model_name}, cannot create fallback")
             return None
             
@@ -717,18 +717,18 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
 
 def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: float = 5.0):
     """
-    增强的 LLM 调用包装函数，带自动重试机制。
-    处理网络错误 (500, 502, 503, 504) 和连接超时。
+    Enhanced LLM invocation wrapper with automatic retry mechanism.
+    Handles network errors (500, 502, 503, 504) and connection timeouts.
     
     Args:
-        llm: ChatOpenAI 实例
-        messages: 消息列表
-        max_retries: 最大重试次数
-        retry_delay: 重试间隔（秒），每次重试后会指数增长
+        llm: ChatOpenAI instance
+        messages: Message list
+        max_retries: Max retries
+        retry_delay: Retry interval (seconds), increases exponentially
     
     Returns:
-        LLM 响应，失败时返回 None（而不是抛异常）
-        调用方需要检查返回值是否为 None
+        LLM response, returns None on failure (instead of raising exception)
+        Caller needs to check if return value is None
     """
     last_exception = None
     current_delay = retry_delay
@@ -740,24 +740,24 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
             last_exception = e
             error_str = str(e).lower()
             
-            # 分类错误类型
+            # Classify error type
             error_type = "unknown"
             is_retryable = False
             
-            # 网络/服务器错误（可重试）
+            # Network/Server Error (Retryable)
             if any(x in error_str for x in ['500', '502', '503', '504', 'internal server error']):
                 error_type = "server_error"
                 is_retryable = True
-            # 连接错误（可重试）
+            # Connection Error (Retryable)
             elif any(x in error_str for x in ['connection', 'timeout', 'timed out', 'network', 'reset', 'refused']):
                 error_type = "connection_error"
                 is_retryable = True
-            # 速率限制（可重试，但延迟更长）
+            # Rate Limit (Retryable, but longer delay)
             elif any(x in error_str for x in ['rate limit', 'too many requests', '429']):
                 error_type = "rate_limit"
                 is_retryable = True
-                current_delay = max(current_delay, 30.0)  # 速率限制至少等30秒
-            # API密钥/认证错误（不可重试）
+                current_delay = max(current_delay, 30.0)  # Rate limit waits at least 30s
+            # API Key/Auth Error (Non-retryable)
             elif any(x in error_str for x in ['api key', 'authentication', 'unauthorized', '401', '403']):
                 error_type = "auth_error"
                 is_retryable = False
@@ -766,13 +766,13 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
                 print(f"      [LLM-Retry] {error_type} (attempt {attempt + 1}/{max_retries}): {e}")
                 print(f"      [LLM-Retry] Waiting {current_delay:.1f}s before retry...")
                 time.sleep(current_delay)
-                current_delay *= 2  # 指数退避
+                current_delay *= 2  # Exponential backoff
             else:
-                # 非可重试错误或最后一次尝试
+                # Non-retryable error or final attempt
                 print(f"      [LLM-Error] {error_type} (final attempt): {e}")
-                return None  # 返回 None 而不是抛异常
+                return None  # Return None instead of raising exception
     
-    # 所有重试都失败了
+    # All retries failed
     print(f"      [LLM-Error] All {max_retries} attempts failed. Last error: {last_exception}")
     return None
 
@@ -782,17 +782,17 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
 
 def build_phase3_mapping_summary(sf, ev) -> str:
     """
-    将 Phase 3 的 aligned_vuln_traces 格式化为可读的 mapping summary
+    Format Phase 3 aligned_vuln_traces into readable mapping summary
     
     Args:
-        sf: SliceFeature (包含 pre_origins, pre_impacts)
-        ev: MatchEvidence (包含 aligned_vuln_traces)
+        sf: SliceFeature (contains pre_origins, pre_impacts)
+        ev: MatchEvidence (contains aligned_vuln_traces)
     
     Returns:
-        格式化的 mapping 摘要字符串
+        Formatted mapping summary string
     """
     def extract_line_no(line: str) -> int:
-        """从带行号标记的行中提取行号"""
+        """Extract line number from line with line number marker"""
         match = re.match(r'^\[\s*(\d+)\]', line.strip())
         return int(match.group(1)) if match else -1
     
@@ -867,22 +867,22 @@ def run_round1_red(
     """
     Round 1 Red Agent: Validate C_cons (Consistency Constraint) WITHOUT tools.
     
-    核心逻辑:
-    1. 提取 Phase 2 的 pre_origins/pre_impacts
-    2. 提取 Phase 3 的 aligned_vuln_traces mapping
-    3. 让 Red Agent 评估 mapping 质量
-    4. 如果 mapping 缺失，让 Red Agent 在 target 代码中搜索
-    5. 如果 Origin 或 Impact 都找不到 → 直接 SAFE
+    Core logic:
+    1. Extract Phase 2 pre_origins/pre_impacts
+    2. Extract Phase 3 aligned_vuln_traces mapping
+    3. Let Red Agent evaluate mapping quality
+    4. If mapping is missing, let Red Agent search in target code
+    5. If Origin or Impact not found -> Direct SAFE
     """
     print("      [Round1-Red] Validating C_cons (no tools)...")
     
     sf = feature.slices.get(candidate.patch_func)
     ev = candidate.evidence
     
-    # 构建 Phase 3 Mapping Summary
+    # Build Phase 3 Mapping Summary
     phase3_summary = build_phase3_mapping_summary(sf, ev) if sf else "No slice found for this function"
     
-    # 构建 Prompt
+    # Build Prompt
     user_input = f"""
 ### Phase 2 Anchors (From Reference Vulnerability Analysis)
 
@@ -976,7 +976,7 @@ def run_round1_red(
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
-    # 所有重试都失败，返回默认值
+    # All retries failed, return default value
     return Round1RedOutput(
         origin_mapping=None,
         impact_mapping=None,
@@ -1114,7 +1114,7 @@ def run_round1_blue(
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
-    # 所有重试都失败，返回默认值（concede to Red）
+    # All retries failed, return default value (concede to Red)
     return Round1BlueOutput(
         refutes_mapping=False,
         refutation_reason="All parsing attempts failed, defaulting to concede",
@@ -1233,7 +1233,7 @@ def run_round1_judge(
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
-    # 所有重试都失败，返回默认值（proceed to Round 2）
+    # All retries failed, return default value (proceed to Round 2)
     return Round1JudgeOutput(
         c_cons_satisfied=True,
         verdict="PROCEED",
@@ -1249,7 +1249,7 @@ def run_round1_debate(
     llm: ChatOpenAI
 ) -> tuple:
     """
-    执行完整的 Round 1 辩论（Red → Blue → Judge）
+    Execute complete Round 1 debate (Red → Blue → Judge)
     
     Returns:
         (round1_red, round1_blue, round1_judge, should_continue)
@@ -1308,16 +1308,16 @@ def run_round2_red(
     """
     Round 2 Red Agent: Reinforce C_cons + Establish C_reach (WITH tools).
     
-    核心任务:
-    1. 如果 Round 1 有争议，用工具验证 Origin/Impact 映射
-    2. 构建攻击路径，验证每步与参考路径的语义一致性
-    3. 验证数据流和控制流的可达性
+    Core tasks:
+    1. If Round 1 is controversial, use tools to verify Origin/Impact mapping
+    2. Build attack path, verify semantic consistency of each step with reference path
+    3. Verify data flow and control flow reachability
     """
     print("      [Round2-Red] Establishing C_reach with tools...")
     
     sf = feature.slices.get(candidate.patch_func)
     
-    # 构建 Round 1 validated mappings summary (using simplified model)
+    # Build Round 1 validated mappings summary (using simplified model)
     origin_info = "Not validated"
     impact_info = "Not validated"
     if round1_result.validated_origin and round1_result.validated_origin.is_mapped:
@@ -1441,7 +1441,7 @@ File: {candidate.target_file}
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
-    # 所有重试都失败，返回默认值
+    # All retries failed, return default value
     return Round2RedOutput(
         attack_path=[],
         c_reach_satisfied=False,
@@ -1462,10 +1462,10 @@ def run_round2_blue(
     """
     Round 2 Blue Agent: Refute C_cons/C_reach + Verify C_def (WITH tools).
     
-    核心任务:
-    1. 尝试反驳 Red 的 C_cons/C_reach
-    2. 按四层策略检查 Defense
-    3. 输出显式的 Defense 检查报告
+    Core tasks:
+    1. Attempt to refute Red's C_cons/C_reach
+    2. Check Defense according to four-layer strategy
+    3. Output explicit Defense check report
     """
     print("      [Round2-Blue] Refuting C_reach and verifying C_def...")
     
@@ -1603,7 +1603,7 @@ File: {candidate.target_file}
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
-    # 所有重试都失败，返回默认值
+    # All retries failed, return default value
     return Round2BlueOutput(
         refutes_c_reach=False,
         path_blockers=[],
@@ -1749,7 +1749,7 @@ def run_round2_judge(
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
-    # 所有重试都失败，返回默认值
+    # All retries failed, return default value
     return Round2JudgeOutput(
         c_cons_satisfied=round1_result.c_cons_satisfied,
         c_reach_satisfied=round2_red_output.c_reach_satisfied,
@@ -1770,7 +1770,7 @@ def run_round2_debate(
     llm: ChatOpenAI
 ) -> tuple:
     """
-    执行完整的 Round 2 辩论（Red → Blue → Judge）
+    Execute complete Round 2 debate (Red → Blue → Judge)
     
     Returns:
         (round2_red, round2_blue, round2_judge, final_verdict)
@@ -2296,17 +2296,17 @@ class TargetSlicerAdapter:
 
     def slice_context(self, anchors_lines: List[int], hint_vars: List[str]) -> str:
         """
-        基于 行号(Phase 3) 或 变量(Phase 2) 进行切片
+        Slice based on line numbers (Phase 3) or variables (Phase 2)
         """
         anchor_nodes = set()
         
-        # 策略 A: 优先使用 Phase 3 提供的确切行号
+        # Strategy A: Priority to use exact line numbers provided by Phase 3
         for ln in anchors_lines:
-            # get_nodes_by_location 需要支持只传行号
+            # get_nodes_by_location needs to support line number only
             nodes = self.slicer.get_nodes_by_location(ln, "")
             anchor_nodes.update(nodes)
             
-        # 策略 B: 如果没有行号，使用变量名兜底
+        # Strategy B: If no line numbers, fallback to variable names
         if not anchor_nodes and hint_vars:
             for n, d in self.pdg.nodes(data=True):
                 code_snippet = d.get('code', '')
@@ -2314,16 +2314,16 @@ class TargetSlicerAdapter:
                     anchor_nodes.add(n)
         
         if not anchor_nodes:
-            return self.code # 切片失败回退
+            return self.code # Slice failed fallback
 
-        # 执行 Robust Slice
+        # Execute Robust Slice
         focus_vars = set(hint_vars) if hint_vars else set()
         sliced_nodes = self.slicer.robust_slice(list(anchor_nodes), focus_vars)
         
-        # 关键安全检查：如果切片太短（比如只剩10%），可能把 Context 切没了，强制回退
+        # Critical Safety Check: If slice is too short (e.g. only 10% left), Context might be cut off, force fallback
         sliced_code = self.slicer.to_code(sliced_nodes)
         if len(sliced_code) < len(self.code) * 0.2:
-            return self.code # 安全回退
+            return self.code # Safe fallback
             
         return sliced_code
 
@@ -3373,7 +3373,7 @@ class ContextBuilder:
         self.indexer = GlobalSymbolIndexer(repo_path)
 
     def fetch_peer_functions(self, candidate: SearchResultItem, feature: PatchFeatures) -> Dict[str, str]:
-        """扩展相关节点：从数据库中抓取同文件的 Peer 函数"""
+        """Expand relevant nodes: fetch Peer functions from same file in database"""
         needed_funcs = set(feature.slices.keys())
         needed_funcs.discard(candidate.patch_func)
         peers = {}
@@ -3413,7 +3413,7 @@ class ContextBuilder:
         matched_traces = [m for m in ev.aligned_vuln_traces if m.line_no is not None]
         
         if matched_traces:
-            # 只取最有代表性的前10行
+            # Take only the top 10 most representative lines
             lines = [f"Line {m.line_no}: {m.target_line.strip()}" for m in matched_traces[:10]]
             hints.append(f"2. **Structural Match**: The Matcher found these vulnerable lines:\n   " + "\n   ".join(lines))
         
@@ -3537,21 +3537,21 @@ class ContextBuilder:
 
 def extract_involved_functions(judge_res=None, origin_anchor=None, impact_anchor=None, trace=None, defense_mechanism=None) -> List[str]:
     """
-    从证据链中提取涉及的函数名列表。
+    Extract list of involved functions from evidence chain.
     
     Args:
-        judge_res: JudgeOutput 对象（如果提供，会从中提取所有信息）
-        origin_anchor: Origin StepAnalysis（可选，如果 judge_res 未提供）
-        impact_anchor: Impact StepAnalysis（可选）
-        trace: Trace 列表（可选）
-        defense_mechanism: Defense StepAnalysis（可选）
+        judge_res: JudgeOutput object (if provided, all info will be extracted from it)
+        origin_anchor: Origin StepAnalysis (optional, if judge_res is not provided)
+        impact_anchor: Impact StepAnalysis (optional)
+        trace: Trace List (optional)
+        defense_mechanism: Defense StepAnalysis (optional)
     
     Returns:
-        排序后的函数名列表
+        Sorted list of function names
     """
     involved_funcs = set()
     
-    # 如果提供了 judge_res，从中提取所有信息
+    # If judge_res is provided, extract all info from it
     if judge_res:
         if judge_res.origin_anchor and judge_res.origin_anchor.func_name:
             involved_funcs.add(judge_res.origin_anchor.func_name)
@@ -3563,7 +3563,7 @@ def extract_involved_functions(judge_res=None, origin_anchor=None, impact_anchor
         if judge_res.defense_mechanism and judge_res.defense_mechanism.func_name:
             involved_funcs.add(judge_res.defense_mechanism.func_name)
     else:
-        # 从单独提供的参数中提取
+        # Extract from individually provided parameters
         if origin_anchor and origin_anchor.func_name:
             involved_funcs.add(origin_anchor.func_name)
         if impact_anchor and impact_anchor.func_name:
@@ -3578,29 +3578,29 @@ def extract_involved_functions(judge_res=None, origin_anchor=None, impact_anchor
 
 
 # ==============================================================================
-# 4. 验证节点主逻辑
+# 4. Verification Node Main Logic
 # ==============================================================================
 
 def validation_node(state: VerificationState) -> Dict[str, Any]:
     """
-    对同一补丁组的 candidates，逐个验证，每个 candidate 动态组装 peer context：
-    1. 优先用同组内其他候选（同文件/同类）作为 peer。
-    2. 若 peer 缺失，repo 模式下可 fallback 到同文件静态查找，benchmark 模式下可用 1day_vul_dict.json 的摘录。
+    Verify candidates in the same patch group one by one, dynamically assemble peer context for each candidate:
+    1. Prioritize using other candidates in the same group (same file/class) as peers.
+    2. If peer is missing, fallback to static lookup in same file for repo mode, or use excerpts from 1day_vul_dict.json for benchmark mode.
     """
     candidates: List[SearchResultItem] = state["candidates"]
     feature: PatchFeatures = state["feature_context"]
     mode = state["mode"]
     vul_id = state["vul_id"]
     findings = []
-    # 按文件归类，便于 peer 查找
+    # Group by file, facilitating peer lookup
     file_map : Dict[str, List[SearchResultItem]] = {}
     for cand in candidates:
         file_map.setdefault(cand.target_file, []).append(cand)
     
-    # [新增] 记录已处理过的 candidate ID (target_func)
+    # [New] Record processed candidate IDs (target_func)
     processed_funcs = set()
 
-    # [新增] 筛选逻辑：Verdict 为 VULNERABLE 且 置信度 >= 0.4
+    # [New] Filtering logic: Verdict is VULNERABLE and Confidence >= 0.4
     filtered_candidates : List[SearchResultItem] = []
     for c in candidates:
         if c.verdict in ("VULNERABLE") and c.confidence >= 0.4:
@@ -3629,7 +3629,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
         THRESHOLD_PENALTY_STEP = 0.1
 
     for candidate in filtered_candidates:
-        # [Robustness] 为每个 candidate 添加异常隔离
+        # [Robustness] Add exception isolation for each candidate
         try:
             # [Adaptive Threshold] Check
             # Only apply new threshold if rank is outside grace period
@@ -3637,7 +3637,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 print(f"    [Skip-Adaptive] Rank {candidate.rank} (Conf {candidate.confidence:.2f}) < Threshold {current_threshold:.2f}")
                 continue
 
-            # [修改] 使用 file + func 作为唯一键，防止不同文件同名函数被误跳过
+            # [Modified] Use file + func as unique key to prevent same-named functions in different files from being skipped by mistake
             # [DEBUG]
             # if candidate.target_func != 'ivr_read_header':
             #     continue
@@ -3652,14 +3652,14 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             
             repo_path: str = candidate.repo_path
             ctx_builder = ContextBuilder(repo_path)
-            # 动态组装 peer_funcs
+            # Dynamically assemble peer_funcs
             peer_funcs = {}
             peer_candidates : List[SearchResultItem] = []
-            # [新增] 记录已填充的 patch_func slot，避免 Step 2 重复获取
+            # [New] Record filled patch_func slot to avoid duplicate retrieval in Step 2
             filled_slots = set()
             
-            # 1. 优先用同组内同文件的其他候选
-            # [优化] 限制同行 peer 数量，避免上下文过长 (Top 5)
+            # 1. Prioritize other candidates within the same group and file
+            # [Optimize] Limit peer quantity to avoid excessive context length (Top 5)
             MAX_PEERS = 200
             peers_count = 0
             
@@ -3686,19 +3686,19 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 if c_pfunc and o_pfunc and c_pfunc == o_pfunc:
                     continue
 
-                # [修改] peer 名优先使用 target_func，以便在报告中正确显示实际使用的函数名
+                # [Modified] peer name prioritizes target_func to correctly display the actual function name used in the report
                 peer_name = getattr(other, "target_func", "peer")
                 if peer_name not in peer_funcs:
                     peer_funcs[peer_name] = other.code_content
                     peer_candidates.append(other)
                     peers_count += 1
                 
-                # 记录占用的 slot
+                # Record occupied slot
                 if hasattr(other, "patch_func"):
                     filled_slots.add(other.patch_func)
                 
-            # 2. 若 peer 仍缺失，repo 模式下静态查找
-            # 计算还需要哪些 slot
+            # 2. If peer is still missing, use static lookup in repo mode
+            # Calculate which slots are still needed
             needed_slots = set(feature.slices.keys())
             if hasattr(candidate, "patch_func"):
                 needed_slots.discard(candidate.patch_func)
@@ -3706,12 +3706,12 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             if mode == 'repo' and not needed_slots.issubset(filled_slots):
                 static_peers = ctx_builder.fetch_peer_functions(candidate, feature)
                 for k, v in static_peers.items():
-                    # k 是 patch_func 名
+                    # k is the patch_func name
                     if k not in filled_slots:
                         peer_funcs[k] = v
                         filled_slots.add(k)
 
-            # 3. benchmark 模式下，补全 1day_vul_dict.json 摘录
+            # 3. In benchmark mode, complete 1day_vul_dict.json excerpts
             if mode == 'benchmark' and len(peer_funcs) < len(feature.slices) - 1:
                 benchmark_indexer = BenchmarkSymbolIndexer()
                 target_func = candidate.target_func
@@ -3726,7 +3726,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                             if patch.function_name not in peer_funcs:
                                 peer_funcs[patch.function_name] = code_content
             
-            # 标记当前 candidate 和所有 peer candidates 为已处理
+            # Mark current candidate and all peer candidates as processed
             processed_funcs.add(candidate.target_func)
             for p in peer_candidates:
                 processed_funcs.add(p.target_func)
@@ -3950,12 +3950,12 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 print(f"    [Adaptive] Verdict SAFE -> Raising threshold to {current_threshold:.2f}")
         
         except Exception as e:
-            # [Robustness] 捕获任何未预料的异常，记录错误但继续处理其他 candidate
+            # [Robustness] Catch any unexpected exceptions, record errors but continue processing other candidates
             print(f"    [Error] Verification failed for {candidate.target_func}: {e}")
             import traceback
             traceback.print_exc()
             
-            # 创建一个失败记录
+            # Create a failure record
             finding = VulnerabilityFinding(
                 vul_id=state["vul_id"],
                 cwe_id=feature.semantics.cwe_id or "Unknown",
@@ -3967,7 +3967,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 target_file=candidate.target_file,
                 target_func=candidate.target_func,
                 analysis_report=f"Verification failed due to unexpected error: {str(e)}",
-                is_vulnerable=False,  # 保守判断
+                is_vulnerable=False,  # Conservative judgment
                 verdict_category="ERROR",
                 involved_functions=[],
                 peer_functions=[],
@@ -3978,7 +3978,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 defense_status=f"Error: {str(e)}"
             )
             findings.append(finding)
-            continue  # 继续处理下一个 candidate
+            continue  # Continue processing next candidate
 
     return {"final_findings": findings}
 

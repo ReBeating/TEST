@@ -1,12 +1,12 @@
 """
 Vulnerability Type-Specific Verification Checklists
-为每种漏洞类型定义验证时必须确认的关键点，避免常见的误报/漏报
+Define critical verification points for each vulnerability type to avoid common false positives/negatives
 """
 
 from typing import Dict, List
 from core.models import GeneralVulnType
 
-# 类型特定验证清单
+# Vulnerability Type-Specific Verification Checklists
 VERIFICATION_CHECKLISTS: Dict[GeneralVulnType, Dict[str, any]] = {
     
     # ========== 1. Memory Safety (7) ==========
@@ -675,25 +675,25 @@ VERIFICATION_CHECKLISTS: Dict[GeneralVulnType, Dict[str, any]] = {
 
 
 def get_verification_checklist(vuln_type: GeneralVulnType) -> Dict[str, any]:
-    """获取特定漏洞类型的验证清单"""
+    """Get verification checklist for specific vulnerability type"""
     return VERIFICATION_CHECKLISTS.get(vuln_type, VERIFICATION_CHECKLISTS[GeneralVulnType.UNKNOWN])
 
 
 def format_checklist_for_prompt(vuln_type: GeneralVulnType, agent_role: str = "red") -> str:
     """
-    格式化验证清单为 Prompt 文本
+    Format the verification checklist into Prompt text
     
     Args:
-        vuln_type: 漏洞类型
-        agent_role: "red" 或 "blue"，决定强调哪些检查项
+        vuln_type: Vulnerability type
+        agent_role: "red" or "blue", determines which checks to prioritize
     
     Returns:
-        格式化的检查清单文本
+        Formatted checklist text
     """
     checklist = get_verification_checklist(vuln_type)
     
     if agent_role == "red":
-        # Red Agent: 强调必须验证的关键点
+        # Red Agent: Emphasize critical verification points
         output = f"### Type-Specific Verification Checklist for {vuln_type.value}\n\n"
         output += "**CRITICAL: You MUST confirm ALL of the following before claiming VULNERABLE:**\n"
         for i, check in enumerate(checklist["critical_checks"], 1):
@@ -705,15 +705,15 @@ def format_checklist_for_prompt(vuln_type: GeneralVulnType, agent_role: str = "r
         output += f"\n**Verification Strategy**:\n{checklist['verification_strategy']}\n"
         
     else:  # blue
-        # Blue Agent: 强调常见误报场景和防御模式
+        # Blue Agent: Emphasize common false positives and defense patterns
         output = f"### Defense Strategy Guide for {vuln_type.value}\n\n"
         
-        # 1. Common False Positives (用于反驳 Red)
+        # 1. Common False Positives (Used to refute Red)
         output += "**STEP 1: Look for these False Positive scenarios (to REFUTE Red's claims):**\n"
         for i, fp in enumerate(checklist["common_false_positives"], 1):
             output += f"{i}. {fp}\n"
         
-        # 2. Defense Patterns (用于建立 C_def)
+        # 2. Defense Patterns (Used to establish C_def)
         if "defense_patterns" in checklist and checklist["defense_patterns"]:
             output += "\n**STEP 2: Search for Defense Mechanisms (to establish C_def):**\n"
             output += "Use this 4-layer priority order:\n"

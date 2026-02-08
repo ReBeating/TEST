@@ -13,14 +13,14 @@ class AtomicPatch(BaseModel):
     new_code: Optional[str] = None 
     metadata: Dict[str, Any] = Field(default_factory=dict)
     
-    # [新增] 分别记录 old/new 代码片段在原文件中的起始行号
+    # [New] Record the start line numbers of old/new code snippets in the original file respectively
     start_line_old: Optional[int] = None
     start_line_new: Optional[int] = None
 
-    # --- Phase 3.1.2 特征 ---
+    # --- Phase 3.1.2 Features ---
     calls: Set[str] = Field(default_factory=set, exclude=True)
     tokens: Set[str] = Field(default_factory=set, exclude=True)
-    # [新增] 访问的结构体成员/全局变量 (e.g., "wq", "lock", "flags")
+    # [New] Access structure members/global variables (e.g., "wq", "lock", "flags")
     accessed_members: Set[str] = Field(default_factory=set, exclude=True)
 
     @property
@@ -84,13 +84,13 @@ class VulnType(str, Enum):
     UNKNOWN = "Unknown"
 
 class TypeConfidence(str, Enum):
-    """三级级联的类型确定置信度"""
-    HIGH = "High"      # Tier 1: CVE/CWE元数据推断
-    MEDIUM = "Medium"  # Tier 2: LLM代码分析推断
-    LOW = "Low"        # Tier 3: 通用Fallback
+    """Three-level cascaded type determination confidence"""
+    HIGH = "High"      # Tier 1: CVE/CWE Meta Inference
+    MEDIUM = "Medium"  # Tier 2: LLM Code Analysis Inference
+    LOW = "Low"        # Tier 3: General Fallback
 
 class AnchorRole(str, Enum):
-    """预定义的锚点角色（用于定位和切片）"""
+    """Predefined anchor roles (for localization and slicing)"""
     # Memory Operations
     ALLOC = "Alloc"
     FREE = "Free"
@@ -130,7 +130,7 @@ class AnchorRole(str, Enum):
     GENERIC = "Generic"
 
 class GeneralVulnType(str, Enum):
-    """27个具体漏洞类型（General Vulnerability Types）"""
+    """27 specific General Vulnerability Types"""
     
     # 1. Memory Safety (7)
     USE_AFTER_FREE = "Use After Free"
@@ -174,7 +174,7 @@ class GeneralVulnType(str, Enum):
     OTHER = "Other"
 
 class SliceEntryPoint(BaseModel):
-    """单点的切片指令"""
+    """Single-point slicing instruction"""
     code_content: str = Field(description="Code line content to locate the node (e.g., 'kfree(req)')")
     focus_variable: str = Field(description="Variable to trace at this line (e.g., 'req')")
     description: Optional[str] = Field(description="Brief reason")
@@ -237,7 +237,7 @@ class SliceValidationResult(BaseModel):
     reasoning: str = Field(description="Summary of the cleaning strategy.")
 
 class SliceFeature(BaseModel):
-    """单函数的切片特征"""
+    """Slicing features of a single function"""
     func_name: str
     s_post: str     # Post-Patch (or Primary) Slice Code
     s_pre: str  # Pre-Patch (or Shadow) Slice Code
@@ -253,7 +253,7 @@ class SliceFeature(BaseModel):
     validation_status: Optional[str] = Field(default=None, description="The local validation role/status e.g. 'Victim', 'Allocator', 'Guard'.")
     validation_reasoning: Optional[str] = Field(default="", description="Reasoning for the local validation.")
 
-    # 可选：如果你想在切片级别保留局部指纹，可以在这里加，但通常全局指纹够用了
+    # Optional: If you want to keep local fingerprints at the slice level, you can add them here, but global fingerprints are usually enough
     # local_fingerprints: List[str] 
 
 class FunctionFingerprint(BaseModel):
@@ -375,19 +375,19 @@ class SemanticFeature(BaseModel):
 # Alias for backward compatibility
 VulnerabilityReport = SemanticFeature
 
-class PatchFeatures(BaseModel):    # 原 AnalyzedGroup，改名强调它是特征集合
-    """Phase 3.2 的最终产出：补丁特征集"""
+class PatchFeatures(BaseModel):    # Originally AnalyzedGroup, renamed to emphasize it's a feature set
+    """Phase 3.2 Final Artifact: Patch Feature Set"""
     group_id: str
     patches: List[AtomicPatch]
     commit_message: str
-    # 这里的命名也可以简化
+    # Naming can also be simplified here
     taxonomy: TaxonomyFeature
     
-    # [修改] 变为字典，Key 为函数唯一标识 (如 "funcname")
-    # 这样后续步骤可以遍历这个字典进行单点分析
+    # [Modified] Changed to dictionary, Key is function unique identifier (e.g. "funcname")
+    # This allows subsequent steps to iterate over this dictionary for point analysis
     slices: Dict[str, SliceFeature] 
     
-    # 全局语义 (用于粗筛)
+    # Global semantics (for coarse screening)
     semantics: SemanticFeature
 
 class SlicingStrategy(str, Enum):
@@ -414,14 +414,14 @@ class SlicingInstruction(BaseModel):
     description: Optional[str] = Field(default=None, description="Reason for this anchor (e.g., 'Hypothesis Keyword')")
 
 class MatchTrace(BaseModel):
-    """单行匹配证据"""
-    slice_line: str      # 切片中的原始代码
-    target_line: str     # 目标函数中的匹配代码
-    line_no: int = Field(exclude=True) # 目标函数中的行号 (1-based), 内部使用，JSON不输出
-    similarity: float    # 相似度
+    """Single line match evidence"""
+    slice_line: str      # Original code in slice
+    target_line: str     # Matching code in target function
+    line_no: int = Field(exclude=True) # Line number in target function (1-based), internal use, not output to JSON
+    similarity: float    # Similarity
 
 class AlignedTrace(BaseModel):
-    """包含未匹配项的完整对齐轨迹"""
+    """Complete alignment trace including unmatched items"""
     slice_line: str
     target_line: Optional[str] = None
     line_no: Optional[int] = Field(default=None, exclude=True)
@@ -430,28 +430,28 @@ class AlignedTrace(BaseModel):
 
 class MatchEvidence(BaseModel):
     """
-    完整的匹配证据链（与 Methodology.tex §3.4 Signature Matching 对应）
+    Complete match evidence chain (Corresponding to Methodology.tex §3.4 Signature Matching)
     
-    得分说明：
-    - score_vuln/score_fix: 整体切片相似度（DP对齐后的总分）
-    - score_feat_vuln/score_feat_fix: 局部特征相似度（仅 VULN/FIX 行）
-    - confidence: 仅 VULNERABLE 时有效（= α*score_vuln + β*anchor_score）
+    Score Explanation:
+    - score_vuln/score_fix: overall slice similarity (Total score after DP alignment)
+    - score_feat_vuln/score_feat_fix: local feature similarity (VULN/FIX lines only)
+    - confidence: Valid only when VULNERABLE (= α*score_vuln + β*anchor_score)
     """
     verdict: Literal["VULNERABLE", "PATCHED", "UNKNOWN", "MISMATCH"]
-    confidence: float  # 仅 VULNERABLE 时使用（二维加权得分）
+    confidence: float  # Used only when VULNERABLE (2D weighted score)
     
-    # 四分数体系（与论文一致）
-    score_vuln: float       # 整体切片相似度（pre-patch vs target）
-    score_fix: float        # 整体切片相似度（post-patch vs target）
-    score_feat_vuln: float  # 局部特征相似度（仅 VULN 行）
-    score_feat_fix: float   # 局部特征相似度（仅 FIX 行）
+    # Four-score system (consistent with paper)
+    score_vuln: float       # Overall slice similarity (pre-patch vs target)
+    score_fix: float        # Overall slice similarity (post-patch vs target)
+    score_feat_vuln: float  # Local feature similarity (VULN lines only)
+    score_feat_fix: float   # Local feature similarity (FIX lines only)
     
-    # 全局对齐详情（用于调试和可视化）
+    # Global alignment details (for debugging and visualization)
     aligned_vuln_traces: List[AlignedTrace] = Field(default_factory=list)
     aligned_fix_traces: List[AlignedTrace] = Field(default_factory=list)
 
 class SearchResultItem(BaseModel):
-    """单条搜索结果"""
+    """Single search result"""
     group_id: str
     repo_path: str
     target_file: str
@@ -463,11 +463,11 @@ class SearchResultItem(BaseModel):
     rank: int = -1 # [New] Rank among VULNERABLE results (0-based), -1 for others
     scores: Dict[str, float]
     evidence: MatchEvidence
-    code_content: Optional[str] = None # 用于 Phase 4 传递完整代码
+    code_content: Optional[str] = None # Used for Phase 4 to pass full code
     
 class VulnerabilityFinding(BaseModel):
     """
-    Phase 4 最终产出：确认存在的漏洞
+    Phase 4 Final Output: Confirmed Vulnerabilities
     
     Per Methodology.tex Section 4.4: Semantic Constraint Verification
     Verdict is determined by three constraints: C_cons, C_reach, C_def

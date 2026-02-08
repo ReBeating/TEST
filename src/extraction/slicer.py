@@ -41,23 +41,23 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 import json
 
 # ==============================================================================
-# 重连重试工具函数
+# Connection retry utility functions
 # ==============================================================================
 
 def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: float = 5.0):
     """
-    增强的 LLM 调用包装函数，带自动重试机制。
-    处理网络错误 (500, 502, 503, 504) 和连接超时。
+    Enhanced LLM invocation wrapper with automatic retry mechanism.
+    Handles network errors (500, 502, 503, 504) and connection timeouts.
     
     Args:
-        llm: ChatOpenAI 实例或带 structured_output 的 LLM
-        messages: 消息列表
-        max_retries: 最大重试次数
-        retry_delay: 重试间隔（秒），每次重试后会指数增长
+        llm: ChatOpenAI instance or LLM with structured_output
+        messages: List of messages
+        max_retries: Maximum number of retries
+        retry_delay: Retry interval (seconds), increases exponentially after each retry
     
     Returns:
-        LLM 响应，失败时返回 None（而不是抛异常）
-        调用方需要检查返回值是否为 None
+        LLM response, returns None on failure (instead of raising exception)
+        Caller needs to check if return value is None
     """
     last_exception = None
     current_delay = retry_delay
@@ -69,24 +69,24 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
             last_exception = e
             error_str = str(e).lower()
             
-            # 分类错误类型
+            # Classify error type
             error_type = "unknown"
             is_retryable = False
             
-            # 网络/服务器错误（可重试）
+            # Network/Server errors (Retryable)
             if any(x in error_str for x in ['500', '502', '503', '504', 'internal server error']):
                 error_type = "server_error"
                 is_retryable = True
-            # 连接错误（可重试）
+            # Connection errors (Retryable)
             elif any(x in error_str for x in ['connection', 'timeout', 'timed out', 'network', 'reset', 'refused', 'broken pipe', 'unreachable']):
                 error_type = "connection_error"
                 is_retryable = True
-            # 速率限制（可重试，但延迟更长）
+            # Rate limit (Retryable, but longer delay)
             elif any(x in error_str for x in ['rate limit', 'too many requests', '429']):
                 error_type = "rate_limit"
                 is_retryable = True
-                current_delay = max(current_delay, 30.0)  # 速率限制至少等30秒
-            # API密钥/认证错误（不可重试）
+                current_delay = max(current_delay, 30.0)  # Rate limit wait at least 30s
+            # API Key/Authentication errors (Non-retryable)
             elif any(x in error_str for x in ['api key', 'authentication', 'unauthorized', '401', '403']):
                 error_type = "auth_error"
                 is_retryable = False
@@ -95,13 +95,13 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
                 print(f"      [LLM-Retry] {error_type} (attempt {attempt + 1}/{max_retries}): {e}")
                 print(f"      [LLM-Retry] Waiting {current_delay:.1f}s before retry...")
                 time.sleep(current_delay)
-                current_delay *= 2  # 指数退避
+                current_delay *= 2  # Exponential backoff
             else:
-                # 非可重试错误或最后一次尝试
+                # Non-retryable error or last attempt
                 print(f"      [LLM-Error] {error_type} (final attempt): {e}")
-                return None  # 返回 None 而不是抛异常
+                return None  # Return None instead of raising exception
     
-    # 所有重试都失败了
+    # All retries failed
     print(f"      [LLM-Error] All {max_retries} attempts failed. Last error: {last_exception}")
     return None
 
@@ -109,7 +109,7 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
 def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_factor=2.0):
     """
     [Legacy] Retry wrapper for LLM calls with exponential backoff.
-    保留向后兼容，新代码建议使用 llm_invoke_with_retry。
+    Preserve backward compatibility, new code suggests using llm_invoke_with_retry.
     
     Args:
         func: Callable that performs LLM invocation
@@ -133,7 +133,7 @@ def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_fa
             last_exception = e
             error_str = str(e).lower()
             
-            # 分类错误类型（与 llm_invoke_with_retry 保持一致）
+            # Classify error types (consistent with llm_invoke_with_retry)
             is_retryable = any(keyword in error_str for keyword in [
                 'connection', 'timeout', 'timed out', 'network',
                 'refused', 'reset', 'broken pipe', 'unreachable',
@@ -154,7 +154,7 @@ def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_fa
     raise last_exception
 
 # ==============================================================================
-# 数据模型
+# Data Models
 # ==============================================================================
 
 class ModifiedLine(BaseModel):
@@ -166,7 +166,7 @@ class ModifiedLine(BaseModel):
 
 
 # ==============================================================================
-# 静态程序切片引擎
+# Static Program Slicing Engine
 # ==============================================================================
 
 class Slicer:
@@ -239,7 +239,7 @@ class Slicer:
             
             # Case 2: Track Child, Edge is Parent (Refined)
             # Track: "dwc->gadget", Edge: "dwc" -> True
-            # 意味着我们关注子字段，但父结构体被使用了(通常是传参)，这可能隐含对子字段的使用
+            # Meaning we focus on the child field, but the parent struct was used (usually passed as an argument), which might imply usage of the child field
             if t.startswith(candidate + "->") or t.startswith(candidate + "."): return True
             
         return False
@@ -293,59 +293,59 @@ class Slicer:
 
     def forward_slice_pruned(self, start_nodes: List[str], initial_vars: Set[str]) -> Set[str]:
         slice_nodes = set(start_nodes)
-        # worklist 存储 (node, relevant_vars)
-        # relevant_vars: 到达此节点时，引起依赖的变量集合
+        # worklist stores (node, relevant_vars)
+        # relevant_vars: set of variables causing dependency when reaching this node
         worklist = []
         for nid in start_nodes:
             worklist.append((nid, initial_vars.copy()))
         
-        # 修改 Visited 策略：
-        # 如果我们已经以“更强”或“相同”的变量集合访问过该节点，则跳过
-        # 但为了性能和防止死循环，最简单的方式是只记录 Node（变为上下文不敏感），
-        # 或者限制 visited 的 key。
-        # 这里我们采用一种折中方案：只在 edge 判断时过滤，入队时归一化。
+        # Modify Visited Strategy:
+        # If we have visited this node with a "stronger" or "identical" set of variables, skip it
+        # But for performance and to prevent infinite loops, the simplest way is to only record the Node (becoming context-insensitive),
+        # Or restrict the visited key.
+        # Here we adopt a compromise: only filter during edge judgment, normalize when enqueuing.
         
-        # 其实在 PDG Forward Slice 中，一旦被切中，该节点的所有 defs 都会成为新的污染源。
-        # 因此状态里只需要存节点 ID 即可防止死循环。
+        # Actually in PDG Forward Slice, once sliced, all defs of the node become new pollution sources.
+        # So we only need to store the node ID in the state to prevent infinite loops.
         visited_nodes = set(start_nodes) 
 
         while worklist:
             curr_node, curr_vars = worklist.pop(0)
 
-            # 遍历出边
+            # Traverse outgoing edges
             for _, succ, data in self.pdg.out_edges(curr_node, data=True):
                 rel_type = data.get('relationship')
                 should_add = False
                 
-                # 1. 数据依赖检查
+                # 1. Data dependency check
                 if rel_type == 'DATA':
                     edge_var = data.get('var')
-                    # 只有当边上的变量是我们关心的变量时，才通过
+                    # Pass only if the variable on the edge is one we care about
                     if edge_var in curr_vars:
                         should_add = True
                 
-                # 2. 控制依赖检查
+                # 2. Control dependency check
                 elif rel_type == 'CONTROL':
-                    # 控制依赖通常意味着 curr_node 的执行决定了 succ 是否执行
-                    # 如果 curr_node 在切片里，它的所有控制子节点通常都应该在切片里
-                    # 这里可以放宽条件，或者检查 curr_node 使用的变量是否在 curr_vars 里
+                    # Control dependency usually means execution of curr_node determines whether succ executes
+                    # If curr_node is in the slice, all its control children should usually be in the slice
+                    # Here we can relax the condition, or check if variables used by curr_node are in curr_vars
                     curr_uses = set(self.pdg.nodes[curr_node].get('uses', {}).keys())
                     if not curr_uses.isdisjoint(curr_vars):
                         should_add = True
 
                 if should_add:
-                    # 获取 succ 定义的新变量
+                    # Get new variables defined by succ
                     succ_defs = set(self.pdg.nodes[succ].get('defs', {}).keys())
                     
-                    # --- 关键修改 ---
-                    # 下一跳关心的变量，应该是 succ 产生的变量，而不是累积之前的变量。
-                    # 因为在 PDG 中，curr_vars 已经被 curr_node 消费了，
-                    # 产生的影响转化为了 succ_defs。
+                    # --- Key Modification ---
+                    # The variables of interest for the next hop should be the variables produced by succ, not the accumulated previous variables.
+                    # Because in PDG, curr_vars have already been consumed by curr_node,
+                    # and the impact generated is transformed into succ_defs.
                     next_vars = succ_defs 
                     
-                    # 如果 succ 尚未访问，或者是为了重新计算新的变量流（如果是上下文敏感分析），
-                    # 但为了防止死循环，建议只要节点被加入切片，就只处理一次，
-                    # 或者确保 visited 逻辑能覆盖。
+                    # If succ has not been visited, or to recalculate new variable flow (if context-sensitive analysis),
+                    # but to prevent infinite loops, it is recommended to process only once as long as the node is added to the slice,
+                    # or ensure the visited logic can cover it.
                     if succ not in visited_nodes:
                         visited_nodes.add(succ)
                         slice_nodes.add(succ)
@@ -445,7 +445,7 @@ class Slicer:
         return "\n".join(output)
 
 # ==============================================================================
-# Shadow 切片映射器（上下文同步）
+# Shadow Slice Mapper (Context Synchronization)
 # ==============================================================================
 
 class LineMappingType:
@@ -736,7 +736,7 @@ class ShadowMapper:
         
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == 'equal':
-                # EXACT: 完全相同的行 - 双向映射
+                # EXACT: Identical lines - Bidirectional mapping
                 for k in range(i2 - i1):
                     p_rel, s_rel = i1 + k + 1, j1 + k + 1
                     pri_content = self.lines_pri[i1 + k].strip() if (i1 + k) < len(self.lines_pri) else ""
@@ -822,21 +822,22 @@ class ShadowMapper:
                               pri_nodes: Set[str], 
                               deleted_lines: List[str] = None) -> Set[str]:
         """
-        一步到位生成清理后的 Shadow Slice
+        One-step generation of cleaned Shadow Slice
         
         Args:
-            pri_nodes: Primary Slice 中的节点集合
-            deleted_lines: 被删除的代码行内容列表 (用于注入漏洞核心)
+            pri_nodes: Set of nodes in Primary Slice
+            deleted_lines: List of deleted code line contents (for injecting vulnerability core)
+            
             
         Returns:
-            清理后的 Shadow 节点集合
+            Cleaned Shadow node set
         """
         shadow_nodes = set()
         slicer_shadow = Slicer(self.pdg_shadow, self.code_shadow, self.sl_shadow)
         
-        # 收集 Primary 活跃信息
-        active_pri_lines = set()      # Primary 中被保留的行号 (rel)
-        active_pri_contents = set()   # Primary 中被保留的行内容 (stripped)
+        # Collect Primary active information
+        active_pri_lines = set()      # Line numbers retained in Primary (rel)
+        active_pri_contents = set()   # Line contents retained in Primary (stripped)
         
         for nid in pri_nodes:
             if nid not in self.pdg_pri.nodes:
@@ -853,7 +854,7 @@ class ShadowMapper:
         if not active_pri_lines:
             return set()
         
-        # ============ Step 1: 映射 Primary 节点 → Shadow 节点 ============
+        # ============ Step 1: Map Primary nodes -> Shadow nodes ============
         for nid in pri_nodes:
             if nid not in self.pdg_pri.nodes:
                 continue
@@ -865,7 +866,7 @@ class ShadowMapper:
                          if d.get('start_line') == shadow_rel]
                 shadow_nodes.update(found)
         
-        # ============ Step 2: 处理 Replace 块（确保新增的修复代码被包含）============
+        # ============ Step 2: Handle Replace blocks (ensure added fix code is included) ============
         # Build replace block mapping from diff opcodes
         matcher_internal = difflib.SequenceMatcher(None, self.lines_pri, self.lines_shadow)
         replace_blocks = []  # List of ((pri_start, pri_end), (shadow_start, shadow_end))
@@ -890,7 +891,7 @@ class ShadowMapper:
                      if d.get('start_line') == s_ln]
             shadow_nodes.update(found)
         
-        # ============ Step 3: 注入删除行 (漏洞核心) ============
+        # ============ Step 3: Inject deleted lines (Vulnerability Core) ============
         deleted_anchors = set()
         if deleted_lines:
             for content in deleted_lines:
@@ -898,13 +899,13 @@ class ShadowMapper:
                 deleted_anchors.update(found)
             
             if deleted_anchors:
-                # 对删除行做局部切片扩展 (仅控制流，避免引入过多噪声)
+                # Local slice extension for deleted lines (control flow only, to avoid introducing too much noise)
                 ctrl_nodes = slicer_shadow.backward_slice_control_only(list(deleted_anchors))
                 shadow_nodes.update(ctrl_nodes)
                 shadow_nodes.update(deleted_anchors)
         
-        # ============ Step 3.5: 添加INSERT行节点（补丁新增代码）============
-        # [FIX] INSERT行的节点需要主动添加，因为它们不在映射中
+        # ============ Step 3.5: Add INSERT line nodes (patch added code) ============
+        # [FIX] Nodes of INSERT lines need to be added actively because they are not in the mapping
         print(f"      [Mapping] Adding INSERT lines ({len(self.unique_post_lines)} lines)...")
         for s_ln in self.unique_post_lines:
             # Find all nodes that COVER this line (start_line <= s_ln <= end_line)
@@ -915,10 +916,10 @@ class ShadowMapper:
             if found:
                 shadow_nodes.update(found)
         
-        # ============ Step 4: 计算语义范围锚点 ============
+        # ============ Step 4: Calculate Semantic Range Anchors ============
         min_pri, max_pri = min(active_pri_lines), max(active_pri_lines)
         
-        # 找 Primary 范围边界在 Shadow 中的对应位置
+        # Find the corresponding position of Primary range boundaries in Shadow
         anchor_top_s = 0
         for r in range(min_pri - 1, 0, -1):
             if r in self.pri_to_shadow:
@@ -931,7 +932,7 @@ class ShadowMapper:
                 anchor_bot_s = self.pri_to_shadow[r]
                 break
         
-        # ============ Step 5: 同步清理 (应用保留规则) ============
+        # ============ Step 5: Sync Cleanup (Apply Retention Rules) ============
         # Line Classification (based on diff analysis):
         # - EXACT/WHITESPACE: Lines with direct mapping (pri_to_shadow/shadow_to_pri)
         # - MOVED: Content appears in both deleted (-) and added (+) lines
@@ -950,49 +951,49 @@ class ShadowMapper:
             if s_ln <= 0 or d.get('type') in ('ENTRY', 'EXIT'):
                 continue
             
-            # 强制保留删除行（漏洞核心代码）
+            # Force retain deleted lines (vulnerability core code)
             if nid in deleted_anchors:
                 continue
             
-            # 强制保留 replace 块的新增行
+            # Force retain added lines in replace block
             if s_ln in replace_shadow_lines:
                 continue
             
             should_keep = False
             line_type = "UNKNOWN"
             
-            # Type 1: EXACT/WHITESPACE (有映射关系 - 不在 diff 中修改的行)
+            # Type 1: EXACT/WHITESPACE (mapped - lines not modified in diff)
             if s_ln in self.shadow_to_pri:
                 mapped_pri = self.shadow_to_pri[s_ln]
-                # 只有当 Primary 中对应的行在活跃集合中时，才保留
+                # Keep only when the corresponding line in Primary is in the active set
                 should_keep = (mapped_pri in active_pri_lines)
                 line_type = "EXACT/WHITESPACE"
             
-            # Type 2: MOVED (内容同时出现在删除行和增加行中，但位置不同)
-            # 使用双向映射来判断：只有当 Primary 中对应的行在活跃集合中时，才保留
+            # Type 2: MOVED (content appears in both deleted and added lines, but at different positions)
+            # Use bidirectional mapping to judge: keep only when the corresponding line in Primary is in the active set
             elif s_ln in self.moved_shadow_to_pri:
                 mapped_pri = self.moved_shadow_to_pri[s_ln]
-                # MOVED 行：只有当 Primary 中对应的行在活跃集合中时，才保留
+                # MOVED line: keep only when the corresponding line in Primary is in the active set
                 should_keep = (mapped_pri in active_pri_lines)
                 line_type = "MOVED"
             
-            # Type 3: MODIFIED (内容与删除行相似但不完全相同)
-            # 使用双向映射来判断：只有当 Primary 中对应的行在活跃集合中时，才保留
+            # Type 3: MODIFIED (content is similar to deleted line but not identical)
+            # Use bidirectional mapping to judge: keep only when the corresponding line in Primary is in the active set
             elif s_ln in self.modified_shadow_to_pri:
                 mapped_pri = self.modified_shadow_to_pri[s_ln]
-                # MODIFIED 行：只有当 Primary 中对应的行在活跃集合中时，才保留
+                # MODIFIED line: keep only when the corresponding line in Primary is in the active set
                 should_keep = (mapped_pri in active_pri_lines)
                 line_type = "MODIFIED"
             
-            # Type 4: UNIQUE_POST (纯新增，删除行中找不到对应)
-            # 这是补丁新增的全新代码，应该保留（没有对应的 Primary 行）
+            # Type 4: UNIQUE_POST (purely new, no counterpart found in deleted lines)
+            # This is brand new code added by the patch, should be kept (no corresponding Primary line)
             elif s_ln in self.unique_post_lines:
-                # UNIQUE_POST 行：补丁新增的代码，全部保留
+                # UNIQUE_POST line: code added by patch, keep all
                 should_keep = True
                 line_type = "UNIQUE_POST"
             
-            # Type 5: 其他情况（不在 diff 中，也没有映射）
-            # 在语义范围内则保留
+            # Type 5: Other cases (not in diff, no mapping)
+            # Keep if within semantic range
             else:
                 should_keep = (anchor_top_s < s_ln < anchor_bot_s)
                 line_type = "OTHER"
@@ -1002,7 +1003,7 @@ class ShadowMapper:
         
         shadow_nodes.difference_update(nodes_to_remove)
         
-        # 确保 ENTRY 节点存在
+        # Ensure ENTRY node exists
         shadow_nodes.update([n for n, d in self.pdg_shadow.nodes(data=True) 
                             if d.get('type') == 'ENTRY'])
         
@@ -1010,32 +1011,32 @@ class ShadowMapper:
     
     def map_lines_to_shadow(self, pri_abs_lines: List[int]) -> List[int]:
         """
-        映射 Primary 行号 → Shadow 行号
+        Map Primary line numbers -> Shadow line numbers
         
         Args:
-            pri_abs_lines: Primary 中的绝对行号列表
+            pri_abs_lines: List of absolute line numbers in Primary
             
         Returns:
-            对应的 Shadow 绝对行号列表
+            List of corresponding Shadow absolute line numbers
         """
         result = []
         
         for abs_p in pri_abs_lines:
             rel_p = abs_p - self.sl_pri + 1
             
-            # Case 1: 直接映射
+            # Case 1: Direct mapping
             if rel_p in self.pri_to_shadow:
                 rel_s = self.pri_to_shadow[rel_p]
                 result.append(rel_s - 1 + self.sl_shadow)
                 continue
             
-            # Case 2: 内容相似度匹配
+            # Case 2: Content similarity matching
             if 1 <= rel_p <= len(self.lines_pri):
                 p_content = self.lines_pri[rel_p - 1].strip()
                 if p_content:
-                    # 在 Shadow 中查找相同内容
+                    # Search for same content in Shadow
                     if p_content in self.shadow_content_to_lines:
-                        # 取最近的一个
+                        # Pick the nearest one
                         candidates = list(self.shadow_content_to_lines[p_content])
                         if candidates:
                             best_s_rel = min(candidates, key=lambda x: abs(x - rel_p))
@@ -1043,7 +1044,7 @@ class ShadowMapper:
         
         return result
     
-    # ============ 兼容旧接口 (静态方法) ============
+    # ============ Backward Compatibility Interface (Static Method) ============
     @staticmethod
     def map_and_slice(s_pri_nodes: Set[str],
                       pdg_pri: nx.MultiDiGraph,
@@ -1055,17 +1056,17 @@ class ShadowMapper:
                       deleted_lines: List[str] = None,
                       diff_text: str = None) -> Tuple[Set[str], Set[str]]:
         """
-        [兼容旧接口] 映射并切片
+        [Compatible with old interface] Map and slice
         Returns: (all_shadow_nodes, mandatory_nodes)
         """
         mapper = ShadowMapper(code_pri, code_shadow, pdg_pri, pdg_shadow,
                               start_line_pri, start_line_shadow, diff_text)
         shadow_nodes = mapper.generate_shadow_slice(s_pri_nodes, deleted_lines)
-        # mandatory_nodes 不再使用，返回空集合
+        # mandatory_nodes is no longer used, return empty set
         return (shadow_nodes, set())
 
 # ==============================================================================
-# 切片验证器与清洗器
+# Slice Validator and Cleaner
 # ==============================================================================
 
 class SliceValidator:
@@ -1190,7 +1191,7 @@ class SliceValidator:
         origins_text = "\n".join([f"- Line {o.line}: {o.content}" for o in origins]) if origins else "None identified."
         impacts_text = "\n".join([f"- Line {i.line}: {i.content}" for i in impacts]) if impacts else "None identified."
 
-        # Primary 固定为 Pre-Patch (Vulnerable)
+        # Primary is fixed as Pre-Patch (Vulnerable)
         slice_version = "Pre-Patch (Vulnerable)"
         
         # Get vulnerability-type specific distillation strategy
@@ -1321,7 +1322,7 @@ class SliceValidator:
             return None
 
 # ==============================================================================
-# 工具函数
+# Utility Functions
 # ==============================================================================
 
 def extract_search_hints(diff_text: str) -> Dict[str, Any]:
@@ -1354,10 +1355,10 @@ def extract_search_hints(diff_text: str) -> Dict[str, Any]:
             "key_variables": all_variables
         }
     
-    # 匹配 hunk header: @@ -10,5 +10,6 @@
+    # Match hunk header: @@ -10,5 +10,6 @@
     hunk_re = re.compile(r'^@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@')
     
-    # 当前行号计数器
+    # Current line number counters
     c_old = 0  # pre-patch line counter
     c_new = 0  # post-patch line counter
     
@@ -1374,23 +1375,23 @@ def extract_search_hints(diff_text: str) -> Dict[str, Any]:
         return set(vars)
     
     for line in diff_text.splitlines():
-        # 跳过文件头
+        # Skip file header
         if line.startswith('---') or line.startswith('+++'):
             continue
         
-        # 解析 hunk header
+        # Parse hunk header
         m = hunk_re.match(line)
         if m:
             c_old = int(m.group(1))
             c_new = int(m.group(3))
             continue
         
-        # 处理删除行 (-): 在 pre-patch 中存在，在 post-patch 中被删除
+        # Handle deleted lines (-): exist in pre-patch, deleted in post-patch
         if line.startswith('-') and not line.startswith('---'):
-            raw_content = line[1:]  # 保留原始格式（包括缩进）
+            raw_content = line[1:]  # Keep original format (including indentation)
             stripped = raw_content.strip()
             
-            # 跳过空行和注释
+            # Skip empty lines and comments
             if stripped and not stripped.startswith(('//', '/*', '*', '#')):
                 extracted_vars = extract_variables(stripped)
                 
@@ -1404,12 +1405,12 @@ def extract_search_hints(diff_text: str) -> Dict[str, Any]:
             
             c_old += 1
         
-        # 处理新增行 (+): 在 post-patch 中新增
+        # Handle added lines (+): added in post-patch
         elif line.startswith('+') and not line.startswith('+++'):
             raw_content = line[1:]
             stripped = raw_content.strip()
             
-            # 跳过空行和注释
+            # Skip empty lines and comments
             if stripped and not stripped.startswith(('//', '/*', '*', '#')):
                 extracted_vars = extract_variables(stripped)
                 
@@ -1423,12 +1424,12 @@ def extract_search_hints(diff_text: str) -> Dict[str, Any]:
             
             c_new += 1
         
-        # 处理上下文行（两边都有）
+        # Handle context lines (exist in both sides)
         else:
             c_old += 1
             c_new += 1
     
-    # 清理变量列表（移除常见的关键字和函数名）
+    # Clean up variable list (remove common keywords and function names)
     keywords = {
         'if', 'else', 'while', 'for', 'return', 'break', 'continue',
         'sizeof', 'NULL', 'true', 'false', 'void', 'int', 'char', 'long',
@@ -1459,16 +1460,16 @@ def extract_deleted_lines(diff_text: str) -> List[str]:
         return deleted
     
     for line in diff_text.splitlines():
-        # 在 Pre-Patch 中存在但在 Post-Patch 中被删除的行（'-' 开头）
+        # Lines existing in Pre-Patch but deleted in Post-Patch (start with '-')
         if line.startswith('-') and not line.startswith('---'):
             content = line[1:].strip()
-            # 过滤注释和空行
+            # Filter comments and empty lines
             if content and not content.startswith(('//','/*', '*', '#')):
                 deleted.append(content)
     return deleted
 
 # ==============================================================================
-# 切片生成函数（从 Anchors 生成切片）
+# Slice generation function (generate slice from Anchors)
 # ==============================================================================
 
 def generate_slice_from_anchors(
@@ -1658,7 +1659,7 @@ def generate_slice_from_anchors(
 
 
 # ==============================================================================
-# 主流程入口函数
+# Main Workflow Entry Function
 # ==============================================================================
 
 def slicing_node(state: PatchExtractionState) -> Dict:
@@ -1721,7 +1722,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             continue
         
         try:
-            # 使用 AtomicPatch 的实际起始行号
+            # Use actual start line number from AtomicPatch
             sl_pri = patch.start_line_old
             sl_shadow = patch.start_line_new
             
@@ -1941,7 +1942,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
         if not validation_passed:
             print(f"    [Refinement] Stage 3: Using last anchor result (validation failed but keeping semantic anchors)")
             
-            # 如果还没有生成切片，使用最后一次的 anchor_result 重新生成
+            # If slice has not been generated yet, regenerate using the last anchor_result
             if final_pri_nodes is None or raw_code is None:
                 if anchor_result is None or not anchor_result.origin_anchors or not anchor_result.impact_anchors:
                     print(f"        ✗ No valid anchor result available. Skipping function {func}")
@@ -1970,7 +1971,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             else:
                 print(f"      [Fallback] Slice already generated in last attempt, using it")
         
-        # 检查是否成功生成切片
+        # Check if slice is successfully generated
         if final_pri_nodes is None or raw_code is None:
             print(f"    [Error] Failed to generate slice for {func} after all attempts")
             continue
@@ -2285,7 +2286,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             if "]" in first_line:
                 code_content = first_line.split("]", 1)[1].strip()
                 
-                # 检查 diff 中是否有此行的修改
+                # Check if there is modification of this line in diff
                 is_modified = False
                 clean_code = code_content.replace(" ", "")
                 
@@ -2451,7 +2452,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                              p_idx = rel_p - 1
                              p_content = all_pri_lines[p_idx].strip() if 0 <= p_idx < len(all_pri_lines) else ""
                              
-                             # B. Strategy: Exact match or context-based match (上下文匹配)
+                             # B. Strategy: Exact match or context-based match
                              # Check for exact content match first
                              exact_match = None
                              for s_rel in range(s_start, s_end + 1):
@@ -2467,7 +2468,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                                  candidates_rel.append(exact_match)
                              else:
                                  # Try context match: check if surrounding lines match
-                                 # Get context (上下两行)
+                                 # Get context (prev/next two lines)
                                  p_prev = all_pri_lines[p_idx - 1].strip() if p_idx > 0 else ""
                                  p_next = all_pri_lines[p_idx + 1].strip() if p_idx + 1 < len(all_pri_lines) else ""
                                  
@@ -2613,7 +2614,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
     return {"slices": generated_slices, "taxonomy": taxonomy}
 
 # ==============================================================================
-# Baseline: Agent-Based 端到端提取（用于对比实验）
+# Baseline: Agent-Based End-to-End Extraction (For Comparison Experiment)
 # ==============================================================================
 
 class SingleFunctionAgentSlice(BaseModel):

@@ -83,7 +83,6 @@ CVE-2021-46911,linux,1a73e427b824133940c2dd95ebe26b6dce1cbf10,arch/um/kernel/tim
 CVE-2021-46932,linux,9f3ccdc3f6ef10084ceb3a47df0961bec6196fd0,drivers/input/mouse/appletouch.c,atp_probe,FP,,
 CVE-2021-46972,linux,eaab1d45cdb4bb0c846bd23c3d666d5b90af7b41,fs/overlayfs/namei.c,ovl_lookup,FP,,
 CVE-2021-46994,linux,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/hi311x.c,hi3110_can_probe,TP,,
-CVE-2021-46994,linux,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/hi311x.c,hi3110_can_remove,TP,,
 CVE-2021-46994,linux,03c427147b2d3e503af258711af4fc792b89b0af,drivers/net/can/spi/mcp251x.c,mcp251x_can_suspend,FP,,
 CVE-2021-46996,linux,85dfd816fabfc16e71786eda0a33a7046688b5b0,net/netfilter/nf_tables_api.c,nf_tables_newobj,FP,,
 CVE-2021-47004,linux,61461fc921b756ae16e64243f72af2bfc2e620db,fs/f2fs/gc.c,get_gc_cost,FP,,

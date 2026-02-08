@@ -8,55 +8,55 @@ import concurrent.futures
 from core.indexer import GlobalSymbolIndexer, BenchmarkSymbolIndexer, tokenize_code
 
 # ==========================================
-# 0. 参数配置类
+# 0. Parameter Configuration
 # ==========================================
 
 class MatcherConfig:
     """
-    漏洞匹配器核心参数配置类
-    优化后：从22个参数简化到9个核心参数
+    Core Configuration for Vulnerability Matcher
+    Optimized: Reduced from 22 parameters to 9 core parameters
     """
     
-    # ========== 相似度阈值 (2个) ==========
-    # [删除] ANCHOR_SIMILARITY_THRESHOLD - 锚点检查改为基于相似度排名，不做硬阈值
-    # [删除] MATCH_SCORE_THRESHOLD - DP 对齐中直接使用相似度，不做预过滤
-    VERDICT_THRESHOLD_STRONG = 0.9         # 强信号线：高于此视为特征完整
-    VERDICT_THRESHOLD_WEAK = 0.4           # 弱信号线：低于此视为特征缺失
+    # ========== Similarity Thresholds (2) ==========
+    # [Removed] ANCHOR_SIMILARITY_THRESHOLD - Anchor checks moved to similarity ranking, no hard threshold
+    # [Removed] MATCH_SCORE_THRESHOLD - Use similarity directly in DP alignment, no pre-filtering
+    VERDICT_THRESHOLD_STRONG = 0.9         # Strong signal line: above this considered feature complete
+    VERDICT_THRESHOLD_WEAK = 0.4           # Weak signal line: below this considered feature missing
     
-    # ========== DP对齐参数 (1个) ==========
-    BASE_GAP_PENALTY = 0.1                 # 基础间隙惩罚
+    # ========== DP Alignment Parameters (1) ==========
+    BASE_GAP_PENALTY = 0.1                 # Base gap penalty
     
-    # ========== 二维加权得分权重 (2个) ==========
+    # ========== 2D Weighted Score Weights (2) ==========
     # final_score = α * slice_score + β * anchor_score
-    WEIGHT_SLICE = 0.5                     # α: 切片整体相似度权重
-    WEIGHT_ANCHOR = 0.5                    # β: 锚点匹配权重
+    WEIGHT_SLICE = 0.5                     # α: Slice overall similarity weight
+    WEIGHT_ANCHOR = 0.5                    # β: Anchor match weight
     
-    # ========== 搜索限制参数 (2个) ==========
-    SEARCH_LIMIT_FAST = 2000                # 快速搜索候选函数限制
+    # ========== Search Limit Parameters (2) ==========
+    SEARCH_LIMIT_FAST = 2000                # Limit for fast candidate function search
 
 # ==========================================
-# 1. 基础工具函数
+# 1. Basic Utility Functions
 # ==========================================
 
 def remove_comments_from_code(code: str) -> str:
     """
-    预处理：移除代码中的所有注释（包括跨行注释），保留换行符以维持行号对应关系。
+    Preprocessing: Remove all comments (including multi-line types) from code, preserving newlines to maintain line number correspondence.
     """
-    # 1. 移除块注释 /* ... */
-    # 使用非贪婪匹配，re.DOTALL 让 . 匹配换行符
+    # 1. Remove block comments /* ... */
+    # Use non-greedy match, re.DOTALL allows . to match newlines
     def replace_block_comment(match):
-        # 将注释内容替换为相同数量的换行符，以保持行号一致
+        # Replace comment content with same number of newlines to keep line numbers consistent
         return '\n' * match.group(0).count('\n')
     
     code = re.sub(r'/\*.*?\*/', replace_block_comment, code, flags=re.DOTALL)
     
-    # 2. 移除单行注释 // ...
+    # 2. Remove single line comments // ...
     code = re.sub(r'//.*', '', code)
     
     return code
 
 def extract_line_number(line: str) -> int:
-    """从代码行中提取行号，假设格式为 '[ 123] ...'"""
+    """Extract line number from code line, assuming format '[ 123] ...'"""
     match = re.match(r'^\[\s*(\d+)\]', line)
     if match:
         return int(match.group(1))
@@ -64,10 +64,10 @@ def extract_line_number(line: str) -> int:
 
 def normalize_program_structure(code_str: str, has_line_markers: bool = False) -> Tuple[List[str], List[List[int]]]:
     """
-    对代码结构进行归一化：
-    1. 移除注释
-    2. 基于括号深度合并多行语句 (解决函数调用分行的问题)
-    返回: (归一化后的代码行列表, 每一行对应的原始行号列表)
+    Normalize code structure:
+    1. Remove comments
+    2. Merge multi-line statements based on parenthesis depth (solving function call splitting)
+    Returns: (Normalized code lines list, List of original line numbers corresponding to each line)
     """
     clean_code = remove_comments_from_code(code_str)
     raw_lines = clean_code.splitlines()
@@ -80,10 +80,10 @@ def normalize_program_structure(code_str: str, has_line_markers: bool = False) -
     paren_depth = 0
     
     for idx, line in enumerate(raw_lines):
-        # 1. 预处理当前行
+        # 1. Preprocess current line
         original_line = line
         
-        # 移除行首的 [ 123] 标记 (如果有)
+        # Remove line head marker [ 123] (if any)
         if has_line_markers:
             line = re.sub(r'^\[\s*\d+\]', '', line)
             
@@ -92,15 +92,15 @@ def normalize_program_structure(code_str: str, has_line_markers: bool = False) -
             continue
             
         current_buffer.append(stripped)
-        # 如果提供了行标记，这里可以尝试提取真实的行号，否则使用 0-based index + 1
+        # If line markers provided, try to extract real line number, else use 0-based index + 1
         if has_line_markers:
             ln = extract_line_number(original_line)
             current_indices.append(ln if ln != -1 else (idx + 1))
         else:
             current_indices.append(idx + 1)
         
-        # 2. 括号深度扫描 (简单的字符串清理后计数)
-        # 替换掉字符串内容防止干扰 "a)"
+        # 2. Parenthesis depth scan (simple string cleaning then count)
+        # Replace string content to prevent interference "a)"
         check_line = re.sub(r'".*?"', '""', line)
         check_line = re.sub(r"'.*?'", "''", check_line)
         
@@ -108,12 +108,12 @@ def normalize_program_structure(code_str: str, has_line_markers: bool = False) -
             if char == '(': paren_depth += 1
             elif char == ')': paren_depth -= 1
             
-        # 3. 判定是否合并
-        # 允许一定的容错，防止 paren_depth 长期小于 0
+        # 3. Decision to merge
+        # Allow some tolerance, prevent paren_depth from being negative for long
         if paren_depth < 0: paren_depth = 0
         
         if paren_depth == 0:
-            # 完整语句，Flush
+            # Complete statement, Flush
             joined_line = " ".join(current_buffer)
             if has_line_markers and current_indices:
                 # [Fix] Restore line number marker for the first line of the block
@@ -137,86 +137,86 @@ def normalize_program_structure(code_str: str, has_line_markers: bool = False) -
         
     return normalized_lines, line_mapping
 
-# [新增] 忽略的控制流关键字，不视为函数调用
+# [New] Ignored control flow keywords, not considered as function calls
 CONTROL_KEYWORDS = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'likely', 'unlikely'}
 
 def extract_function_name(line: str) -> str:
     """
-    从代码行中提取主要函数名。
-    如果找不到明显的函数调用，返回 None。
+    Extract main function name from code line.
+    Return None if no obvious function call found.
     """
-    # 简单启发式：查找 'name(' 模式
-    # 排除掉控制关键字
+    # Simple heuristic: find 'name(' pattern
+    # Exclude control keywords
     matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', line)
     candidates = [m for m in matches if m not in CONTROL_KEYWORDS]
     
     if not candidates:
         return None
     
-    # 如果有多个，通常第一个是非关键字的函数调用
+    # If multiple, usually the first one is the non-keyword function call
     # e.g. "err = check_ctx_reg(env, ...)" -> check_ctx_reg
     return candidates[0]
 
 def normalize_code_line(line: str) -> str:
     """
-    [Deprecated] 保留此函数以兼容旧代码，但内部逻辑已简化。
-    主要用于快速判断行是否为空。
+    [Deprecated] Keep for compatibility with old code, internal logic simplified.
+    Mainly used to quickly check if line is empty.
     """
-    # 移除行号 [ 123]
+    # Remove line number [ 123]
     line = re.sub(r'^\[\s*\d+\]', '', line)
-    # 移除单行注释
+    # Remove single line comment
     line = re.sub(r'//.*', '', line)
-    # 移除块注释标记
+    # Remove block comment marker
     line = re.sub(r'/\*.*?\*/', '', line)
-    # 移除空白
+    # Remove whitespace
     return re.sub(r'\s+', '', line).strip()
 
 def tokenize_line(line: str) -> List[str]:
     """
-    将代码行转换为细粒度的 Token 列表。
-    支持 CamelCase, snake_case, 数字切分。
-    [修改] 所有 token 统一转为小写，使 len 和 Len 被视为相同。
+    Convert code line into fine-grained Token list.
+    Supports CamelCase, snake_case, digit splitting.
+    [Modified] All tokens converted to lowercase, making len and Len considered same.
     """
-    # 1. 预处理：移除行号、注释
+    # 1. Preprocess: remove line number, comments
     line = re.sub(r'^\[\s*\d+\]', '', line) # Remove line numbers like [ 123]
     line = re.sub(r'//.*', '', line)        # Remove line comments
     line = re.sub(r'/\*.*?\*/', '', line)   # Remove inline block comments
     
-    # 2. 初步分词：标识符/数字 vs 符号
-    # \w+ 匹配字母数字下划线
-    # [^\w\s] 匹配非单词非空白字符 (符号)
+    # 2. Initial tokenization: identifiers/digits vs symbols
+    # \w+ match alphanumeric underscore
+    # [^\w\s] match non-word non-whitespace chars (symbols)
     # [Modified] Prioritize -> operator as a single token to avoid splitting it
     raw_tokens = re.findall(r'->|\w+|[^\w\s]', line)
     
     final_tokens = []
     for token in raw_tokens:
-        # 如果是标识符或数字 (包含字母、数字、下划线)
+        # If it is identifier or number (contains letters, digits, underscores)
         if re.match(r'^\w+$', token):
             # Sub-tokenization logic
-            # A. 按下划线切分
+            # A. Split by underscore
             parts = token.split('_')
             for part in parts:
                 if not part: continue
                 
-                # B. 按 CamelCase 和 数字切分
-                # 正则逻辑：
-                # [A-Z]?[a-z]+ : 首字母可选大写的单词 (e.g. "Word", "word")
-                # [A-Z]+(?=[A-Z][a-z]|\d|\W|$) : 连续大写字母 (e.g. "XML" in "XMLParser")
-                # [A-Z]+ : 剩余的大写字母
-                # \d+ : 数字
+                # B. Split by CamelCase and digits
+                # Regex logic:
+                # [A-Z]?[a-z]+ : Word starting with optional uppercase (e.g. "Word", "word")
+                # [A-Z]+(?=[A-Z][a-z]|\d|\W|$) : Consecutive uppercase letters (e.g. "XML" in "XMLParser")
+                # [A-Z]+ : Remaining uppercase letters
+                # \d+ : Digits
                 sub_parts = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|\W|$)|[A-Z]+|\d+', part)
                 
                 if sub_parts:
-                    # [修改] 统一转小写
+                    # [Modified] Unify to lowercase
                     final_tokens.extend([p.lower() for p in sub_parts])
                 else:
                     # Fallback (should rarely happen for \w+)
                     final_tokens.append(part.lower())
         else:
-            # 符号 (Operators, Punctuation) - 不需要转小写
+            # Symbols (Operators, Punctuation) - do not convert to lowercase
             final_tokens.append(token)
     
-    # [优化] 过滤掉对语义贡献极小的标点符号，防止它们干扰匹配分数
+    # [Optimized] Filter out punctuation marks with minimal semantic contribution to prevent interference with match score
     IGNORED_TOKENS = {';', '(', ')', '{', '}', '[', ']', ',', '.'}
     return [t for t in final_tokens if t not in IGNORED_TOKENS]
 
@@ -236,27 +236,27 @@ def get_sort_key(item: SearchResultItem):
     return (p, item.confidence)
         
 # ==========================================
-# 2. 行对应关系类（用于竞争评分）
+# 2. Line Correspondence Class (For competitive scoring)
 # ==========================================
 
 class LineMappingType:
-    """行映射类型枚举"""
-    COMMON = "COMMON"       # 两边完全相同的行
-    MODIFIED = "MODIFIED"   # 被修改的行对（pre 的某行变成了 post 的某行）
-    VULN_ONLY = "VULN_ONLY" # 仅在 pre-patch 中存在（被删除）
-    FIX_ONLY = "FIX_ONLY"   # 仅在 post-patch 中存在（新增）
+    """Line mapping type enumeration"""
+    COMMON = "COMMON"       # Exactly same lines on both sides
+    MODIFIED = "MODIFIED"   # Modified line pairs (pre's some line became post's some line)
+    VULN_ONLY = "VULN_ONLY" # Exists only in pre-patch (Deleted)
+    FIX_ONLY = "FIX_ONLY"   # Exists only in post-patch (Added)
 
 class LineCorrespondence:
     """
-    Pre/Post 行对应关系
+    Pre/Post Line Correspondence
     
-    用于竞争评分：当目标行同时匹配 MODIFIED 行对的两边时，
-    只计入相似度更高的那边，避免重复计分。
+    For competitive scoring: When target line matches both sides of MODIFIED line pair,
+    only count the one with higher similarity, avoiding duplicate scoring.
     """
     def __init__(self, pre_idx: int = None, post_idx: int = None,
                  mapping_type: str = None, pre_content: str = None, post_content: str = None):
-        self.pre_idx = pre_idx      # pre-patch 行索引（0-based）
-        self.post_idx = post_idx    # post-patch 行索引（0-based）
+        self.pre_idx = pre_idx      # pre-patch line index (0-based)
+        self.post_idx = post_idx    # post-patch line index (0-based)
         self.mapping_type = mapping_type
         self.pre_content = pre_content
         self.post_content = post_content
@@ -270,17 +270,17 @@ class DualChannelMatcher:
                  pre_origins: List[str] = None, pre_impacts: List[str] = None,
                  post_origins: List[str] = None, post_impacts: List[str] = None):
         
-        # [修改] 使用 normalize_program_structure 进行归一化
-        # 切片通常带有行号标记 [ 123]，因此开启 has_line_markers=True
+        # [Modified] Use normalize_program_structure for normalization
+        # Slices usually carry line markers [ 123], so enable has_line_markers=True
         self.s_pre_lines, self.s_pre_map = normalize_program_structure(s_pre, has_line_markers=True)
         self.s_post_lines, self.s_post_map = normalize_program_structure(s_post, has_line_markers=True)
 
-        # 构建行对应关系和标签
+        # Build line correspondences and tags
         self.pre_tags, self.post_tags, self.line_correspondences = self._tag_regions_with_correspondence()
         self.has_vuln_features = 'VULN' in self.pre_tags
         self.has_fix_features = 'FIX' in self.post_tags
         
-        # 构建 MODIFIED 行对的快速查找表（用于竞争评分）
+        # Build lookup table for MODIFIED line pairs (for competitive scoring)
         self.modified_pre_to_post = {}  # pre_idx -> post_idx
         self.modified_post_to_pre = {}  # post_idx -> pre_idx
         for corr in self.line_correspondences:
@@ -290,7 +290,7 @@ class DualChannelMatcher:
         
         # [New] Precise Anchors
         # Clean them similarly to how we filter lines (remove empty ones)
-        # Anchors 也应该是一一对应的，这里简单处理，后续匹配时使用归一化后的行列表
+        # Anchors should also correspond one-to-one, simple handling here, use normalized line list during matching
         self.pre_origins = [l.strip() for l in (pre_origins or []) if tokenize_line(l)]
         self.pre_impacts = [l.strip() for l in (pre_impacts or []) if tokenize_line(l)]
         self.post_origins = [l.strip() for l in (post_origins or []) if tokenize_line(l)]
@@ -298,12 +298,12 @@ class DualChannelMatcher:
         
     def _tag_regions_with_correspondence(self) -> Tuple[List[str], List[str], List[LineCorrespondence]]:
         """
-        构建行标签和行对应关系
+        Build line tags and line correspondences
         
         Returns:
-            pre_tags: pre-patch 每行的标签 (COMMON/VULN)
-            post_tags: post-patch 每行的标签 (COMMON/FIX)
-            correspondences: 行对应关系列表
+            pre_tags: tags for each line in pre-patch (COMMON/VULN)
+            post_tags: tags for each line in post-patch (COMMON/FIX)
+            correspondences: list of line correspondences
         """
         # Tokenize for comparison
         pre_tokens = [tuple(tokenize_line(x)) for x in self.s_pre_lines]
@@ -317,7 +317,7 @@ class DualChannelMatcher:
         
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == 'equal':
-                # COMMON: 完全相同的行
+                # COMMON: Completely identical lines
                 for k in range(i2 - i1):
                     pre_idx = i1 + k
                     post_idx = j1 + k
@@ -332,17 +332,17 @@ class DualChannelMatcher:
                     ))
                     
             elif tag == 'replace':
-                # MODIFIED: 被替换的行对
-                # 尝试一一对应（当块大小相同时）
+                # MODIFIED: Replaced line pairs
+                # Try one-to-one mapping (when block size matches)
                 pre_block_size = i2 - i1
                 post_block_size = j2 - j1
                 
                 if pre_block_size == post_block_size:
-                    # 一一对应的 MODIFIED 行对
+                    # One-to-one MODIFIED line pairs
                     for k in range(pre_block_size):
                         pre_idx = i1 + k
                         post_idx = j1 + k
-                        # 标签保持 VULN/FIX（不改为 COMMON）
+                        # Keep tags VULN/FIX (don't change to COMMON)
                         correspondences.append(LineCorrespondence(
                             pre_idx=pre_idx,
                             post_idx=post_idx,
@@ -351,15 +351,15 @@ class DualChannelMatcher:
                             post_content=self.s_post_lines[post_idx] if post_idx < len(self.s_post_lines) else None
                         ))
                 else:
-                    # 块大小不同，尝试内容相似度匹配
+                    # Block sizes differ, try content similarity matching
                     matched_post = set()
                     for pi in range(i1, i2):
                         best_match = None
-                        best_sim = 0.5  # 最低相似度阈值
+                        best_sim = 0.5  # Min similarity threshold
                         for pj in range(j1, j2):
                             if pj in matched_post:
                                 continue
-                            # 计算 token 相似度
+                            # Calculate token similarity
                             sm = difflib.SequenceMatcher(None, pre_tokens[pi], post_tokens[pj])
                             sim = sm.ratio()
                             if sim > best_sim:
@@ -376,7 +376,7 @@ class DualChannelMatcher:
                                 post_content=self.s_post_lines[best_match]
                             ))
                         else:
-                            # 没有匹配，标记为 VULN_ONLY
+                            # No match, mark as VULN_ONLY
                             correspondences.append(LineCorrespondence(
                                 pre_idx=pi,
                                 post_idx=None,
@@ -385,7 +385,7 @@ class DualChannelMatcher:
                                 post_content=None
                             ))
                     
-                    # 未匹配的 post 行标记为 FIX_ONLY
+                    # Mark unmatched post lines as FIX_ONLY
                     for pj in range(j1, j2):
                         if pj not in matched_post:
                             correspondences.append(LineCorrespondence(
@@ -397,7 +397,7 @@ class DualChannelMatcher:
                             ))
                             
             elif tag == 'delete':
-                # VULN_ONLY: 仅在 pre-patch 中存在
+                # VULN_ONLY: Exists only in pre-patch
                 for k in range(i2 - i1):
                     pre_idx = i1 + k
                     correspondences.append(LineCorrespondence(
@@ -409,7 +409,7 @@ class DualChannelMatcher:
                     ))
                     
             elif tag == 'insert':
-                # FIX_ONLY: 仅在 post-patch 中存在
+                # FIX_ONLY: Exists only in post-patch
                 for k in range(j2 - j1):
                     post_idx = j1 + k
                     correspondences.append(LineCorrespondence(
@@ -423,8 +423,8 @@ class DualChannelMatcher:
         return pre_tags, post_tags, correspondences
 
     def _align_channel(self, slice_lines: List[str], slice_tags: List[str], 
-                       slice_map: List[List[int]], # [新增] Slice 行号映射
-                       target_lines: List[str], target_map: List[List[int]] # [新增] Target 行号映射
+                       slice_map: List[List[int]], # [New] Slice line number mapping
+                       target_lines: List[str], target_map: List[List[int]] # [New] Target line number mapping
                        ) -> Tuple[float, float, List[MatchTrace], List[str], List[AlignedTrace]]:
         # ... (previous code omitted for brevity in call, but need to be careful with replace)
         # Actually I cannot omit code in replace tool. I should target the specific block.
@@ -434,20 +434,20 @@ class DualChannelMatcher:
         pass
         n, m = len(slice_lines), len(target_lines)
         
-        # [新增] 安全检查：防止过大的矩阵计算
-        # 如果矩阵元素超过 200万 (e.g. 200行切片 x 10000行目标)，直接放弃
+        # [New] Safety check: Prevent excessive matrix computation
+        # If matrix elements exceed 2 million (e.g., 200 slice lines x 10000 target lines), abort directly
         # if n * m > 2_000_000:
         #     print(f"  [Matcher] Warning: Matrix too large ({n}x{m} = {n*m}), skipping alignment.")
         #     return 0.0, 0.0, [], []
 
-        # [优化] 预处理 Tokenized lines
+        # [Optimization] Preprocess Tokenized lines
         slice_tokens = [tokenize_line(line) for line in slice_lines]
         target_tokens = [tokenize_line(line) for line in target_lines]
 
-        # [新增] 提取切片行号 (使用归一化映射中的第一个行号)
+        # [New] Extract slice line numbers (use the first line number in the normalized mapping)
         slice_line_nos = [m[0] if m else -1 for m in slice_map]
 
-        # [优化] 预计算相似度矩阵
+        # [Optimization] Pre-calculate similarity matrix
         sim_matrix = [[0.0] * m for _ in range(n)]
         for i in range(n):
             t1 = slice_tokens[i]
@@ -469,19 +469,19 @@ class DualChannelMatcher:
                 
                 sm.set_seq1(t2)
                 
-                # quick_ratio 预筛选（硬编码0.5）
+                # quick_ratio pre-filtering (hardcoded 0.5)
                 if sm.quick_ratio() < 0.5:
                     sim_matrix[i][j] = 0.0
                     continue
                 
-                # [简化] 直接使用 ratio()，函数调用相似度由 _compute_func_score 单独计算
+                # [Simplify] Use ratio() directly, function call similarity is calculated separately by _compute_func_score
                 sim_matrix[i][j] = sm.ratio()
 
-        # 1. DP 矩阵构建
-        # dp[i][j] 存储到达 (i, j) 时的最大累积得分
+        # 1. DP Matrix Construction
+        # dp[i][j] stores the maximum cumulative score reaching (i, j)
         dp = [[0.0] * (m + 1) for _ in range(n + 1)]
         
-        # [Phase 1: 使用MatcherConfig.BASE_GAP_PENALTY]
+        # [Phase 1: Use MatcherConfig.BASE_GAP_PENALTY]
         base_gap = MatcherConfig.BASE_GAP_PENALTY
 
         # Pre-calc gap costs for transitions i-1 -> i
@@ -507,7 +507,7 @@ class DualChannelMatcher:
             
             for j in range(1, m + 1):
                 sim = sim_matrix[i-1][j-1]
-                # [修改] 直接使用相似度作为匹配得分，不做预过滤阈值
+                # [Modified] Use similarity directly as match score, no pre-filtering threshold
                 match_score = sim
                 
                 # Dynamic Gap Cost at edges:
@@ -543,14 +543,14 @@ class DualChannelMatcher:
         while i > 0 and j > 0:
             current_score = dp[i][j]
             sim = sim_matrix[i-1][j-1]
-            # [修改] 直接使用相似度作为匹配得分
+            # [Modified] Use similarity directly as match score
             match_gain = sim
             # [Fix] Match the forward pass gap cost logic
             gap_cost = step_gap_costs[i+1]
             
             # Check Match
             # Use strict epsilon for float equality check
-            # [修改] 只要 sim > 0 就认为有匹配可能
+            # [Modified] As long as sim > 0, consider it a match possibility
             if abs(current_score - (dp[i-1][j-1] + match_gain)) < 1e-9 and sim > 0:
                 # --- MATCH ---
                 line_len = len(slice_tokens[i-1])
@@ -622,10 +622,10 @@ class DualChannelMatcher:
         valid_slice_lines_count = sum(1 for t in slice_tokens if t)
         total_slice_tokens_count = sum(len(t) for t in slice_tokens)
         
-        # [注意] valid_slice_lines_count == 0 是合理情况
-        # 例如纯删除补丁的 s_post 只有注释头，归一化后为空
+        # [Note] valid_slice_lines_count == 0 is reasonable
+        # e.g. s_post of pure deletion patch has only comment header, normalized to empty
         if valid_slice_lines_count == 0:
-            # 空切片：返回零分，不打印警告
+            # Empty slice: return 0 score, no warning needed
             penalty_deduction = 0.0
         else:
             avg_tokens = total_slice_tokens_count / valid_slice_lines_count
@@ -661,34 +661,34 @@ class DualChannelMatcher:
     def _apply_competitive_scoring(self, aligned_vuln: List[AlignedTrace], aligned_fix: List[AlignedTrace],
                                     target_lines: List[str]) -> Tuple[float, float, float, float]:
         """
-        对混合型补丁应用竞争评分机制
+        Apply competitive scoring for mixed-type patches
         
-        核心规则：对于 MODIFIED 行对，如果目标行同时匹配 pre 和 post 的对应行，
-        只计入相似度更高的那边，避免重复计分。
+        Core rule: For MODIFIED line pairs, if a target line matches corresponding lines in both pre and post,
+        only count similarity for the better match to avoid duplicate scoring.
         
         Args:
-            aligned_vuln: pre-patch 对齐结果
-            aligned_fix: post-patch 对齐结果
-            target_lines: 目标函数的归一化行列表
+            aligned_vuln: pre-patch alignment results
+            aligned_fix: post-patch alignment results
+            target_lines: normalized target line list
             
         Returns:
             (score_vuln, score_fix, score_feat_vuln, score_feat_fix)
-            - score_vuln/score_fix: 调整后的整体相似度
-            - score_feat_vuln/score_feat_fix: 局部特征相似度
+            - score_vuln/score_fix: Adjusted overall similarity
+            - score_feat_vuln/score_feat_fix: Local feature similarity
         """
-        # 如果没有 MODIFIED 行对，直接从对齐结果计算分数
+        # If no MODIFIED line pairs, compute scores directly from alignment results
         if not self.modified_pre_to_post:
             return self._compute_scores_from_alignment(aligned_vuln, aligned_fix)
         
-        # 构建目标行索引 -> 对齐信息的映射
-        # aligned_vuln/aligned_fix 中的 line_no 是目标行的 1-based 索引
+        # Build mapping: target line index -> alignment info
+        # line_no in aligned_vuln/aligned_fix is 1-based index of target line
         vuln_target_matches = {}  # target_line_idx -> (slice_idx, similarity)
         fix_target_matches = {}   # target_line_idx -> (slice_idx, similarity)
         
         for slice_idx, trace in enumerate(aligned_vuln):
             if trace.line_no is not None and trace.similarity > 0:
-                target_idx = trace.line_no - 1  # 转为 0-based
-                # 如果同一目标行被多次匹配，保留相似度最高的
+                target_idx = trace.line_no - 1  # Convert to 0-based
+                # If same target line matched multiple times, keep highest similarity
                 if target_idx not in vuln_target_matches or trace.similarity > vuln_target_matches[target_idx][1]:
                     vuln_target_matches[target_idx] = (slice_idx, trace.similarity)
         
@@ -698,45 +698,45 @@ class DualChannelMatcher:
                 if target_idx not in fix_target_matches or trace.similarity > fix_target_matches[target_idx][1]:
                     fix_target_matches[target_idx] = (slice_idx, trace.similarity)
         
-        # 竞争评分：处理 MODIFIED 行对的重复计分
-        # 记录需要从某一边扣除的 token 数
+        # Competitive Scoring: Handle duplicate scoring of MODIFIED line pairs
+        # Record tokens to deduct from either side
         vuln_deduction = 0.0
         fix_deduction = 0.0
         
         for pre_idx, post_idx in self.modified_pre_to_post.items():
-            # 检查这对 MODIFIED 行是否都被匹配到了同一个目标行
-            # 1. 找到 pre_idx 对应的目标行
+            # Check if this MODIFIED line pair matched to the SAME target line
+            # 1. Find matched target for pre_idx
             vuln_matched_target = None
             vuln_sim = 0.0
             if pre_idx < len(aligned_vuln) and aligned_vuln[pre_idx].line_no is not None:
                 vuln_matched_target = aligned_vuln[pre_idx].line_no - 1
                 vuln_sim = aligned_vuln[pre_idx].similarity
             
-            # 2. 找到 post_idx 对应的目标行
+            # 2. Find matched target for post_idx
             fix_matched_target = None
             fix_sim = 0.0
             if post_idx < len(aligned_fix) and aligned_fix[post_idx].line_no is not None:
                 fix_matched_target = aligned_fix[post_idx].line_no - 1
                 fix_sim = aligned_fix[post_idx].similarity
             
-            # 3. 如果都匹配到了同一个目标行，执行竞争
+            # 3. If both matched same target line, perform competition
             if vuln_matched_target is not None and fix_matched_target is not None:
                 if vuln_matched_target == fix_matched_target:
-                    # 竞争：只保留相似度更高的
+                    # Competition: keep only higher similarity
                     pre_tokens = len(tokenize_line(self.s_pre_lines[pre_idx])) if pre_idx < len(self.s_pre_lines) else 0
                     post_tokens = len(tokenize_line(self.s_post_lines[post_idx])) if post_idx < len(self.s_post_lines) else 0
                     
                     if vuln_sim >= fix_sim:
-                        # vuln 胜出，从 fix 扣除
+                        # vuln wins, deduct from fix
                         fix_deduction += post_tokens * fix_sim
                     else:
-                        # fix 胜出，从 vuln 扣除
+                        # fix wins, deduct from vuln
                         vuln_deduction += pre_tokens * vuln_sim
         
-        # 计算基础分数
+        # Calculate base scores
         score_vuln, score_fix, score_feat_vuln, score_feat_fix = self._compute_scores_from_alignment(aligned_vuln, aligned_fix)
         
-        # 应用扣除（转换为分数调整）
+        # Apply deductions (convert to score adjustment)
         pre_total_tokens = sum(len(tokenize_line(line)) for line in self.s_pre_lines)
         post_total_tokens = sum(len(tokenize_line(line)) for line in self.s_post_lines)
         
@@ -754,32 +754,32 @@ class DualChannelMatcher:
                                slice_map: List[List[int]],
                                sources: List[str], sinks: List[str]) -> float:
         """
-        计算锚点匹配得分
+        Compute anchor matching score
         
-        思路：
-        - 检查 source（数据源）和 sink（影响点）是否匹配到目标
-        - 返回 0-1 之间的分数
+        Idea:
+        - Check if source (data source) and sink (impact point) match to target
+        - Return score between 0-1
         
-        注意：raw_lines 是经过 normalize_program_structure 处理的，多行语句会被合并成一行。
-        而 sources/sinks 是原始的多行 anchor。
+        Note: raw_lines are normalized via normalize_program_structure, multi-line statements merged.
+        sources/sinks are original multi-line anchors.
         
-        匹配策略：基于行号匹配
-        - 从 anchor 中提取行号（如 "[ 227] ..." -> 227）
-        - 在 slice_lines 中找到包含该行号的行（归一化可能合并 227-228 到一行）
+        Matching Strategy: Based on line number matching
+        - Extract line number from anchor (e.g., "[ 227] ..." -> 227)
+        - Find line in slice_lines containing that line number (normalization may merge 227-228 into one line)
         
         Args:
-            aligned_trace: 对齐追踪结果
-            raw_lines: 归一化后的切片行列表
-            slice_map: 每行对应的原始行号列表 (由 normalize_program_structure 返回)
-            sources: origin anchor 行列表
-            sinks: impact anchor 行列表
+            aligned_trace: Alignment trace results
+            raw_lines: Normalized slice line list
+            slice_map: Original line number list for each line (returned by normalize_program_structure)
+            sources: origin anchor line list
+            sinks: impact anchor line list
         
         Returns:
-            anchor_score: 锚点匹配得分 [0, 1]
-                - 1.0: 双锚点都匹配
-                - 0.5: 只有一个锚点匹配
-                - 0.0: 两个锚点都不匹配
-                - 1.0: 没有显式锚点（不惩罚）
+            anchor_score: Anchor match score [0, 1]
+                - 1.0: Both anchors matched
+                - 0.5: Only one anchor matched
+                - 0.0: Neither anchor matched
+                - 1.0: No explicit anchors (no penalty)
         """
         if not aligned_trace:
             return 0.0
@@ -787,25 +787,25 @@ class DualChannelMatcher:
         n_trace = len(aligned_trace)
         
         def extract_line_no(s):
-            """从带行号标记的行中提取行号"""
+            """Extract line number from line with line number marker"""
             match = re.match(r'^\[\s*(\d+)\]', s.strip())
             return int(match.group(1)) if match else -1
         
         def get_indices_by_line_number(key_lines):
             """
-            基于行号找到 slice_lines 中对应的索引。
+            Find corresponding indices in slice_lines based on line numbers.
             
             Args:
-                key_lines: anchor 行列表（带行号标记）
+                key_lines: anchor line list (with line number markers)
             
             Returns:
-                匹配到的 slice_lines 索引列表
+                List of matched slice_lines indices
             """
             indices = set()
             if not key_lines:
                 return list(indices)
             
-            # 提取所有 anchor 的行号
+            # Extract all anchor line numbers
             anchor_line_nos = set()
             for anchor in key_lines:
                 ln = extract_line_no(anchor)
@@ -815,10 +815,10 @@ class DualChannelMatcher:
             if not anchor_line_nos:
                 return list(indices)
             
-            # 在 slice_map 中查找包含这些行号的索引
+            # Find indices in slice_map containing these line numbers
             for i, orig_line_nos in enumerate(slice_map):
-                # orig_line_nos 是一个列表，表示第 i 行归一化行对应的原始行号
-                # 例如：[227, 228] 表示第 i 行是由原始的 227, 228 行合并而成
+                # orig_line_nos is a list representing original line numbers merged into normalized line i
+                # e.g.: [227, 228] means line i was merged from original lines 227, 228
                 for ln in orig_line_nos:
                     if ln in anchor_line_nos:
                         indices.add(i)
@@ -829,7 +829,7 @@ class DualChannelMatcher:
         has_sources = bool(sources)
         has_sinks = bool(sinks)
         
-        # 如果没有显式锚点，返回满分（不惩罚）
+        # If no explicit anchors, return full score (no penalty)
         if not has_sources and not has_sinks:
             return 1.0
         
@@ -837,23 +837,23 @@ class DualChannelMatcher:
         sink_score = 0.0
         anchor_count = 0
         
-        # Source 检查 - 使用行号匹配
+        # Source Check - Use line number matching
         if has_sources:
             anchor_count += 1
             explicit_source_indices = get_indices_by_line_number(sources)
             if explicit_source_indices:
                 sims = max((aligned_trace[i].similarity for i in explicit_source_indices if i < n_trace), default=0.0)
-                source_score = sims  # 直接使用相似度作为分数
+                source_score = sims  # Use similarity directly as score
         
-        # Sink 检查 - 使用行号匹配
+        # Sink Check - Use line number matching
         if has_sinks:
             anchor_count += 1
             explicit_sink_indices = get_indices_by_line_number(sinks)
             if explicit_sink_indices:
                 sims = max((aligned_trace[i].similarity for i in explicit_sink_indices if i < n_trace), default=0.0)
-                sink_score = sims  # 直接使用相似度作为分数
+                sink_score = sims  # Use similarity directly as score
         
-        # 计算平均分
+        # Calculate mean score
         if anchor_count == 0:
             return 1.0
         
@@ -862,12 +862,12 @@ class DualChannelMatcher:
     def _compute_scores_from_alignment(self, aligned_vuln: List[AlignedTrace], aligned_fix: List[AlignedTrace]
                                        ) -> Tuple[float, float, float, float]:
         """
-        从对齐结果计算4个分数
+        Compute 4 scores from alignment results
         
         Returns:
             (score_vuln, score_fix, score_feat_vuln, score_feat_fix)
         """
-        # Pre-patch 分数计算
+        # Pre-patch score calculation
         vuln_total_tokens = 0
         vuln_matched_tokens = 0.0
         vuln_feat_total = 0
@@ -886,7 +886,7 @@ class DualChannelMatcher:
                 if is_feature:
                     vuln_feat_matched += tokens * trace.similarity
         
-        # Post-patch 分数计算
+        # Post-patch score calculation
         fix_total_tokens = 0
         fix_matched_tokens = 0.0
         fix_feat_total = 0
@@ -905,7 +905,7 @@ class DualChannelMatcher:
                 if is_feature:
                     fix_feat_matched += tokens * trace.similarity
         
-        # 计算分数
+        # Calculate scores
         score_vuln = vuln_matched_tokens / vuln_total_tokens if vuln_total_tokens > 0 else 0.0
         score_fix = fix_matched_tokens / fix_total_tokens if fix_total_tokens > 0 else 0.0
         score_feat_vuln = vuln_feat_matched / vuln_feat_total if vuln_feat_total > 0 else 0.0
@@ -914,11 +914,11 @@ class DualChannelMatcher:
         return score_vuln, score_fix, score_feat_vuln, score_feat_fix
 
     def match(self, target_function_code: str, target_start_line: int = 1) -> MatchEvidence:
-        # [预处理] 使用归一化
+        # [Preprocess] Use normalization
         target_lines, target_map = normalize_program_structure(target_function_code, has_line_markers=False)
 
-        # 匹配
-        # 传入 map 用于正确计算行号间距和恢复原始行号
+        # Matching
+        # Pass map to correctly compute line spacing and restore original line numbers
         ctx_a, score_feat_vuln, total_vuln, _, _, aligned_vuln = self._align_channel(
             self.s_pre_lines, self.pre_tags, self.s_pre_map,
             target_lines, target_map
@@ -928,14 +928,14 @@ class DualChannelMatcher:
             target_lines, target_map
         )
         
-        # [新增] 对混合型补丁应用竞争评分
+        # [New] Apply competitive scoring for mixed-type patches
         if self.has_vuln_features and self.has_fix_features and self.modified_pre_to_post:
-            # 有 MODIFIED 行对，使用竞争评分
+            # Has MODIFIED line pairs, use competitive scoring
             score_vuln, score_fix, score_feat_vuln, score_feat_fix = self._apply_competitive_scoring(
                 aligned_vuln, aligned_fix, target_lines
             )
         else:
-            # 无 MODIFIED 行对，使用原始分数
+            # No MODIFIED line pairs, use original scores
             score_vuln = total_vuln
             score_fix = total_fix
         
@@ -945,22 +945,22 @@ class DualChannelMatcher:
         if not self.has_fix_features:
             score_feat_fix = -1.0
         
-        # 修正 Trace 中的 line_no 为真实行号
-        # [修改] 使用 target_map 将归一化行索引 映射回 原始文件行号
-        # [新增] 使用 target_start_line 计算文件中的绝对行号
+        # Correct line_no in Trace to real line numbers
+        # [Modified] Use target_map to map normalized line index back to original file line number
+        # [New] Use target_start_line to compute absolute line number in file
         def correct_line_numbers(trace_list):
              for m in trace_list:
-                # m.line_no 是 1-based index in target_lines
+                # m.line_no is 1-based index in target_lines
                 if m.line_no is not None and 0 < m.line_no <= len(target_map):
-                    # 获取该归一化行对应的原始行号列表（相对于函数内部）
+                    # Get original line number list for this normalized line (relative to function inside)
                     original_indices = target_map[m.line_no - 1]
                     if original_indices:
-                        # original_indices[0] 是函数内部的相对行号（从1开始）
-                        # 加上 (target_start_line - 1) 得到文件中的绝对行号
+                        # original_indices[0] is relative line number in function (starts from 1)
+                        # Plus (target_start_line - 1) to get absolute line number in file
                         real_line_start = original_indices[0] + target_start_line - 1
                         m.line_no = real_line_start
-                        # 格式化 target_line: "[ 123] content"
-                        # 使用 m.target_line (normalized content)
+                        # Format target_line: "[ 123] content"
+                        # Use m.target_line (normalized content)
                         if m.target_line:
                             m.target_line = f"[{real_line_start:4d}] {m.target_line}"
 
@@ -970,16 +970,16 @@ class DualChannelMatcher:
         correct_line_numbers(aligned_fix)
 
         score_ctx = max(ctx_a, ctx_b)
-        # 整体分数：如果没有特征行，使用上下文分数
+        # Overall score: If no feature lines, use context score
         total_vuln = score_vuln if self.has_vuln_features else score_ctx
         total_fix = score_fix if self.has_fix_features else score_ctx
         verdict = "UNKNOWN"
         confidence = 0.0
         
-        # ========== 二维加权得分计算 ==========
+        # ========== 2D Weighted Score Calculation ==========
         # final_score = α * slice_score + β * anchor_score
         
-        # 1. 计算 Vuln 通道的二维得分
+        # 1. Compute 2D score for Vuln channel
         anchor_score_vuln = self._compute_anchor_score(
             aligned_vuln, self.s_pre_lines, self.s_pre_map, self.pre_origins, self.pre_impacts
         )
@@ -989,28 +989,28 @@ class DualChannelMatcher:
             MatcherConfig.WEIGHT_ANCHOR * anchor_score_vuln
         )
         
-        # 2. 计算 Fix 通道的二维得分
+        # 2. Compute 2D score for Fix channel
         anchor_score_fix = self._compute_anchor_score(
             aligned_fix, self.s_post_lines, self.s_post_map, self.post_origins, self.post_impacts
         )
         
-        # 加权计算 final_fix
+        # Weighted calculation for final_fix
         total_fix = (
             MatcherConfig.WEIGHT_SLICE * score_fix +
             MatcherConfig.WEIGHT_ANCHOR * anchor_score_fix
         )
         
         # --- Verdict Phase ---
-        # 分类型判定逻辑（与 Methodology.tex 保持一致）
+        # Classification Verdict Logic (Consistent with Methodology.tex)
         
-        # 1. 预筛选：垃圾过滤 (基于整体漏洞分数)
-        # 如果与漏洞模式相似度太低，直接 Mismatch
+        # 1. Pre-screening: Garbage filter (based on overall vulnerability score)
+        # If similarity to vuln pattern is too low, direct Mismatch
         if total_vuln < MatcherConfig.VERDICT_THRESHOLD_WEAK:
             verdict = "MISMATCH"
             confidence = 1.0 - total_vuln
         else:
-            # --- Case 1: 纯新增补丁 (Pure Additive) ---
-            # 判断标准：FIX 特征行是否存在
+            # --- Case 1: Pure Additive Patch ---
+            # Criteria: FIX feature lines exist
             if self.has_fix_features and not self.has_vuln_features:
                 if score_feat_fix >= MatcherConfig.VERDICT_THRESHOLD_STRONG:
                     verdict = "PATCHED"
@@ -1019,8 +1019,8 @@ class DualChannelMatcher:
                     verdict = "VULNERABLE"
                     confidence = total_vuln
             
-            # --- Case 2: 纯删除补丁 (Pure Subtractive) ---
-            # 判断标准：VULN 特征行是否已删除
+            # --- Case 2: Pure Subtractive Patch ---
+            # Criteria: VULN feature lines deleted
             elif self.has_vuln_features and not self.has_fix_features:
                 if score_feat_vuln < MatcherConfig.VERDICT_THRESHOLD_WEAK:
                     verdict = "PATCHED"
@@ -1029,8 +1029,8 @@ class DualChannelMatcher:
                     verdict = "VULNERABLE"
                     confidence = total_vuln
             
-            # --- Case 3: 混合型补丁 (Modified) ---
-            # 判断标准：竞争评分后，比较整体分数
+            # --- Case 3: Mixed (Modified) Patch ---
+            # Criteria: Compare total scores after competitive scoring
             elif self.has_vuln_features and self.has_fix_features:
                 if total_fix > total_vuln:
                     verdict = "PATCHED"
@@ -1039,7 +1039,7 @@ class DualChannelMatcher:
                     verdict = "VULNERABLE"
                     confidence = total_vuln
 
-            # --- Case 4: 无特征 ---
+            # --- Case 4: No Features ---
             else:
                 verdict = "UNKNOWN"
                 confidence = score_ctx
@@ -1047,17 +1047,17 @@ class DualChannelMatcher:
         return MatchEvidence(
             verdict=verdict,
             confidence=confidence,
-            score_vuln=total_vuln,           # 整体切片相似度（pre-patch vs target）
-            score_fix=total_fix,             # 整体切片相似度（post-patch vs target）
-            score_feat_vuln=score_feat_vuln, # 局部特征相似度（仅 VULN 行）
-            score_feat_fix=score_feat_fix,   # 局部特征相似度（仅 FIX 行）
+            score_vuln=total_vuln,           # Overall slice similarity (pre-patch vs target)
+            score_fix=total_fix,             # Overall slice similarity (post-patch vs target)
+            score_feat_vuln=score_feat_vuln, # Local feature similarity (VULN lines only)
+            score_feat_fix=score_feat_fix,   # Local feature similarity (FIX lines only)
             aligned_vuln_traces=aligned_vuln,
             aligned_fix_traces=aligned_fix
         )
 
 class VulnerabilitySearchEngine:
     def __init__(self, repo_path: str):
-        # [修改] 不再接收 db_path，而是接收 repo_path，动态获取 Indexer
+        # [Modified] No longer accept db_path, accept repo_path instead, dynamically get Indexer
         self.repo_path = repo_path
         self.indexer = GlobalSymbolIndexer(repo_path)
         self.benchmark_indexer = BenchmarkSymbolIndexer()
@@ -1071,19 +1071,19 @@ class VulnerabilitySearchEngine:
                 print(f"[*] Processing function: {func_name}")
                 print(f's_pre:\n{sf.s_pre}\ns_post:\n{sf.s_post}\n')
             
-            # 从所有切片中提取 tokens（使用与 database 一致的 tokenize_code）
-            # [修复] 先移除注释（包括头部标记注释），再提取 tokens
+            # Extract tokens from all slices (use tokenize_code consistent with database)
+            # [Fix] Remove comments (including header marker comments) before extracting tokens
             search_tokens = []
             for func_name, sf in feature.slices.items():
                 clean_code = remove_comments_from_code(sf.s_pre)
                 tokens = tokenize_code(clean_code)
                 search_tokens.extend(tokens)
             
-            # 去重
+            # Deduplicate
             search_tokens = list(set(search_tokens))
             print(f"    Extracted {len(search_tokens)} unique tokens for benchmark search")
 
-            # 使用统一的 Token 搜索方法
+            # Use unified Token search method
             candidates = self.benchmark_indexer.search_functions_by_tokens(vul_id, search_tokens, limit=MatcherConfig.SEARCH_LIMIT_FAST)
             
             matchers = {
@@ -1093,8 +1093,8 @@ class VulnerabilitySearchEngine:
                 for name, sf in feature.slices.items()
             }
             
-            # 2. 过滤并匹配
-            # 目标函数名集合
+            # 2. Filter and Match
+            # Target function name set
             target_func_names = {p.function_name for p in feature.patches}
             for i, (path_file, compound_name, code, start_line) in enumerate(candidates):
                 if i % 50 == 0:
@@ -1107,7 +1107,7 @@ class VulnerabilitySearchEngine:
                 #     continue
                 func_name = parts[-1]
                 
-                # 只保留函数名相同的函数
+                # Only keep functions with same name
                 if func_name not in target_func_names:
                     continue
                     
@@ -1154,15 +1154,15 @@ class VulnerabilitySearchEngine:
                 print(f"[*] Processing function: {func_name} {feature.group_id[:8]}")
                 print(f's_pre:\n{sf.s_pre}\ns_post:\n{sf.s_post}\n')
                 
-                # 1. 从切片中提取 tokens（使用与 database 一致的 tokenize_code）
-                # [修复] 先移除注释（包括头部标记注释），再提取 tokens
+                # 1. Extract tokens from slice (use tokenize_code consistent with database)
+                # [Fix] Remove comments (including header marker comments) before extracting tokens
                 clean_code = remove_comments_from_code(sf.s_pre)
                 search_tokens = tokenize_code(clean_code)
                 
                 print(f"    Extracted {len(search_tokens)} tokens for {func_name}")
                 print(f"    Sample tokens: {search_tokens[:10]}...")
 
-                # 2. 使用统一的 Token 搜索方法（替代双重搜索）
+                # 2. Use unified Token search method (replace double search)
                 candidates = self.indexer.search_functions_by_tokens(
                     search_tokens,
                     limit=MatcherConfig.SEARCH_LIMIT_FAST
@@ -1213,15 +1213,15 @@ class VulnerabilitySearchEngine:
             return results
 
 # ==========================================
-# 4. LangGraph Node 函数
+# 4. LangGraph Node Function
 # ==========================================
 
 def matching_node(state: WorkflowState) -> Dict:
     """
-    Phase 3 核心节点：执行漏洞搜索。
+    Phase 3 Core Node: Execute vulnerability search.
     """
     features = state.get("analyzed_features", [])
-    # [关键] 必须从 state 获取仓库路径，用于初始化 Indexer
+    # [Critical] Must get repo path from state to initialize Indexer
     repo_path = state.get("repo_path") 
     
     mode = state.get("mode")
@@ -1235,10 +1235,10 @@ def matching_node(state: WorkflowState) -> Dict:
     
     all_candidates = []
     
-    # 定义单个任务
+    # Define single task
     def process_single_feature(feature):
         try:
-            # [修改] 传入 repo_path 和 mode
+            # [Modified] Pass repo_path and mode
             engine = VulnerabilitySearchEngine(repo_path)
             return engine.search_patch(feature, mode, vul_id)
         except Exception as e:
@@ -1247,7 +1247,7 @@ def matching_node(state: WorkflowState) -> Dict:
             traceback.print_exc()
             return []
 
-    # 串行执行 (避免多线程下的 tqdm/DB 竞争问题)
+    # Sequential execution (Avoid tqdm/DB race condition issues in multi-threading)
     for feat in features:
         # [Filter] Early rejection based on Analysis Evaluation
         # If the analysis is untrustworthy or the pattern is too generic, skip search entirely.
@@ -1268,10 +1268,10 @@ def matching_node(state: WorkflowState) -> Dict:
 
     if all_candidates:
         print(f"  [Matching] Total candidates found: {len(all_candidates)}")
-        # 去重：(target_file, target_func) 唯一，但基于 Verdict 优先级和 Confidence 择优
+        # Deduplication: (target_file, target_func) unique, but prefer based on Verdict priority and Confidence
         unique_candidates = {}
         
-        # 优先级映射：VULNERABLE > UNKNOWN > PATCHED > MISMATCH
+        # Priority mapping: VULNERABLE > UNKNOWN > PATCHED > MISMATCH
         VERDICT_PRIORITY = {
             "VULNERABLE": 3,
             "UNKNOWN": 2,
@@ -1290,17 +1290,17 @@ def matching_node(state: WorkflowState) -> Dict:
                 p_new = VERDICT_PRIORITY.get(cand.verdict, 0)
                 p_old = VERDICT_PRIORITY.get(existing.verdict, 0)
                 
-                # 策略 1: 优先级高的胜出 (例如 VULNERABLE 覆盖 PATCHED)
+                # Strategy 1: Higher priority wins (e.g. VULNERABLE overwrites PATCHED)
                 if p_new > p_old:
                     unique_candidates[key] = cand
-                # 策略 2: 优先级相同，选置信度高的
+                # Strategy 2: Same priority, select higher confidence
                 elif p_new == p_old:
                     if cand.confidence > existing.confidence:
                         unique_candidates[key] = cand
         
         final_list = list(unique_candidates.values())
         
-        # [Density Control] 移到全局去重之后进行
+        # [Density Control] Moved to after global deduplication
         # Group by patch_func
         from collections import defaultdict
         results_by_func = defaultdict(list)
@@ -1327,7 +1327,7 @@ def matching_node(state: WorkflowState) -> Dict:
         #     if vuln_count > DENSITY_THRESHOLD:
         #         print(f"    [Density Control] Function {func_name} produced {vuln_count} VULNERABLE results (Threshold: {DENSITY_THRESHOLD}). Applying rank-based decay.")
                 
-        #         # 先对结果按置信度排序，确定"排位"
+        #         # Sort results by confidence first, determine "rank"
         #         vuln_results.sort(key=lambda x: x.confidence, reverse=True)
                 
         #         for rank, r in enumerate(vuln_results):

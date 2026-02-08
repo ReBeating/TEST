@@ -316,7 +316,7 @@ class SemanticExtractor:
 
 def semantic_node(state: PatchExtractionState) -> Dict:
     extractor = SemanticExtractor()
-    # 传入 taxonomy，内部会读取 hypothesis 和 anchor roles
+    # Pass taxonomy, internal reading of hypothesis and anchor roles
     semantic_result = extractor.analyze(state['slices'], state['taxonomy'], state['commit_message'])
     print(f'[semantic_node] Extracted semantics: \n{semantic_result}')
     return {"semantics": semantic_result}

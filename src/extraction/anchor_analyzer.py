@@ -1,22 +1,22 @@
 """
-Anchor-Guided Analysis 模块
+Anchor-Guided Analysis Module
 
-基于 Methodology §3.3.2 (Anchor-Guided Signature Extraction) 实现
-使用 LLM Agent + CodeNavigator 工具链来识别漏洞的锚点（Anchors）
+Implemented based on Methodology §3.3.2 (Anchor-Guided Signature Extraction)
+Uses LLM Agent + CodeNavigator toolchain to identify vulnerability anchors
 
-核心概念：
-- Origin Anchors: 创建漏洞状态的操作（如 Alloc, Def, Lock）
-- Impact Anchors: 触发漏洞的操作（如 Use, Deref, Double Unlock）
+Core Concepts:
+- Origin Anchors: Operations that create the vulnerable state (e.g., Alloc, Def, Lock)
+- Impact Anchors: Operations that trigger the vulnerability (e.g., Use, Deref, Double Unlock)
 
-发现流程：
-1. 从 modified lines（搜索提示）出发
-2. 通过数据流/控制流依赖扩展
-3. 基于漏洞类型的 anchor roles 进行类型化搜索
-4. 验证 Origin → Impact 连接性
+Discovery Process:
+1. Start from modified lines (search hints)
+2. Expand via data flow/control flow dependencies
+3. Type-based search based on vulnerability type anchor roles
+4. Verify Origin → Impact connectivity
 
-设计原则：
-- Anchor 必须在当前分析的函数内（用于切片提取）
-- 跨函数信息作为补充元数据（用于语义报告生成）
+Design Principles:
+- Anchors must be within the currently analyzed function (for slice extraction)
+- Cross-function information serves as supplementary metadata (for semantic report generation)
 """
 
 import os
@@ -37,7 +37,7 @@ from extraction.taxonomy import get_anchor_spec
 
 
 # ==============================================================================
-# 重连重试工具函数
+# Connection Retry Utility Functions
 # ==============================================================================
 
 def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_factor=2.0):
@@ -86,86 +86,86 @@ def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_fa
 
 
 # ==============================================================================
-# 数据模型
+# Data Models
 # ==============================================================================
 
 class AnchorScope(str, Enum):
-    """Anchor 的作用域类型"""
-    LOCAL = "local"                      # 纯函数内部操作
-    CALL_SITE = "call_site"              # 调用点（实际操作在 callee 中）
-    INTER_PROCEDURAL = "inter_procedural" # 跨函数数据流
+    """Scope type of the Anchor"""
+    LOCAL = "local"                      # Purely intra-procedural operations
+    CALL_SITE = "call_site"              # Call site (actual operation is in callee)
+    INTER_PROCEDURAL = "inter_procedural" # Cross-function data flow
 
 class CrossFunctionInfo(BaseModel):
-    """跨函数信息（补充元数据，用于语义报告）"""
+    """Cross-function information (supplementary metadata for semantic reports)"""
     callee_file: Optional[str] = Field(
         default=None,
-        description="Callee 所在文件路径"
+        description="Path to the file containing the callee"
     )
     callee_function: Optional[str] = Field(
         default=None,
-        description="Callee 函数名"
+        description="Name of the callee function"
     )
     callee_line: Optional[int] = Field(
         default=None,
-        description="Callee 中实际操作的行号"
+        description="Line number of the actual operation in the callee"
     )
     callee_content: Optional[str] = Field(
         default=None,
-        description="Callee 中实际操作的代码"
+        description="Code content of the actual operation in the callee"
     )
     callee_role: Optional[AnchorRole] = Field(
         default=None,
-        description="Callee 中实际操作的角色"
+        description="Role of the actual operation in the callee"
     )
     data_flow_chain: Optional[List[str]] = Field(
         default=None,
-        description="数据流追踪链（用于 inter-procedural 情况）"
+        description="Data flow trace chain (for inter-procedural cases)"
     )
 
 class AnchorItem(BaseModel):
     """
-    单个锚点的数据模型（增强版）
+    Data model for a single anchor (Expanded)
     
-    设计原则：
-    - 主要字段（file_path, function_name, line, content）用于切片提取
-    - 这些字段必须指向当前分析的函数
-    - cross_function_info 仅作为补充元数据，供语义报告使用
+    Design Principles:
+    - Core fields (file_path, function_name, line, content) are used for slice extraction
+    - These fields must point to the CURRENT function being analyzed
+    - cross_function_info serves only as supplementary metadata for semantic reports
     """
-    # ========== 核心定位信息（用于切片提取） ==========
-    file_path: str = Field(description="Anchor 所在文件的完整路径")
-    function_name: str = Field(description="Anchor 所在的函数名")
-    line: int = Field(description="Anchor 所在的绝对行号（当前函数内）")
-    content: str = Field(description="Anchor 的代码内容（当前函数内）")
+    # ========== Core Location Info (for Slice Extraction) ==========
+    file_path: str = Field(description="Full path of the file containing the Anchor")
+    function_name: str = Field(description="Name of the function containing the Anchor")
+    line: int = Field(description="Absolute line number of the Anchor (within current function)")
+    content: str = Field(description="Code content of the Anchor (within current function)")
     
-    # ========== 语义信息 ==========
-    role: AnchorRole = Field(description="锚点的语义角色（从 taxonomy 定义）")
-    reasoning: str = Field(description="为什么这是一个锚点（Agent 推理）")
+    # ========== Semantic Info ==========
+    role: AnchorRole = Field(description="Semantic role of the anchor (from taxonomy definition)")
+    reasoning: str = Field(description="Why this is an anchor (Agent reasoning)")
     
-    # ========== 作用域信息 ==========
+    # ========== Scope Info ==========
     scope: AnchorScope = Field(
         default=AnchorScope.LOCAL,
-        description="Anchor 的作用域类型"
+        description="Scope type of the Anchor"
     )
     
-    # ========== 跨函数补充信息（仅用于语义报告） ==========
+    # ========== Cross-Function Supplement (For Semantic Reports Only) ==========
     cross_function_info: Optional[CrossFunctionInfo] = Field(
         default=None,
-        description="跨函数信息（当 scope 为 CALL_SITE 或 INTER_PROCEDURAL 时）"
+        description="Cross-function info (when scope is CALL_SITE or INTER_PROCEDURAL)"
     )
 
 
 class AnchorResult(BaseModel):
-    """锚点识别结果"""
+    """Anchor identification result"""
     origin_anchors: List[AnchorItem] = Field(
-        description="Origin anchors (创建漏洞状态的操作)",
+        description="Origin anchors (operations creating the vulnerable state)",
         default_factory=list
     )
     impact_anchors: List[AnchorItem] = Field(
-        description="Impact anchors (触发漏洞的操作)",
+        description="Impact anchors (operations triggering the vulnerability)",
         default_factory=list
     )
     reasoning: str = Field(
-        description="整体推理：如何从 modified lines 找到这些锚点，以及它们如何形成漏洞链"
+        description="Overall reasoning: how anchors were found from modified lines and how they form a vulnerability chain"
     )
 
 
@@ -175,13 +175,13 @@ class AnchorResult(BaseModel):
 
 class AnchorAnalyzer:
     """
-    Agent 驱动的锚点分析器
+    Agent-driven Anchor Analyzer
     
-    基于 Methodology §3.3.2 实现 Anchor Discovery 流程：
-    1. 从 diff 提取 search hints（modified lines + key variables）
-    2. 基于 vulnerability type 获取 expected anchor roles
-    3. 使用 Agent + tools 从 hints 扩展查找锚点
-    4. 验证 Origin → Impact 连接性
+    Implements Anchor Discovery process based on Methodology §3.3.2:
+    1. Extract search hints from diff (modified lines + key variables)
+    2. Get expected anchor roles based on vulnerability type
+    3. Use Agent + tools to expand search from hints to find anchors
+    4. Verify Origin → Impact connectivity
     """
     
     def __init__(self, navigator: CodeNavigator):
@@ -203,32 +203,32 @@ class AnchorAnalyzer:
                  start_line: int = 1,
                  attempt: int = 1) -> AnchorResult:
         """
-        识别锚点（Agent 驱动）
+        Identify anchors (Agent-driven)
         
         Args:
-            code_content: 完整的函数代码（Pre-Patch 版本）
-            diff_text: 补丁 diff
-            search_hints: 从 extract_search_hints() 获取的搜索提示
+            code_content: Complete function code (Pre-Patch Version)
+            diff_text: Patch diff
+            search_hints: Search hints extracted from extract_search_hints()
                 - deleted_lines: List[ModifiedLine]
                 - added_lines: List[ModifiedLine]
                 - key_variables: Set[str]
-            taxonomy: 漏洞类型和假设
-            file_path: 目标文件路径
-            function_name: 当前分析的函数名
-            start_line: 代码起始行号
-            attempt: 当前尝试次数（用于 Refinement，默认 1）
+            taxonomy: Vulnerability type and assumptions
+            file_path: Target file path
+            function_name: Name of the function being analyzed
+            start_line: Starting line number of the code
+            attempt: Current attempt count (for Refinement, default 1)
             
         Returns:
-            AnchorResult: 识别出的 Origin 和 Impact anchors
+            AnchorResult: Identified Origin and Impact anchors
         """
         
-        # 1. 获取 anchor 规范（基于漏洞类型）
+        # 1. Get anchor specification (based on vulnerability type)
         anchor_spec = get_anchor_spec(taxonomy.vuln_type)
         origin_roles = anchor_spec['origin_roles']
         impact_roles = anchor_spec['impact_roles']
         vuln_chain = anchor_spec['vulnerability_chain']
         
-        # 2. 格式化 search hints
+        # 2. Format search hints
         deleted_lines_text = "\n".join([
             f"  Line {dl.line_number}: {dl.content}"
             for dl in search_hints.get('deleted_lines', [])
@@ -241,26 +241,26 @@ class AnchorAnalyzer:
         
         key_vars = ", ".join(search_hints.get('key_variables', [])) or "None"
         
-        # 3. 定义工具
+        # 3. Define tools
         tools = self._create_tools(file_path)
         llm_with_tools = self.llm.bind_tools(tools)
         
-        # 4. 格式化代码（带行号）
+        # 4. Format code (with line numbers)
         lines = code_content.splitlines()
         formatted_code_lines = []
         for i, line in enumerate(lines):
             formatted_code_lines.append(f"[{start_line + i:4d}] {line}")
         formatted_code = "\n".join(formatted_code_lines)
         
-        # 5. 构建 System Prompt（通用指导，不包含具体代码和数据）
+        # 5. Build System Prompt (General guidance, no specific code or data)
         origin_roles_str = ", ".join([r.value for r in origin_roles]) if origin_roles else "N/A (Generic)"
         impact_roles_str = ", ".join([r.value for r in impact_roles]) if impact_roles else "N/A (Generic)"
         
-        # 提取补丁实际影响的行号范围
+        # Extract line ranges actually affected by the patch
         patch_affected_lines = self._extract_patch_affected_lines(diff_text, start_line)
         affected_lines_str = ", ".join([str(ln) for ln in sorted(patch_affected_lines)]) if patch_affected_lines else "None"
         
-        # 添加 attempt 上下文
+        # Add attempt context
         attempt_context = ""
         if attempt > 1:
             attempt_context = f"""
@@ -336,7 +336,7 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
 ### Inter-Procedural Anchor Rules
 **CRITICAL**: Anchors MUST be in the current function being analyzed. When the vulnerability spans multiple functions:
 
-**Case 1: Callee - Vulnerability operations in called function** (当前函数是Caller，漏洞在Callee)
+**Case 1: Callee - Vulnerability operations in called function** (Current function is Caller, vulnerability is in Callee)
 - Use the **call site** (in current function) as the anchor
 - Mark scope as "call_site"
 - Record the actual operation in cross_function_info
@@ -358,7 +358,7 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
   }}
   ```
 
-**Case 2: Caller - Bad input from calling function** (当前函数是Callee，Origin在Caller)
+**Case 2: Caller - Bad input from calling function** (Current function is Callee, Origin is in Caller)
 - Use the **parameter reception/use point** in current function as Impact anchor
 - Mark scope as "inter_procedural"
 - Record the caller's bad input in cross_function_info
@@ -383,7 +383,7 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
   }}
   ```
 
-**Case 3: Shared State - Resource lifecycle spans peer functions** (CVE-2021-46994的情况)
+**Case 3: Shared State - Resource lifecycle spans peer functions** (Case of CVE-2021-46994)
 - Identify the **connection point** in current function (where resource is stored/accessed)
 - Mark scope as "inter_procedural"
 - Record the cross-function relationship in cross_function_info
@@ -457,7 +457,7 @@ Return a JSON object with:
 5. Try to find required anchor roles (Origin: {origin_roles_str}, Impact: {impact_roles_str})
 """
 
-        # 6. 构建 User Content（具体任务数据）
+        # 6. Build User Content (Specific Task Data)
         user_content = f"""### Analysis Task
 **Target File**: {file_path}
 **Target Function**: {function_name}
@@ -501,16 +501,16 @@ These are your **initial anchors** - expand from here using tools:
             HumanMessage(content=user_content)
         ]
         
-        # 7. Agent 执行循环（带智能缓存和重复检测）
+        # 7. Agent Execution Loop (with intelligent caching and repetition detection)
         max_steps = 10
         curr_step = 0
         tool_call_history = {}  # Track tool call frequency: sig -> count
         tool_result_cache = {}   # Cache results: sig -> result
-        repetition_threshold = 1  # 同一工具调用超过3次则强制阻止
-        consecutive_blocks = 0   # 连续被阻止的次数
-        max_consecutive_blocks = 3  # 最多连续阻止3次后强制终止
+        repetition_threshold = 1  # Force block if same tool call repeats more than 3 times
+        consecutive_blocks = 0   # Number of consecutive blocks
+        max_consecutive_blocks = 3  # Force terminate after max consecutive blocks
         
-        # [新增] 跟踪外部函数读取（用于检测跨函数探索）
+        # [New] Track external function reads (for checking cross-function exploration)
         external_reads = {}  # line_range -> count (tracking reads outside current function)
         function_start = start_line
         function_end = start_line + len(lines) - 1
@@ -533,7 +533,7 @@ These are your **initial anchors** - expand from here using tools:
             
             messages.append(response)
             
-            # [新增] 输出 Agent 的思考过程（如果有）
+            # [New] Output Agent's thought process (if any)
             if hasattr(response, 'content') and response.content and not response.tool_calls:
                 reasoning_preview = response.content[:500] if len(response.content) > 500 else response.content
                 print(f"      [AnchorAgent] 💭 Thinking: {reasoning_preview}")
@@ -551,25 +551,25 @@ These are your **initial anchors** - expand from here using tools:
                     
                     print(f"      [AnchorAgent] 🔧 Tool: {t['name']} args={t['args']}")
                     
-                    # [新增] 检测外部函数读取（用于智能提示）
+                    # [New] Detection of external function reads (for smart hints)
                     if t['name'] == 'read_file':
                         read_start = t['args'].get('start', 0)
                         read_end = t['args'].get('end', 0)
-                        # 检查读取范围是否在当前函数外
+                        # Check if read range is outside current function
                         if read_start > 0 and read_end > 0:
                             is_external = (read_end < function_start or read_start > function_end)
                             if is_external:
                                 range_key = f"{read_start}-{read_end}"
                                 external_reads[range_key] = external_reads.get(range_key, 0) + 1
                                 
-                                # 如果多次读取同一外部范围，给出提示
+                                # If same external range is read multiple times, give hint
                                 if external_reads[range_key] == 2:
                                     print(f"      [AnchorAgent] 💡 TIP: You're reading lines {read_start}-{read_end} (outside current function {function_start}-{function_end})")
                                     print(f"      [AnchorAgent]     This suggests a cross-function vulnerability. Consider using:")
                                     print(f"      [AnchorAgent]     - scope='inter_procedural' for anchors in current function that connect to this")
                                     print(f"      [AnchorAgent]     - cross_function_info to record what you found in that external function")
                     
-                    # 强制阻止过度重复的调用
+                    # Force block excessive repetition
                     if call_count > repetition_threshold:
                         blocked_in_this_round = True
                         consecutive_blocks += 1
@@ -590,7 +590,7 @@ DO NOT repeat the same tool call. This is blocking #{consecutive_blocks}/{max_co
 Blocked call: {t['name']}({t['args']})"""
                         print(f"      [AnchorAgent]   → ❌ BLOCKED (call #{call_count}, consecutive #{consecutive_blocks}/{max_consecutive_blocks})")
                         
-                        # 连续阻止达到上限，强制终止
+                        # Max consecutive blocks reached, force terminate
                         if consecutive_blocks >= max_consecutive_blocks:
                             print(f"      [AnchorAgent]   → 🛑 FORCE STOP: Too many consecutive blocks ({consecutive_blocks}). Forcing final answer.")
                             tool_result += "\n\n🛑 SYSTEM: Maximum consecutive blocks reached. You MUST provide your final answer NOW."
@@ -634,7 +634,7 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
                 
                 curr_step += 1
                 
-                # [新增] 强制终止条件：连续阻止过多
+                # [New] Force termination condition: Too many consecutive blocks
                 if consecutive_blocks >= max_consecutive_blocks:
                     print(f"      [AnchorAgent] 🛑 FORCE TERMINATION: Agent stuck in loop after {consecutive_blocks} consecutive blocks")
                     break
@@ -644,7 +644,7 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
         
         print(f"      [AnchorAgent] Finished after {curr_step} steps, made {len(tool_result_cache)} unique tool calls")
         
-        # 8. 结构化输出提取
+        # 8. Extract Structured Output
         final_extractor = self.llm.with_structured_output(AnchorResult)
         
         try:
@@ -653,19 +653,19 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
                 max_retries=3
             )
             
-            # 9. 填充完整定位信息（file_path 和 function_name）
+            # 9. Populate complete location info (file_path and function_name)
             for anchor in result.origin_anchors + result.impact_anchors:
                 anchor.file_path = file_path
                 anchor.function_name = function_name
             
-            # 10. Role Completeness 检查（OR 关系：只要找到其中一个 role 即可）
+            # 10. Role Completeness Check (OR relationship: as long as one role is found)
             found_origin_roles = set(a.role for a in result.origin_anchors)
             found_impact_roles = set(a.role for a in result.impact_anchors)
             
             expected_origin = set(origin_roles) if origin_roles else set()
             expected_impact = set(impact_roles) if impact_roles else set()
             
-            # 检查是否至少找到一个 Origin role 和一个 Impact role
+            # Check if at least one Origin role and one Impact role are found
             has_origin = bool(found_origin_roles & expected_origin) if expected_origin else bool(found_origin_roles)
             has_impact = bool(found_impact_roles & expected_impact) if expected_impact else bool(found_impact_roles)
             
@@ -683,7 +683,7 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
                         warning_msg += f"\n        No Impact anchor found"
                 print(warning_msg)
             
-            # 11. 基本验证（完全没找到 anchors）
+            # 11. Basic Validation (No anchors found at all)
             if not result.origin_anchors and not result.impact_anchors:
                 print(f"      [AnchorAnalyzer] Warning: No anchors identified at all")
             
@@ -698,7 +698,7 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
             )
     
     def _create_tools(self, current_file_path: str):
-        """创建工具集（支持跨文件读取）"""
+        """Create toolset (supports cross-file reading)"""
         
         @tool
         def grep(pattern: str, file_path: str, mode: str = "word",
@@ -840,18 +840,18 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
     
     def _extract_patch_affected_lines(self, diff_text: str, start_line: int) -> Set[int]:
         """
-        提取补丁实际影响的行号（用于约束 Impact Anchor 的范围）
+        Extract line numbers affected by patch (used to constrain Impact Anchor range)
         
-        包括：
-        1. 被删除的行（deleted lines）- 漏洞代码本身
-        2. 被修改的行的上下文（modified context）- 受修复影响的代码
+        Includes:
+        1. Deleted lines (deleted lines) - vulnerability code itself
+        2. Modified context lines (modified context) - code affected by the fix
         
         Args:
-            diff_text: 补丁 diff 文本
-            start_line: 代码起始行号
+            diff_text: Patch diff text
+            start_line: Code start line number
             
         Returns:
-            受补丁影响的绝对行号集合
+            Set of absolute line numbers affected by the patch
         """
         import re
         

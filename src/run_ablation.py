@@ -326,10 +326,10 @@ def build_ablation_pipeline(ablation_type: str):
     - Phase 4: baseline or full
     
     ablation_type options:
-    - 'ablation1' or 'plain': P2 baseline + P4 baseline (最简版本)
-    - 'ablation2' or 'with_extraction': P2 full + P4 baseline (+提取)
-    - 'ablation3' or 'with_validation': P2 baseline + P4 full (+验证)
-    - 'ablation4' or 'full' or 'none': P2 full + P4 full (完整版)
+    - 'ablation1' or 'plain': P2 baseline + P4 baseline (Simplest version)
+    - 'ablation2' or 'with_extraction': P2 full + P4 baseline (+Extraction)
+    - 'ablation3' or 'with_validation': P2 baseline + P4 full (+Validation)
+    - 'ablation4' or 'full' or 'none': P2 full + P4 full (Full version)
     
     Legacy options (for backward compatibility):
     - 'phase2': Same as ablation3 (P2 baseline)
@@ -341,11 +341,11 @@ def build_ablation_pipeline(ablation_type: str):
     ablation_map = {
         'ablation1': {'p2': 'baseline', 'p4': 'baseline'},  # plain
         'plain': {'p2': 'baseline', 'p4': 'baseline'},
-        'ablation2': {'p2': 'full', 'p4': 'baseline'},      # +提取
+        'ablation2': {'p2': 'full', 'p4': 'baseline'},      # +Extraction
         'with_extraction': {'p2': 'full', 'p4': 'baseline'},
-        'ablation3': {'p2': 'baseline', 'p4': 'full'},      # +验证
+        'ablation3': {'p2': 'baseline', 'p4': 'full'},      # +Validation
         'with_validation': {'p2': 'baseline', 'p4': 'full'},
-        'ablation4': {'p2': 'full', 'p4': 'full'},          # 完整
+        'ablation4': {'p2': 'full', 'p4': 'full'},          # Full
         'full': {'p2': 'full', 'p4': 'full'},
         'none': {'p2': 'full', 'p4': 'full'},
         # Legacy compatibility
