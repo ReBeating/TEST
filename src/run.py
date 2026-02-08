@@ -1,6 +1,7 @@
 import os
 import argparse
 import uuid
+import pandas as pd
 from typing import List, Dict
 from collections import defaultdict
 
@@ -467,4 +468,60 @@ if __name__ == "__main__":
     
     print("=== Pipeline Finished ===")
     if args.end == 4:
-        print(f"Findings: {len(result.get('final_findings', []))}")
+        findings = result.get('final_findings', [])
+        print(f"Findings: {len(findings)}")
+
+        if findings:
+            csv_path = os.path.join(args.output_dir, "findings.csv")
+            
+            # Prepare rows
+            csv_rows = []
+            for finding in findings:
+                # Handle both object and dict
+                if hasattr(finding, "vul_id"):
+                     fid = finding.vul_id
+                     patch_file = finding.patch_file
+                     patch_func = finding.patch_func
+                     target_file = finding.target_file
+                     target_func = finding.target_func
+                else:
+                     fid = finding.get("vul_id")
+                     patch_file = finding.get("patch_file")
+                     patch_func = finding.get("patch_func")
+                     target_file = finding.get("target_file")
+                     target_func = finding.get("target_func")
+                
+                # In single run mode, we trust args for repo/commit if not in finding
+                # Note: finding might have empty vul_id if not set properly in model, but usually it is.
+                # However, args.vul_id is reliable here.
+                
+                csv_rows.append({
+                    "vul_id": args.vul_id,
+                    "repo": args.repo,
+                    "fixed_commit_sha": args.commit,
+                    "patch_file_path": patch_file,
+                    "patch_func_name": patch_func,
+                    "target_file_path": target_file,
+                    "target_func_name": target_func
+                })
+            
+            new_df = pd.DataFrame(csv_rows)
+            # Define columns order
+            cols = ["vul_id", "repo", "fixed_commit_sha", "patch_file_path", "patch_func_name", "target_file_path", "target_func_name"]
+            new_df = new_df[cols]
+
+            if os.path.exists(csv_path):
+                try:
+                    existing_df = pd.read_csv(csv_path)
+                    combined_df = pd.concat([existing_df, new_df])
+                    # Drop exact duplicates
+                    combined_df = combined_df.drop_duplicates()
+                    combined_df.to_csv(csv_path, index=False)
+                    print(f"[Done] Findings appended to: {csv_path}")
+                except Exception as e:
+                    print(f"!!! [Error] Failed to append to CSV: {e}")
+                    # Fallback to write if read fails? Or just crash. 
+                    # Better to try writing to a new file to save data.
+            else:
+                new_df.to_csv(csv_path, index=False)
+                print(f"[Done] Findings saved to: {csv_path}")

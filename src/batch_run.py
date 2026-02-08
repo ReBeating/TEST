@@ -52,12 +52,14 @@ def process_vuln(item, args):
         
         print(f">>> [Start] Processing {vul_id}...")
         # recursion_limit here is for the steps of a single vulnerability processing
-        app.invoke(vuln_state, {"recursion_limit": 10000})
+        state_snapshot = app.invoke(vuln_state, {"recursion_limit": 10000})
         print(f">>> [Done] {vul_id} Finished.")
-        return vul_id, True
+        
+        findings = state_snapshot.get("final_findings", [])
+        return vul_id, True, findings
     except Exception as e:
         print(f"!!! [Error] Processing {vul_id}: {e}")
-        return vul_id, False
+        return vul_id, False, []
 
 # ==========================================
 # 2. Execution Entry Point
@@ -100,16 +102,84 @@ if __name__ == "__main__":
         
         # Process results
         completed_count = 0
+        collected_findings = []
+
         for future in concurrent.futures.as_completed(futures):
             vul_id = futures[future]
             try:
-                vid, success = future.result()
+                vid, success, findings = future.result()
                 completed_count += 1
                 status = "Success" if success else "Failed"
                 print(f"[{completed_count}/{total}] Completed: {vid} ({status})")
+                
+                if success and findings:
+                    collected_findings.extend(findings)
+
             except Exception as exc:
                 print(f"!!! [Exception] {vul_id} generated an exception: {exc}")
 
     print("\n=== All Tasks Completed ===")
+
+    # --- Generate Summary CSV ---
+    if collected_findings:
+        print(f"[*] Post-processing {len(collected_findings)} findings...")
+        
+        # Build lookup for repo/commit info
+        # all_records is list of dicts
+        meta_lookup = {item["vul_id"]: item for item in all_records}
+        
+        csv_rows = []
+        for finding in collected_findings:
+            # finding is likely a Pydantic model (VulnerabilityFinding)
+            # Handle both object and dict just in case
+            if hasattr(finding, "vul_id"):
+                 fid = finding.vul_id
+                 patch_file = finding.patch_file
+                 patch_func = finding.patch_func
+                 target_file = finding.target_file
+                 target_func = finding.target_func
+            else:
+                 fid = finding.get("vul_id")
+                 patch_file = finding.get("patch_file")
+                 patch_func = finding.get("patch_func")
+                 target_file = finding.get("target_file")
+                 target_func = finding.get("target_func")
+            
+            # Retrieve metadata from input CSV records
+            meta = meta_lookup.get(fid, {})
+            repo = meta.get("repo", "UNKNOWN")
+            sha = meta.get("fixed_commit_sha", "UNKNOWN")
+            
+            csv_rows.append({
+                "vul_id": fid,
+                "repo": repo,
+                "fixed_commit_sha": sha,
+                "patch_file_path": patch_file,
+                "patch_func_name": patch_func,
+                "target_file_path": target_file,
+                "target_func_name": target_func
+            })
+            
+        summary_df = pd.DataFrame(csv_rows)
+        # Select and reorder columns
+        cols = ["vul_id", "repo", "fixed_commit_sha", "patch_file_path", "patch_func_name", "target_file_path", "target_func_name"]
+        summary_df = summary_df[cols]
+        
+        output_csv_path = os.path.join(args.output_dir, "batch_findings.csv")
+        
+        if os.path.exists(output_csv_path):
+            try:
+                existing_df = pd.read_csv(output_csv_path)
+                combined_df = pd.concat([existing_df, summary_df])
+                combined_df = combined_df.drop_duplicates()
+                combined_df.to_csv(output_csv_path, index=False)
+                print(f"[Done] Findings appended to: {output_csv_path}")
+            except Exception as e:
+                print(f"!!! [Error] Failed to append to CSV: {e}")
+        else:
+            summary_df.to_csv(output_csv_path, index=False)
+            print(f"[Done] Findings saved to: {output_csv_path}")
+    else:
+        print("[-] No findings collected.")
     end_time = time()
     print(f"Total time: {end_time - start_time} seconds")
