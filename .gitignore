@@ -1,9 +1,0 @@
-**/__pycache__/
-**/*.pyc
-databases/
-outputs/
-inputs_*/
-.gitignore
-.env
-results/
-scripts/
