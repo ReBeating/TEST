@@ -64,7 +64,7 @@ python src/run.py -r FreeRDP/FreeRDP -v CVE-2024-32661 -c 71e463e31b4d69f4022d36
 
 **Results:** 
 - Summary findings are appended to `outputs/findings.csv`.
-- Detailed analysis reports and artifacts are saved in `outputs/results/<repo_name>/<vul_id>/`.
+- Detailed analysis reports and artifacts are saved in `outputs/results/<repo_name>/`.
 
 ### Batch Processing (`src/batch_run.py`)
 
@@ -83,5 +83,7 @@ python src/batch_run.py
 - `-c/--csv`: Path to input CSV (default: `inputs/0day_vul_list.csv`).
 - `-b/--workers`: Number of concurrent workers (default: 8).
 
-**Results:** Collected findings for the batch are saved/appended to `outputs/batch_findings.csv`.
+**Results:** 
+- Collected findings for the batch are saved/appended to `outputs/batch_findings.csv`.
+- Detailed analysis reports and artifacts are saved in `outputs/results/<repo_name>/`.
 ```
