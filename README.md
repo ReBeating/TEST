@@ -1,5 +1,14 @@
 # VERDICT
 
+## Environment Setup
+
+To set up the environment, please use conda to install the dependencies from `environment.yml`:
+
+```bash
+conda env create -f environment.yml
+conda activate verdict
+```
+
 ## Configuration
 
 1. Set up your environment variables by copying the example file:
