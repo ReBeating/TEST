@@ -141,6 +141,112 @@ def normalize_program_structure(code_str: str, has_line_markers: bool = False) -
 # [New] Ignored control flow keywords, not considered as function calls
 CONTROL_KEYWORDS = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'likely', 'unlikely'}
 
+# C/C++ return type keywords commonly seen in function signatures
+_RETURN_TYPE_KEYWORDS = {
+    'void', 'int', 'char', 'short', 'long', 'float', 'double', 'unsigned', 'signed',
+    'bool', 'size_t', 'ssize_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+    'int8_t', 'int16_t', 'int32_t', 'int64_t', 'static', 'inline', 'const',
+    'struct', 'enum', 'union', 'extern', 'register', 'volatile', 'restrict',
+    'R_API', 'R_IPI',  # radare2 specific macros
+    '__attribute__',
+}
+
+def is_function_header(line: str) -> bool:
+    """
+    Detect if a normalized code line is a function header (function signature/declaration).
+    
+    Heuristics:
+    1. Line contains a return type keyword followed by a function name and opening parenthesis
+    2. Line ends with '{' or ')' (function definition or declaration)
+    3. Line contains parameter list pattern (type name, type name, ...)
+    
+    This is used to exclude function headers from slice matching score calculation,
+    since function headers of same-name functions always match highly, inflating scores.
+    """
+    # Remove line number marker if present
+    clean = re.sub(r'^\[\s*\d+\]', '', line).strip()
+    
+    if not clean:
+        return False
+    
+    # Must contain '(' for parameter list
+    if '(' not in clean:
+        return False
+    
+    # Check if line starts with a return type keyword or macro pattern
+    # e.g., "void func_name(...)", "static int func(...)", "R_API void func(...)"
+    # Also handle macro-wrapped return types like "MACH0_(func_name)(...)"
+    first_token = clean.split()[0] if clean.split() else ''
+    
+    # Remove common macro wrappers
+    first_token_clean = re.sub(r'\(.*?\)', '', first_token)
+    
+    # Check if first token looks like a return type
+    starts_with_type = first_token_clean in _RETURN_TYPE_KEYWORDS
+    
+    # Also check for patterns like "TYPE MACRO_(name)(...)" or "type *func(...)"
+    has_type_pattern = bool(re.match(
+        r'^(?:(?:static|inline|extern|const|volatile|unsigned|signed)\s+)*'
+        r'(?:void|int|char|short|long|float|double|bool|size_t|ssize_t|'
+        r'u?int\d+_t|ut\d+|st\d+|R_API|R_IPI|struct\s+\w+|enum\s+\w+|'
+        r'[A-Z][A-Z0-9_]*)\s*\*?\s*'  # return type (possibly pointer)
+        r'(?:[A-Z_][A-Z0-9_]*\s*\()?\s*'  # optional macro wrapper like MACH0_(
+        r'[a-zA-Z_]\w*\s*\)?\s*\(',  # function name and opening paren
+        clean
+    ))
+    
+    if not (starts_with_type or has_type_pattern):
+        return False
+    
+    # Additional check: extract the LAST top-level parenthesized content
+    # This handles macro-wrapped names like MACH0_(func_name)(params...)
+    # We need the parameter list, not the macro argument
+    paren_contents = []
+    depth = 0
+    current_content = ''
+    for ch in clean:
+        if ch == '(':
+            depth += 1
+            if depth == 1:
+                current_content = ''
+            else:
+                current_content += ch
+        elif ch == ')':
+            depth -= 1
+            if depth == 0:
+                paren_contents.append(current_content)
+                current_content = ''
+            else:
+                current_content += ch
+        elif depth > 0:
+            current_content += ch
+    
+    # Use the last parenthesized content as the parameter list
+    # For "void MACH0_(func)(int a, int b)", paren_contents = ["func", "int a, int b"]
+    # For "void func(int a)", paren_contents = ["int a"]
+    paren_content = paren_contents[-1] if paren_contents else ''
+    
+    # Check if paren content looks like parameter list (has type-name pairs)
+    if paren_content.strip():
+        # Has at least one comma (multiple params) or contains type keywords
+        param_type_keywords = {
+            'int', 'char', 'void', 'const', 'struct', 'unsigned', 'long', 'short',
+            'float', 'double', 'bool', 'size_t', 'uint8_t', 'uint16_t', 'uint32_t',
+            'uint64_t', 'ut8', 'ut16', 'ut32', 'ut64', 'st8', 'st16', 'st32', 'st64',
+            'enum', 'union', 'signed', 'volatile', 'restrict'
+        }
+        has_params = ',' in paren_content or any(
+            kw in paren_content.split() for kw in param_type_keywords
+        )
+        if has_params:
+            return True
+    
+    # Empty parameter list: "void func()" or "type func(void)"
+    if paren_content.strip() in ('', 'void'):
+        return True
+    
+    return False
+
 def extract_function_name(line: str) -> str:
     """
     Extract main function name from code line.
@@ -295,6 +401,13 @@ class DualChannelMatcher:
         self.pre_anchors = [a for a in (pre_anchors or []) if a.code_snippet and tokenize_line(a.code_snippet)]
         self.post_anchors = [a for a in (post_anchors or []) if a.code_snippet and tokenize_line(a.code_snippet)]
         
+        # [New] Detect function header lines in slices
+        # Function headers (signatures) of same-name functions always match highly,
+        # inflating similarity scores. We mark them to exclude from score calculation
+        # while still recording them in alignment traces.
+        self.pre_header_mask = [is_function_header(line) for line in self.s_pre_lines]
+        self.post_header_mask = [is_function_header(line) for line in self.s_post_lines]
+        
     def _tag_regions_with_correspondence(self) -> Tuple[List[str], List[str], List[LineCorrespondence]]:
         """
         Build line tags and line correspondences
@@ -421,9 +534,10 @@ class DualChannelMatcher:
         
         return pre_tags, post_tags, correspondences
 
-    def _align_channel(self, slice_lines: List[str], slice_tags: List[str], 
+    def _align_channel(self, slice_lines: List[str], slice_tags: List[str],
                        slice_map: List[List[int]], # [New] Slice line number mapping
-                       target_lines: List[str], target_map: List[List[int]] # [New] Target line number mapping
+                       target_lines: List[str], target_map: List[List[int]], # [New] Target line number mapping
+                       header_mask: Optional[List[bool]] = None  # [New] Function header mask
                        ) -> Tuple[float, float, List[MatchTrace], List[str], List[AlignedTrace]]:
         # ... (previous code omitted for brevity in call, but need to be careful with replace)
         # Actually I cannot omit code in replace tool. I should target the specific block.
@@ -554,20 +668,24 @@ class DualChannelMatcher:
                 # --- MATCH ---
                 line_len = len(slice_tokens[i-1])
                 is_feature = (slice_tags[i-1] != 'COMMON')
+                is_header = header_mask[i-1] if header_mask else False
                 
-                if is_feature:
-                    total_feat_len += line_len
-                    matched_feat_len += line_len * sim
-                    matches.append(MatchTrace(
-                        slice_line=slice_lines[i-1], target_line=target_lines[j-1], 
-                        line_no=j, similarity=sim
-                    ))
-                else:
-                    total_ctx_len += line_len
-                    matched_ctx_len += line_len * sim
+                # [New] Function header lines are recorded in trace but excluded from score
+                if not is_header:
+                    if is_feature:
+                        total_feat_len += line_len
+                        matched_feat_len += line_len * sim
+                        matches.append(MatchTrace(
+                            slice_line=slice_lines[i-1], target_line=target_lines[j-1],
+                            line_no=j, similarity=sim
+                        ))
+                    else:
+                        total_ctx_len += line_len
+                        matched_ctx_len += line_len * sim
                 
+                # Always record in alignment trace (for debugging/visualization)
                 alignment_trace.append(AlignedTrace(
-                    slice_line=slice_lines[i-1], target_line=target_lines[j-1], 
+                    slice_line=slice_lines[i-1], target_line=target_lines[j-1],
                     line_no=j, similarity=sim, tag=slice_tags[i-1]
                 ))
                 i -= 1
@@ -582,15 +700,18 @@ class DualChannelMatcher:
                 # --- SKIP SLICE (Missing) ---
                 line_len = len(slice_tokens[i-1])
                 is_feature = (slice_tags[i-1] != 'COMMON')
+                is_header = header_mask[i-1] if header_mask else False
                 
-                if is_feature:
-                    total_feat_len += line_len
-                    missing.append(slice_lines[i-1])
-                else:
-                    total_ctx_len += line_len
+                # [New] Function header lines excluded from score
+                if not is_header:
+                    if is_feature:
+                        total_feat_len += line_len
+                        missing.append(slice_lines[i-1])
+                    else:
+                        total_ctx_len += line_len
                 
                 alignment_trace.append(AlignedTrace(
-                    slice_line=slice_lines[i-1], target_line=None, 
+                    slice_line=slice_lines[i-1], target_line=None,
                     line_no=None, similarity=0.0, tag=slice_tags[i-1]
                 ))
                 i -= 1
@@ -599,15 +720,18 @@ class DualChannelMatcher:
         while i > 0:
             line_len = len(slice_tokens[i-1])
             is_feature = (slice_tags[i-1] != 'COMMON')
+            is_header = header_mask[i-1] if header_mask else False
             
-            if is_feature:
-                total_feat_len += line_len
-                missing.append(slice_lines[i-1])
-            else:
-                total_ctx_len += line_len
+            # [New] Function header lines excluded from score
+            if not is_header:
+                if is_feature:
+                    total_feat_len += line_len
+                    missing.append(slice_lines[i-1])
+                else:
+                    total_ctx_len += line_len
             
             alignment_trace.append(AlignedTrace(
-                slice_line=slice_lines[i-1], target_line=None, 
+                slice_line=slice_lines[i-1], target_line=None,
                 line_no=None, similarity=0.0, tag=slice_tags[i-1]
             ))
             i -= 1
@@ -736,8 +860,11 @@ class DualChannelMatcher:
         score_vuln, score_fix, score_feat_vuln, score_feat_fix = self._compute_scores_from_alignment(aligned_vuln, aligned_fix)
         
         # Apply deductions (convert to score adjustment)
-        pre_total_tokens = sum(len(tokenize_line(line)) for line in self.s_pre_lines)
-        post_total_tokens = sum(len(tokenize_line(line)) for line in self.s_post_lines)
+        # [New] Exclude function header lines from total token count
+        pre_total_tokens = sum(len(tokenize_line(line)) for i, line in enumerate(self.s_pre_lines)
+                               if not (i < len(self.pre_header_mask) and self.pre_header_mask[i]))
+        post_total_tokens = sum(len(tokenize_line(line)) for i, line in enumerate(self.s_post_lines)
+                                if not (i < len(self.post_header_mask) and self.post_header_mask[i]))
         
         if pre_total_tokens > 0 and vuln_deduction > 0:
             deduction_ratio = vuln_deduction / pre_total_tokens
@@ -840,6 +967,10 @@ class DualChannelMatcher:
         vuln_feat_matched = 0.0
         
         for i, trace in enumerate(aligned_vuln):
+            # [New] Skip function header lines from score calculation
+            if i < len(self.pre_header_mask) and self.pre_header_mask[i]:
+                continue
+            
             tokens = len(tokenize_line(self.s_pre_lines[i])) if i < len(self.s_pre_lines) else 0
             vuln_total_tokens += tokens
             
@@ -859,6 +990,10 @@ class DualChannelMatcher:
         fix_feat_matched = 0.0
         
         for i, trace in enumerate(aligned_fix):
+            # [New] Skip function header lines from score calculation
+            if i < len(self.post_header_mask) and self.post_header_mask[i]:
+                continue
+            
             tokens = len(tokenize_line(self.s_post_lines[i])) if i < len(self.s_post_lines) else 0
             fix_total_tokens += tokens
             
@@ -885,13 +1020,16 @@ class DualChannelMatcher:
 
         # Matching
         # Pass map to correctly compute line spacing and restore original line numbers
+        # [New] Pass header_mask to exclude function headers from score calculation
         ctx_a, score_feat_vuln, total_vuln, _, _, aligned_vuln = self._align_channel(
             self.s_pre_lines, self.pre_tags, self.s_pre_map,
-            target_lines, target_map
+            target_lines, target_map,
+            header_mask=self.pre_header_mask
         )
         ctx_b, score_feat_fix, total_fix, _, _, aligned_fix = self._align_channel(
             self.s_post_lines, self.post_tags, self.s_post_map,
-            target_lines, target_map
+            target_lines, target_map,
+            header_mask=self.post_header_mask
         )
         
         # [New] Apply competitive scoring for mixed-type patches
@@ -1145,7 +1283,7 @@ class VulnerabilitySearchEngine:
                 
                 for i, (file_path, target_func_name, code, start_line) in enumerate(candidates):
                     # debug only
-                    # if target_func_name != 'parse8BIMW':
+                    # if target_func_name != 'rebase_buffer_fixup':
                     #     continue
                     # print(f'func_name: {target_func_name}')
                     # print(f'    [Matcher] Matching candidate {i+1}/{len(candidates)}: {target_func_name} in {file_path}')

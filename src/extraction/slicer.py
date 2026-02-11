@@ -224,9 +224,16 @@ class Slicer:
         candidates = []
         for n, d in self.pdg.nodes(data=True):
             if d.get('type') in ('EXIT', 'MERGE'): continue
-            node_line = d.get('start_line', 0) # PDG nodes are Relative
-            if node_line in target_rel_lines:
-                candidates.append(n)
+            node_start = d.get('start_line', 0) # PDG nodes are Relative
+            node_end = d.get('end_line', node_start)
+            # [FIX] Match if target line falls anywhere within the node's line range,
+            # not just at start_line. This handles multi-line statements (e.g., compound
+            # conditions in while/if) where an anchor may reference a continuation line.
+            if node_start > 0:
+                for trl in target_rel_lines:
+                    if node_start <= trl <= node_end:
+                        candidates.append(n)
+                        break
         return candidates
 
     def _is_relevant(self, tracked: Set[str], candidate: str) -> bool:
@@ -2693,18 +2700,33 @@ def slicing_node(state: PatchExtractionState) -> Dict:
         s_pri_text = slicer_pri.to_code(final_pri_nodes)
         
         # [FIX] Fallback: Add anchor lines that are missing from slice
-        # This should rarely trigger now that ENTRY nodes are properly included
-        anchor_lines_outside_pdg = []
+        # This should rarely trigger now that get_nodes_by_location checks full line ranges
+        anchor_lines_outside_pdg = {}  # Use dict to deduplicate by line number
         for a in anchor_result.anchors:
             # Check if the line is not in slice
             if not any(f"[{a.line_number:4d}]" in line for line in s_pri_text.splitlines()):
-                anchor_lines_outside_pdg.append((a.line_number, a.code_snippet))
-                print(f"      [Warning] Anchor line {a.line_number} missing from slice (PDG issue?), adding manually")
+                if a.line_number not in anchor_lines_outside_pdg:
+                    # Use actual source line content instead of anchor code_snippet
+                    a_rel = a.line_number - sl_pri
+                    if 0 <= a_rel < len(code_pri.splitlines()):
+                        source_content = code_pri.splitlines()[a_rel]
+                        anchor_lines_outside_pdg[a.line_number] = source_content
+                    else:
+                        anchor_lines_outside_pdg[a.line_number] = a.code_snippet
+                    print(f"      [Warning] Anchor line {a.line_number} missing from slice (PDG issue?), adding manually")
         
         if anchor_lines_outside_pdg:
-            # Prepend these lines to the slice (they're typically function signatures)
-            extra_lines = [f"[{ln:4d}] {content}" for ln, content in sorted(anchor_lines_outside_pdg)]
-            s_pri_text = "\n".join(extra_lines + [s_pri_text]) if s_pri_text else "\n".join(extra_lines)
+            # Merge extra lines into the slice in sorted order (not just prepend)
+            import re as _re
+            existing_lines = {}
+            for line in s_pri_text.splitlines():
+                m = _re.match(r'^\[\s*(\d+)\]', line.strip())
+                if m:
+                    existing_lines[int(m.group(1))] = line
+            for ln, content in anchor_lines_outside_pdg.items():
+                if ln not in existing_lines:
+                    existing_lines[ln] = f"[{ln:4d}] {content}"
+            s_pri_text = "\n".join(existing_lines[k] for k in sorted(existing_lines.keys()))
         
         print(f'Clean Primary Slice:\n{s_pri_text}\n')
 
@@ -2853,10 +2875,12 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             for a in anchor_list:
                 a_rel = a.line_number - sl + 1
                 
-                # [FIX] Only find nodes that START at this line, not nodes that merely cover it
-                # This prevents including entire control structures when anchor is inside a loop
+                # [FIX] Find nodes whose line range covers the anchor line.
+                # This handles multi-line statements (e.g., compound conditions)
+                # where the anchor may reference a continuation line.
                 found_nodes = [nid for nid, d in pdg.nodes(data=True)
-                              if d.get('start_line', 0) == a_rel]
+                              if d.get('start_line', 0) > 0
+                              and d.get('start_line', 0) <= a_rel <= d.get('end_line', d.get('start_line', 0))]
                 
                 node_expanded = False
                 if found_nodes:
@@ -2865,11 +2889,24 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                     for nid in found_nodes:
                         d = pdg.nodes[nid]
                         node_type = d.get('type', '')
-                        # Skip control structure nodes (PREDICATE for if/while/for conditions)
-                        # These would expand to include the entire block
-                        if node_type in ('PREDICATE', 'SWITCH_HEAD', 'CASE_LABEL', 'DEFAULT_LABEL'):
-                            # For predicates, only keep the single line (the condition)
+                        # Skip switch-related control nodes (these could expand to entire blocks)
+                        if node_type in ('SWITCH_HEAD', 'CASE_LABEL', 'DEFAULT_LABEL'):
                             expanded_abs.add(a.line_number)
+                            node_expanded = True
+                            continue
+                        # [FIX] For PREDICATE nodes (if/while/for conditions), expand to
+                        # full condition line range. Since CFGNode now stores the complete
+                        # compound condition range, this correctly covers multi-line conditions
+                        # without including the block body.
+                        if node_type == 'PREDICATE':
+                            n_start = d.get('start_line', 0)
+                            n_end = d.get('end_line', n_start)
+                            if n_start > 0 and n_end >= n_start:
+                                for ln_rel in range(n_start, n_end + 1):
+                                    abs_ln = ln_rel - 1 + sl
+                                    expanded_abs.add(abs_ln)
+                            else:
+                                expanded_abs.add(a.line_number)
                             node_expanded = True
                             continue
                         # Prefer STATEMENT nodes

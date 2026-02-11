@@ -15,11 +15,11 @@ from core.state import VerificationState
 from core.models import VulnerabilityFinding, SearchResultItem, PatchFeatures
 from core.navigator import CodeNavigator
 from core.indexer import BenchmarkSymbolIndexer, GlobalSymbolIndexer
-from core.categories import Anchor, AnchorType, AnchorLocatability, AssumptionType
+from core.categories import Anchor, AnchorType, AnchorLocatability, AssumptionType, DependencyType, ChainLink
 
 from extraction.slicer import Slicer
 from extraction.pdg import PDGBuilder
-from extraction.slice_validation import check_path_reachability
+from extraction.slice_validation import check_path_reachability, check_single_pair
 
 # Import type-specific verification checklists
 from search.verification_checklists import format_checklist_for_prompt
@@ -231,19 +231,39 @@ class Round2JudgeOutput(BaseModel):
 # Path Verification Result (§3.3.2 — Pure Static, No LLM)
 # ==============================================================================
 
+class PairCheckResult(BaseModel):
+    """Result of checking a single anchor pair from the constraint chain."""
+    source_type: str = Field(description="Source anchor type (e.g., 'alloc', 'source')")
+    target_type: str = Field(description="Target anchor type (e.g., 'dealloc', 'sink')")
+    dependency_type: str = Field(description="Expected dependency type: 'DATA', 'TEMPORAL', or 'CONTROL'")
+    source_line: Optional[int] = Field(default=None, description="Source anchor's mapped target line")
+    target_line: Optional[int] = Field(default=None, description="Target anchor's mapped target line")
+    reachable: bool = Field(description="Whether the dependency path exists for this pair")
+    path_type: str = Field(default="none", description="Actual path type found: 'data_flow', 'data_flow_mixed', 'temporal', 'control_flow', 'llm_override', or 'none'")
+    details: str = Field(default="", description="Explanation of the check result")
+    is_optional: bool = Field(default=False, description="Whether this chain link is optional")
+    skipped: bool = Field(default=False, description="Whether this pair check was skipped (e.g., unmapped anchor)")
+    skip_reason: Optional[str] = Field(default=None, description="Reason for skipping")
+
+
 class PathVerificationResult(BaseModel):
     """Result of §3.3.2 static path verification via PDG analysis.
     
     This step is performed through static analysis WITHOUT LLM involvement.
     It checks whether dependency edges exist between mapped anchor positions
     in the target code's PDG (Program Dependence Graph).
+    
+    Per the paper §3.3.2, verification iterates over the constraint chain R
+    defined by the vulnerability type, checking each (a_i, a_j, δ) pair
+    individually with the appropriate dependency type (DATA/TEMPORAL/CONTROL).
     """
-    reachable: bool = Field(description="Whether a dependency path exists between anchor chain endpoints")
-    path_type: str = Field(default="none", description="'data_flow', 'control_flow', or 'none'")
+    reachable: bool = Field(description="Whether all required dependency paths exist between anchor chain pairs")
+    path_type: str = Field(default="none", description="Summary path type: 'data_flow', 'data_flow_mixed', 'temporal', 'control_flow', 'mixed', 'llm_override', or 'none'")
     details: str = Field(default="", description="Human-readable explanation of the path check result")
     anchor_lines_checked: List[int] = Field(default_factory=list, description="Target line numbers that were checked in the PDG")
-    skipped: bool = Field(default=False, description="Whether path verification was skipped (e.g., for missing-operation vulns like MemoryLeak)")
+    skipped: bool = Field(default=False, description="Whether path verification was skipped (e.g., empty constraint chain)")
     skip_reason: Optional[str] = Field(default=None, description="Reason for skipping path verification")
+    pair_results: List[PairCheckResult] = Field(default_factory=list, description="Per-pair check results from constraint chain iteration")
     
 # ==============================================================================
 # 1. Tools Factory (Updated: Using CodeNavigator)
@@ -1320,7 +1340,50 @@ def run_round1_judge(
         anchor_info_lines.append(info)
     anchor_info = chr(10).join(anchor_info_lines) if anchor_info_lines else "  [No anchor mappings]"
     
+    # Build original anchor definition summary from Phase 2
+    # This tells the Judge what the reference vulnerability's anchor layout looks like
+    sf = feature.slices.get(candidate.patch_func)
+    ref_anchor_lines = []
+    shared_line_note = ""
+    if sf and sf.pre_anchors:
+        line_to_types = {}  # Track which anchor types share the same line
+        for anchor in sf.pre_anchors:
+            atype = anchor.type.value if hasattr(anchor.type, 'value') else str(anchor.type)
+            loc = anchor.locatability.value if hasattr(anchor.locatability, 'value') else str(anchor.locatability)
+            opt_tag = " (optional)" if anchor.is_optional else ""
+            snippet = anchor.code_snippet.strip()[:60] if anchor.code_snippet else 'N/A'
+            ref_anchor_lines.append(f"  [{atype}|{loc}]{opt_tag} L{anchor.line_number}: `{snippet}`")
+            # Track shared lines
+            if anchor.line_number:
+                line_to_types.setdefault(anchor.line_number, []).append(atype)
+        # Generate shared-line note if any line has multiple anchors
+        shared_lines = {ln: types for ln, types in line_to_types.items() if len(types) > 1}
+        if shared_lines:
+            notes = []
+            for ln, types in shared_lines.items():
+                notes.append(f"L{ln} hosts {'+'.join(types)}")
+            shared_line_note = f"\n⚠ **Shared-line anchors in reference**: {'; '.join(notes)}. " \
+                             f"Multiple anchors on the same line is VALID in the reference vulnerability — " \
+                             f"the target mapping should mirror this layout."
+    ref_anchor_info = chr(10).join(ref_anchor_lines) if ref_anchor_lines else "  [No reference anchors]"
+    
+    # Get constraint chain description
+    constraint_chain_str = ""
+    try:
+        constraint = feature.taxonomy.constraint
+        if constraint:
+            constraint_chain_str = constraint.chain_str()
+    except Exception:
+        pass
+    
     user_input = f"""
+### Phase 2 Reference Anchor Definition (Original Vulnerability)
+**Constraint Chain**: {constraint_chain_str or 'Not available'}
+
+**Reference Anchors** (from patch analysis — this is the GROUND TRUTH layout):
+{ref_anchor_info}
+{shared_line_note}
+
 ### Red Agent's C_cons Claim
 - **C_cons Satisfied**: {red_output.c_cons_satisfied}
 - **Attack Path Exists**: {red_output.attack_path_exists}
@@ -1345,8 +1408,8 @@ def run_round1_judge(
 - **Patch Defense**: {feature.semantics.patch_defense}
 
 **TASK**:
-1. Evaluate if Red successfully mapped all typed anchors in the constraint chain
-2. Evaluate if Blue's refutation is valid
+1. Compare Red's mappings against the **Reference Anchor Definition** above
+2. Evaluate if Blue's refutation is valid — note that if the reference anchors share a line, the target mapping SHOULD also share a line
 3. Decide: SAFE-Mismatch (terminate) or PROCEED (to Round 2)
 """
     
@@ -2487,25 +2550,31 @@ def run_path_verification(
     round1_judge: 'Round1JudgeOutput',
     target_code: str,
     feature: 'PatchFeatures',
-    candidate: 'SearchResultItem'
+    candidate: 'SearchResultItem',
+    func_start_line: int = 1
 ) -> PathVerificationResult:
     """
     §3.3.2 Path Verification — Pure static analysis, NO LLM involvement.
     
-    Builds the candidate PDG from target code and checks whether dependency
-    edges exist between the mapped anchor positions (μ(ai) → μ(aj)).
+    Per the paper §3.3.2, this step iterates over the constraint chain R
+    defined by the vulnerability type (e.g., UAF: alloc →d dealloc →t use),
+    and for each ChainLink (a_i, a_j, δ), checks whether the expected
+    dependency type δ exists between the mapped positions μ(a_i) and μ(a_j)
+    in the target code's PDG/CFG.
     
-    Uses check_path_reachability() from slice_validation.py which performs
-    DATA/CONTROL edge path checking on the PDG.
+    Dependency types:
+    - DATA (→d): Check DATA edge paths in PDG
+    - TEMPORAL (→t): Check CFG reachability (sequential execution order)
+    - CONTROL (→c): Check CONTROL edge paths in PDG
     
     Args:
         round1_judge: Round 1 Judge output with validated anchor mappings
         target_code: The target function code
-        feature: Patch features for vulnerability type info
+        feature: Patch features for vulnerability type info (contains constraint chain)
         candidate: Search result candidate
     
     Returns:
-        PathVerificationResult with reachability info
+        PathVerificationResult with per-pair reachability info
     """
     validated_anchors = round1_judge.validated_anchors or []
     
@@ -2515,97 +2584,396 @@ def run_path_verification(
         if m.is_mapped and m.target_line is not None:
             mapped_lines.append(m.target_line)
     
-    if len(mapped_lines) < 2:
+    # --- Step 1: Extract constraint chain from vulnerability type ---
+    constraint_chain = []
+    try:
+        constraint = feature.taxonomy.constraint
+        if constraint and constraint.chain:
+            constraint_chain = constraint.chain  # List[ChainLink]
+    except Exception as e:
+        print(f"    [PathVerification] Could not extract constraint chain: {e}")
+    
+    # Handle empty constraint chain (e.g., Control-Logic types like LogicError)
+    # These vulnerability types define reachability-only constraints with no
+    # explicit anchor pairs — skip path verification and pass through.
+    if not constraint_chain:
+        return PathVerificationResult(
+            reachable=True,
+            path_type="none",
+            details="Empty constraint chain — reachability-only vulnerability type, path verification skipped",
+            anchor_lines_checked=mapped_lines,
+            skipped=True,
+            skip_reason="Empty constraint chain (reachability-only type)"
+        )
+    
+    # --- Step 2: Build anchor_type → AnchorMapping lookup ---
+    # AnchorMapping.anchor_type is a string like 'alloc', 'dealloc', 'use'
+    # ChainLink.source/target are AnchorType enum with .value like 'alloc', etc.
+    anchor_map = {}
+    for m in validated_anchors:
+        if m.is_mapped and m.target_line is not None:
+            key = m.anchor_type.lower().strip()
+            # If multiple mappings for same type, keep the first (most confident)
+            if key not in anchor_map:
+                anchor_map[key] = m
+    
+    if len(anchor_map) < 2:
         return PathVerificationResult(
             reachable=False,
             path_type="none",
-            details=f"Insufficient mapped anchors for path verification (need >= 2, got {len(mapped_lines)})",
+            details=f"Insufficient mapped anchors for path verification (need >= 2, got {len(anchor_map)})",
             anchor_lines_checked=mapped_lines,
             skipped=True,
             skip_reason="Insufficient mapped anchors"
         )
     
-    # Check if this vulnerability type should skip path verification
-    # (e.g., Memory Leak = missing-operation, no path between anchors)
-    vuln_type = feature.semantics.vuln_type
-    if vuln_type and hasattr(vuln_type, 'value'):
-        skip_types = {'memory_leak'}  # Missing-operation vulnerabilities
-        if vuln_type.value.lower().replace(' ', '_') in skip_types:
-            return PathVerificationResult(
-                reachable=True,  # Pass through
-                path_type="none",
-                details=f"Path verification skipped for missing-operation vulnerability type: {vuln_type.value}",
-                anchor_lines_checked=mapped_lines,
-                skipped=True,
-                skip_reason=f"Missing-operation vulnerability type: {vuln_type.value}"
-            )
-    
+    # --- Step 3: Build PDG and obtain CFG ---
     try:
-        # Build PDG from target code
-        pdg = PDGBuilder(target_code, lang="c").build()
-        slicer = Slicer(pdg, target_code)
-        
-        # Split anchors at midpoint (same strategy as slice_validation)
-        mid = max(len(validated_anchors) // 2, 1)
-        
-        # Create lightweight Anchor-like objects for check_path_reachability
-        # check_path_reachability expects Anchor objects with line_number and code_snippet
-        fwd_anchors = []
-        bwd_anchors = []
-        
-        for i, m in enumerate(validated_anchors):
-            if not m.is_mapped or m.target_line is None:
-                continue
-            
-            # Create a minimal Anchor-compatible object
-            anchor_obj = type('AnchorProxy', (), {
-                'line_number': m.target_line,
-                'code_snippet': m.target_code or '',
-                'type': m.anchor_type,
-            })()
-            
-            if i < mid:
-                fwd_anchors.append(anchor_obj)
-            else:
-                bwd_anchors.append(anchor_obj)
-        
-        if not fwd_anchors or not bwd_anchors:
-            return PathVerificationResult(
-                reachable=False,
-                path_type="none",
-                details="Could not split anchors into forward/backward halves",
-                anchor_lines_checked=mapped_lines,
-                skipped=True,
-                skip_reason="Anchor split failed"
-            )
-        
-        # Call the existing static path checking function
-        result = check_path_reachability(
-            fwd_anchors=fwd_anchors,
-            bwd_anchors=bwd_anchors,
-            pdg=pdg,
-            slicer=slicer,
-            require_data_flow=True
-        )
-        
-        return PathVerificationResult(
-            reachable=result["reachable"],
-            path_type=result["path_type"],
-            details=result["details"],
-            anchor_lines_checked=mapped_lines
-        )
-        
+        pdg_builder = PDGBuilder(target_code, lang="c")
+        pdg = pdg_builder.build()
+        cfg = pdg_builder.cfg  # CFG for temporal dependency checks
+        slicer = Slicer(pdg, target_code, start_line=func_start_line)
     except Exception as e:
-        print(f"    [PathVerification] Static analysis failed: {e}")
-        # On failure, don't block — let semantic analysis decide
+        print(f"    [PathVerification] PDG/CFG build failed: {e}")
         return PathVerificationResult(
-            reachable=True,  # Optimistic: don't reject on analysis failure
+            reachable=False,
             path_type="none",
-            details=f"Static path verification failed (error: {str(e)}), passing through to semantic analysis",
+            details=f"PDG/CFG construction failed: {str(e)}",
             anchor_lines_checked=mapped_lines,
             skipped=True,
-            skip_reason=f"Analysis error: {str(e)}"
+            skip_reason=f"PDG build error: {str(e)}"
         )
+    
+    # --- Step 4: Iterate over constraint chain, check each pair ---
+    pair_results = []
+    
+    for link in constraint_chain:
+        src_type = link.source.value.lower().strip()
+        tgt_type = link.target.value.lower().strip()
+        dep_type = link.dependency  # DependencyType enum
+        is_optional = link.is_optional
+        
+        src_mapping = anchor_map.get(src_type)
+        tgt_mapping = anchor_map.get(tgt_type)
+        
+        # Handle unmapped anchors
+        if not src_mapping or not tgt_mapping:
+            missing = []
+            if not src_mapping:
+                missing.append(f"source '{src_type}'")
+            if not tgt_mapping:
+                missing.append(f"target '{tgt_type}'")
+            
+            pair_result = PairCheckResult(
+                source_type=src_type,
+                target_type=tgt_type,
+                dependency_type=dep_type.value if hasattr(dep_type, 'value') else str(dep_type),
+                reachable=False,
+                is_optional=is_optional,
+                skipped=True,
+                skip_reason=f"Unmapped anchor(s): {', '.join(missing)}",
+                details=f"Cannot check {src_type} →{dep_type.value[0].lower() if hasattr(dep_type, 'value') else '?'} {tgt_type}: anchor(s) not mapped"
+            )
+            pair_results.append(pair_result)
+            print(f"    [PathVerification] Pair {src_type}→{tgt_type}: SKIPPED (unmapped: {', '.join(missing)})")
+            continue
+        
+        # Perform the actual dependency check
+        try:
+            result = check_single_pair(
+                src_line=src_mapping.target_line,
+                src_code=src_mapping.target_code or '',
+                tgt_line=tgt_mapping.target_line,
+                tgt_code=tgt_mapping.target_code or '',
+                dep_type=dep_type,
+                pdg=pdg,
+                cfg=cfg,
+                slicer=slicer
+            )
+            
+            pair_result = PairCheckResult(
+                source_type=src_type,
+                target_type=tgt_type,
+                dependency_type=dep_type.value if hasattr(dep_type, 'value') else str(dep_type),
+                source_line=src_mapping.target_line,
+                target_line=tgt_mapping.target_line,
+                reachable=result["reachable"],
+                path_type=result["path_type"],
+                details=result["details"],
+                is_optional=is_optional
+            )
+            pair_results.append(pair_result)
+            
+            dep_symbol = dep_type.value[0].lower() if hasattr(dep_type, 'value') else '?'
+            status = "REACHABLE" if result["reachable"] else "UNREACHABLE"
+            print(f"    [PathVerification] Pair {src_type} →{dep_symbol} {tgt_type} "
+                  f"(L{src_mapping.target_line}→L{tgt_mapping.target_line}): {status}")
+            
+        except Exception as e:
+            pair_result = PairCheckResult(
+                source_type=src_type,
+                target_type=tgt_type,
+                dependency_type=dep_type.value if hasattr(dep_type, 'value') else str(dep_type),
+                source_line=src_mapping.target_line,
+                target_line=tgt_mapping.target_line,
+                reachable=False,
+                is_optional=is_optional,
+                skipped=True,
+                skip_reason=f"Check error: {str(e)}",
+                details=f"Error checking {src_type}→{tgt_type}: {str(e)}"
+            )
+            pair_results.append(pair_result)
+            print(f"    [PathVerification] Pair {src_type}→{tgt_type}: ERROR ({e})")
+    
+    # --- Step 5: Aggregate results ---
+    # All REQUIRED (non-optional) pairs must be reachable or skipped-due-to-unmapped
+    required_pairs = [p for p in pair_results if not p.is_optional]
+    
+    if not required_pairs:
+        # All pairs are optional — pass through
+        return PathVerificationResult(
+            reachable=True,
+            path_type="none",
+            details="All constraint chain pairs are optional — path verification passed",
+            anchor_lines_checked=mapped_lines,
+            skipped=True,
+            skip_reason="All pairs optional",
+            pair_results=pair_results
+        )
+    
+    # A required pair fails if: not reachable AND not skipped (i.e., actually checked and failed)
+    failed_required = [p for p in required_pairs if not p.reachable and not p.skipped]
+    # A required pair is skipped if: skipped=True (unmapped anchor or check error)
+    skipped_required = [p for p in required_pairs if p.skipped]
+    passed_required = [p for p in required_pairs if p.reachable and not p.skipped]
+    
+    all_reachable = len(failed_required) == 0
+    
+    # Determine summary path type
+    path_types_found = set()
+    for p in pair_results:
+        if p.reachable and p.path_type != "none":
+            path_types_found.add(p.path_type)
+    
+    if len(path_types_found) == 0:
+        summary_path_type = "none"
+    elif len(path_types_found) == 1:
+        summary_path_type = path_types_found.pop()
+    else:
+        summary_path_type = "mixed"
+    
+    # Build details string
+    detail_parts = []
+    for p in pair_results:
+        dep_sym = p.dependency_type[0].lower() if p.dependency_type else '?'
+        status = "✓" if p.reachable else ("⊘" if p.skipped else "✗")
+        optional_tag = " (optional)" if p.is_optional else ""
+        detail_parts.append(f"{status} {p.source_type} →{dep_sym} {p.target_type}{optional_tag}")
+    
+    summary = f"Chain verification: {len(passed_required)}/{len(required_pairs)} required pairs passed"
+    if skipped_required:
+        summary += f", {len(skipped_required)} skipped"
+    if failed_required:
+        summary += f", {len(failed_required)} FAILED"
+    details = f"{summary}. [{', '.join(detail_parts)}]"
+    
+    return PathVerificationResult(
+        reachable=all_reachable,
+        path_type=summary_path_type,
+        details=details,
+        anchor_lines_checked=mapped_lines,
+        pair_results=pair_results
+    )
+
+
+# ==============================================================================
+# §3.3.2-E: LLM Override for Path Verification (Solution E)
+# ==============================================================================
+
+class PathLLMOverrideOutput(BaseModel):
+    """Output schema for LLM path override confirmation."""
+    anchor_relationships_hold: bool = Field(
+        description="Whether the anchor dependency relationships plausibly hold in the target code, "
+                    "even though static PDG analysis could not confirm them"
+    )
+    reasoning: str = Field(
+        description="Explanation of why the relationships hold or don't hold, "
+                    "referencing specific code patterns (e.g., loop-driven data flow, indirect dependencies)"
+    )
+    confidence: str = Field(
+        default="medium",
+        description="Confidence level: 'high', 'medium', or 'low'"
+    )
+
+
+def run_path_llm_override(
+    path_result: PathVerificationResult,
+    feature: 'PatchFeatures',
+    candidate: 'SearchResultItem',
+    target_code: str,
+    llm: 'ChatOpenAI',
+    func_start_line: int = 1
+) -> bool:
+    """
+    §3.3.2-E: LLM second-confirmation when static path verification fails.
+    
+    This function is called ONLY when:
+    1. Static path verification (§3.3.2) says unreachable
+    2. The failure involves DATA dependency pairs
+    
+    It asks the LLM to confirm whether the anchor dependency relationships
+    from the original vulnerability plausibly hold in the target code,
+    considering patterns that static analysis misses (e.g., loop-driven
+    data flow where variables are connected through control flow rather
+    than direct data edges).
+    
+    Cost: 1 LLM call (lightweight, no tools).
+    
+    Args:
+        path_result: The failed PathVerificationResult with pair_results
+        feature: PatchFeatures containing original vulnerability anchors
+        candidate: SearchResultItem with target function info
+        target_code: Target function source code
+        llm: LLM instance for the override check
+        func_start_line: Starting line number of the target function
+    
+    Returns:
+        True if LLM confirms relationships hold (override the static failure),
+        False if LLM agrees with static analysis (keep SAFE-Unreachable)
+    """
+    print("    [§3.3.2-E] LLM override check for failed static path verification...")
+    
+    # --- Build context about the failed pairs ---
+    failed_pairs_desc = []
+    for pr in path_result.pair_results:
+        if not pr.reachable and not pr.skipped:
+            failed_pairs_desc.append(
+                f"  - {pr.source_type} →{pr.dependency_type[0].lower()} {pr.target_type} "
+                f"(L{pr.source_line}→L{pr.target_line}): FAILED — {pr.details}"
+            )
+    failed_pairs_str = "\n".join(failed_pairs_desc) if failed_pairs_desc else "  [No failed pairs]"
+    
+    # --- Build original vulnerability anchor descriptions ---
+    sf = feature.slices.get(candidate.patch_func)
+    ref_anchor_lines = []
+    if sf and sf.pre_anchors:
+        for anchor in sf.pre_anchors:
+            atype = anchor.type.value if hasattr(anchor.type, 'value') else str(anchor.type)
+            snippet = anchor.code_snippet.strip()[:80] if anchor.code_snippet else 'N/A'
+            vars_str = ", ".join(anchor.variable_names) if anchor.variable_names else "N/A"
+            reasoning = anchor.reasoning[:120] if anchor.reasoning else "N/A"
+            ref_anchor_lines.append(
+                f"  [{atype.upper()}] L{anchor.line_number}: `{snippet}`\n"
+                f"    Variables: {vars_str}\n"
+                f"    Role: {reasoning}"
+            )
+    ref_anchors_str = "\n".join(ref_anchor_lines) if ref_anchor_lines else "  [No reference anchors]"
+    
+    # --- Get constraint chain description ---
+    constraint_chain_str = ""
+    try:
+        constraint = feature.taxonomy.constraint
+        if constraint:
+            constraint_chain_str = constraint.chain_str()
+    except Exception:
+        pass
+    
+    # --- Add line numbers to target code ---
+    target_lines = target_code.splitlines()
+    numbered_lines = []
+    for i, line in enumerate(target_lines):
+        line_no = func_start_line + i
+        numbered_lines.append(f"[{line_no:4d}] {line}")
+    target_code_with_lines = "\n".join(numbered_lines)
+    
+    # --- Build the LLM prompt ---
+    user_input = f"""## Static Path Verification Failed — LLM Override Check
+
+### Context
+Static PDG analysis (§3.3.2) could not confirm dependency paths between certain anchor pairs
+in the target code. However, static analysis has known limitations — it may miss indirect
+dependencies such as:
+- **Loop-driven data flow**: Variable A controls a loop condition, variable B is modified
+  inside the loop body. They are connected through CONTROL flow, not direct DATA edges.
+- **Pointer aliasing**: Two variables point to the same memory but static analysis doesn't
+  track the alias.
+- **Callback/indirect calls**: Data flows through function pointers or callbacks.
+
+### Failed Anchor Pairs (Static Analysis)
+{failed_pairs_str}
+
+### Original Vulnerability Anchors (Reference)
+**Constraint Chain**: {constraint_chain_str or 'Not available'}
+**Vulnerability Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
+**Root Cause**: {feature.semantics.root_cause}
+
+**Reference Anchors**:
+{ref_anchors_str}
+
+### Target Code
+```c
+{target_code_with_lines}
+```
+
+### Your Task
+Examine the target code and determine whether the failed anchor dependency relationships
+**plausibly hold** despite the static analysis failure. Consider:
+
+1. Are the anchor variables connected through any indirect mechanism (loop, control flow,
+   shared state, pointer aliasing)?
+2. Does the target code exhibit the same vulnerability pattern as the reference?
+3. Could the static analysis have missed the connection due to its known limitations?
+
+**IMPORTANT**: Be conservative. Only confirm if you can identify a clear mechanism
+connecting the anchors. If the variables are truly independent, confirm the static
+analysis result (relationships do NOT hold).
+"""
+
+    messages = [
+        SystemMessage(content="You are a vulnerability analysis expert. Your task is to determine whether "
+                     "anchor dependency relationships hold in target code when static analysis fails to confirm them. "
+                     "Output ONLY valid JSON matching the provided schema."),
+        HumanMessage(content=user_input)
+    ]
+    
+    # Request structured output
+    try:
+        schema_dict = PathLLMOverrideOutput.model_json_schema()
+        schema_str = json.dumps(schema_dict, indent=2)
+    except Exception:
+        schema_str = "Use the known JSON schema for PathLLMOverrideOutput."
+    
+    messages.append(HumanMessage(content=f"\nJSON SCHEMA:\n{schema_str}\n\nOutput ONLY the raw JSON."))
+    
+    # Single LLM call with retry
+    try:
+        ai_msg = llm_invoke_with_retry(llm, messages, max_retries=2, retry_delay=3.0)
+        
+        if ai_msg is None:
+            print("    [§3.3.2-E] LLM call failed, keeping static result (SAFE-Unreachable)")
+            return False
+        
+        raw_content = ai_msg.content
+        result = robust_json_parse(raw_content, PathLLMOverrideOutput, "PathLLMOverride", use_fallback=False)
+        
+        if result is None:
+            print("    [§3.3.2-E] JSON parsing failed, keeping static result (SAFE-Unreachable)")
+            return False
+        
+        override = result.anchor_relationships_hold
+        print(f"    [§3.3.2-E] LLM override result: relationships_hold={override}, "
+              f"confidence={result.confidence}, reason={result.reasoning[:100]}...")
+        
+        # Only override if confidence is not 'low'
+        if override and result.confidence == "low":
+            print("    [§3.3.2-E] Override rejected: confidence too low")
+            return False
+        
+        return override
+        
+    except Exception as e:
+        print(f"    [§3.3.2-E] LLM override error: {e}, keeping static result")
+        return False
 
 
 # ==============================================================================
@@ -2772,10 +3140,24 @@ ROUND1_JUDGE_PROMPT = """You are the **Judge** adjudicating **Round 1: Anchor Ma
 Your task is to evaluate Red's anchor mapping μ and Blue's refutation to decide if C_cons is satisfied.
 
 ## INPUTS PROVIDED
-1. **Red's Anchor Mappings**: Typed anchor mappings per constraint chain, with locatability and assumption info
-2. **Blue's Refutation**: Challenges to Red's mappings (semantic role, assumption, causality)
-3. **Target Code**: For verification
-4. **Vulnerability Semantics**: For context
+1. **Phase 2 Reference Anchor Definition**: The GROUND TRUTH anchor layout from the original vulnerability analysis
+2. **Red's Anchor Mappings**: Typed anchor mappings per constraint chain, with locatability and assumption info
+3. **Blue's Refutation**: Challenges to Red's mappings (semantic role, assumption, causality)
+4. **Target Code**: For verification
+5. **Vulnerability Semantics**: For context
+
+## CRITICAL: Reference Anchor Definition is Ground Truth
+
+The **Phase 2 Reference Anchor Definition** shows the original vulnerability's anchor layout.
+This is the GROUND TRUTH — the target mapping should mirror this layout. Key implications:
+
+- **If two anchors share the same line in the reference** (e.g., COMPUTATION and SINK both at L2139),
+  then the target mapping SHOULD also have them on the same line. This is NOT a mismatch.
+- **CONCEPTUAL anchors** (e.g., a SINK that manifests in a different function) may not have a direct
+  code location in the target function. If the reference SINK is conceptual with assumption_type=existence,
+  it means the actual sink is in a callee/caller — the target only needs to store the value that
+  eventually reaches the sink. Mapping it to the same storage line as COMPUTATION is CORRECT.
+- **Do NOT penalize mappings that faithfully reproduce the reference anchor layout.**
 
 ## YOUR TASK: Adjudicate C_cons (Anchor Mapping Quality)
 
@@ -2785,11 +3167,15 @@ Your task is to evaluate Red's anchor mapping μ and Blue's refutation to decide
    - CONCRETE anchors: Should have high confidence mappings
    - ASSUMED anchors: Must verify assumption in target context
    - CONCEPTUAL anchors: Inferred mappings need strong reasoning
+   - **Compare against reference anchor definition** — if the reference has a conceptual SINK
+     at the same line as COMPUTATION, the target mapping should follow the same pattern
 
 2. **Assumption Verification** (for ASSUMED/CONCEPTUAL anchors):
    - Did Red properly verify the assumption?
    - Did Blue successfully show the assumption fails in target?
    - Key assumption types to check: CONTROLLABILITY, SEMANTIC, EXISTENCE, REACHABILITY
+   - **EXISTENCE assumptions**: If the reference says "sink exists in callee", check if the
+     target has a similar callee that uses the stored value
 
 3. **CHAIN CAUSALITY CHECK (CRITICAL)**:
    - Can chain anchors execute in the required order?
@@ -2799,6 +3185,8 @@ Your task is to evaluate Red's anchor mapping μ and Blue's refutation to decide
      * Both anchors are cleanup/deallocation (no vulnerable use)
      * Different variables with no flow connection
    - If Blue raises "Causality Violation" and it's valid → C_cons NOT satisfied
+   - **NOTE**: Two anchors on the same line is NOT a causality violation if the reference
+     defines them that way (e.g., an assignment is both computation and storage-to-sink)
 
 4. **Optional Anchors**: Missing optional anchors do NOT fail C_cons
 
@@ -2809,6 +3197,9 @@ Your task is to evaluate Red's anchor mapping μ and Blue's refutation to decide
 - If chain causality fails → C_cons NOT satisfied
 - If Blue's refutation is weak/speculative → Give benefit of doubt to Red
 - If mappings are valid but Blue raises tool-dependent concerns → PROCEED to Round 2
+- **If Blue claims "anchor X not found" but the reference defines it as CONCEPTUAL with
+  an existence assumption → this is NOT a valid refutation** (the anchor is expected to
+  be in a different function)
 
 ## VERDICT OPTIONS
 - **SAFE-Mismatch**: C_cons is NOT satisfied (terminate verification)
@@ -2818,6 +3209,8 @@ Your task is to evaluate Red's anchor mapping μ and Blue's refutation to decide
 Provide verdict with validated anchor mappings for Round 2.
 **IMPORTANT**: If Blue refuted causality or assumption validity and it's correct,
 you MUST set c_cons_satisfied=False and verdict='SAFE-Mismatch'.
+**EQUALLY IMPORTANT**: If the reference anchor definition supports Red's mapping layout
+(e.g., shared lines, conceptual anchors), do NOT let Blue's refutation override the ground truth.
 """
 
 # ==============================================================================
@@ -3981,7 +4374,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
 
             # [Modified] Use file + func as unique key to prevent same-named functions in different files from being skipped by mistake
             # [DEBUG]
-            # if candidate.target_func != 'ivr_read_header':
+            # if candidate.target_func != 'sbp_make_tpg':
             #     continue
             patch_key = f'{candidate.patch_file}::{candidate.patch_func}'
             unique_key = f"{candidate.target_file}::{candidate.target_func}"
@@ -4238,38 +4631,66 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             
             # === Step 2 (§3.3.2): Path Verification (Pure Static, No LLM) ===
             path_result = run_path_verification(
-                round1_judge, target_context, feature, candidate
+                round1_judge, target_context, feature, candidate,
+                func_start_line=func_start_line
             )
             print(f"    [§3.3.2] Path verification: reachable={path_result.reachable}, type={path_result.path_type}"
                   + (f", skipped={path_result.skip_reason}" if path_result.skipped else ""))
             
             # Path verification early exit: unreachable
+            # Solution E: Before giving up, try LLM override for failed DATA pairs
             if not path_result.reachable and not path_result.skipped:
-                print(f"    [§3.3.2-Exit] Path unreachable: {path_result.details}")
-                finding = VulnerabilityFinding(
-                    vul_id=state["vul_id"],
-                    cwe_id=feature.semantics.cwe_id or "Unknown",
-                    cwe_name=feature.semantics.cwe_name or "Unknown",
-                    group_id=feature.group_id,
-                    repo_path=candidate.repo_path,
-                    patch_file=candidate.patch_file,
-                    patch_func=candidate.patch_func,
-                    target_file=candidate.target_file,
-                    target_func=candidate.target_func,
-                    analysis_report=f"[§3.3.2 Exit] Static path verification failed: {path_result.details}",
-                    is_vulnerable=False,
-                    verdict_category="SAFE-Unreachable",
-                    involved_functions=[],
-                    peer_functions=peer_names_list,
-                    anchor_evidence=[],
-                    trace=[],
-                    defense_mechanism=None,
-                    constraint_status=f"C_cons=True, C_reach=False (static)",
-                    path_verification=path_result
+                # Check if any failed pair involves DATA dependency — candidate for LLM override
+                has_failed_data_pair = any(
+                    not pr.reachable and not pr.skipped and pr.dependency_type.upper() == "DATA"
+                    for pr in path_result.pair_results
                 )
-                findings.append(finding)
-                current_threshold += THRESHOLD_PENALTY_STEP
-                continue  # Skip to next candidate
+                
+                llm_override = False
+                if has_failed_data_pair:
+                    llm_override = run_path_llm_override(
+                        path_result, feature, candidate, target_context,
+                        llm, func_start_line=func_start_line
+                    )
+                
+                if llm_override:
+                    # LLM confirmed relationships hold — override static failure, continue to §3.3.3
+                    print(f"    [§3.3.2-Override] LLM confirmed anchor relationships hold despite static failure")
+                    # Update path_result to reflect the override
+                    path_result = PathVerificationResult(
+                        reachable=True,
+                        path_type="llm_override",
+                        details=f"[LLM Override] Static analysis failed but LLM confirmed relationships hold. Original: {path_result.details}",
+                        anchor_lines_checked=path_result.anchor_lines_checked,
+                        pair_results=path_result.pair_results
+                    )
+                else:
+                    # Static failure confirmed — exit with SAFE-Unreachable
+                    print(f"    [§3.3.2-Exit] Path unreachable: {path_result.details}")
+                    finding = VulnerabilityFinding(
+                        vul_id=state["vul_id"],
+                        cwe_id=feature.semantics.cwe_id or "Unknown",
+                        cwe_name=feature.semantics.cwe_name or "Unknown",
+                        group_id=feature.group_id,
+                        repo_path=candidate.repo_path,
+                        patch_file=candidate.patch_file,
+                        patch_func=candidate.patch_func,
+                        target_file=candidate.target_file,
+                        target_func=candidate.target_func,
+                        analysis_report=f"[§3.3.2 Exit] Static path verification failed (LLM override {'not attempted (no DATA pairs)' if not has_failed_data_pair else 'also rejected'}): {path_result.details}",
+                        is_vulnerable=False,
+                        verdict_category="SAFE-Unreachable",
+                        involved_functions=[],
+                        peer_functions=peer_names_list,
+                        anchor_evidence=[],
+                        trace=[],
+                        defense_mechanism=None,
+                        constraint_status=f"C_cons=True, C_reach=False (static{'+llm' if has_failed_data_pair else ''})",
+                        path_verification=path_result
+                    )
+                    findings.append(finding)
+                    current_threshold += THRESHOLD_PENALTY_STEP
+                    continue  # Skip to next candidate
             
             # === Step 3 (§3.3.3): Multi-Agent Semantic Analysis (With Tools) ===
             # Multi-round Red/Blue/Judge debate (paper: 3 rounds)

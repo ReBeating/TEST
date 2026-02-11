@@ -94,6 +94,24 @@ def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_fa
 # CrossFunctionInfo removed — cross_function_info is now a plain dict field on Anchor.
 
 
+class AnchorDecision(BaseModel):
+    """Decision for a single anchor during deduplication."""
+    line_number: int = Field(description="Anchor line number")
+    anchor_type: str = Field(description="Anchor type (e.g., 'object', 'access')")
+    keep: bool = Field(description="Whether to keep this anchor")
+    reason: str = Field(description="Reason for the decision")
+
+
+class AnchorDeduplicationResult(BaseModel):
+    """Result of anchor deduplication by LLM."""
+    decisions: List[AnchorDecision] = Field(
+        description="Per-anchor keep/reject decisions"
+    )
+    reasoning: str = Field(
+        description="Overall reasoning for the deduplication decisions"
+    )
+
+
 class AnchorResult(BaseModel):
     """
     Anchor identification result (paper §3.1.3 Algorithm 1 output).
@@ -677,6 +695,19 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
                         print(f"      [AnchorAnalyzer] ⚠️ REJECTED anchor type '{r.type.value}' (not in allowed types {allowed_types}): L{r.line_number} {r.code_snippet}")
                     result.anchors = filtered
             
+            # 10.5 Conditional Anchor Deduplication (Patch Relevance Filter)
+            if typed_anchors and self._has_duplicate_anchor_types(result.anchors, typed_anchors):
+                print(f"      [AnchorAnalyzer] 🔍 Duplicate anchor types detected, running deduplication...")
+                deduped = self._deduplicate_anchors(
+                    anchors=result.anchors,
+                    diff_text=diff_text,
+                    code_content=code_content,
+                    start_line=start_line,
+                    typed_anchors=typed_anchors
+                )
+                if deduped is not None:
+                    result.anchors = deduped
+            
             # 11. Anchor Type Completeness Check
             found_types = set(a.type.value for a in result.anchors)
             expected_types = set(a.type.value for a in typed_anchors) if typed_anchors else set()
@@ -910,3 +941,197 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
                 affected_lines.add(pos + offset)
         
         return affected_lines
+    
+    # ==============================================================================
+    # Anchor Deduplication (Patch Relevance Filter)
+    # ==============================================================================
+    
+    def _has_duplicate_anchor_types(
+        self,
+        anchors: List[Anchor],
+        category_anchors: List[Anchor]
+    ) -> bool:
+        """
+        Check if any anchor type has more instances than expected by the category.
+        
+        Triggers deduplication when the LLM found multiple instances of the same
+        anchor type (e.g., 2 object + 2 access when category expects 1 + 1).
+        
+        Args:
+            anchors: Actual anchors found by LLM
+            category_anchors: Expected anchor types from VulnerabilityCategory
+            
+        Returns:
+            True if deduplication is needed
+        """
+        from collections import Counter
+        
+        actual_counts = Counter(a.type.value for a in anchors)
+        expected_counts = Counter(a.type.value for a in category_anchors)
+        
+        for anchor_type, actual_count in actual_counts.items():
+            expected = expected_counts.get(anchor_type, 1)
+            if actual_count > expected:
+                print(f"      [AnchorAnalyzer] Duplicate detected: type '{anchor_type}' "
+                      f"has {actual_count} instances (expected {expected})")
+                return True
+        
+        return False
+    
+    def _deduplicate_anchors(
+        self,
+        anchors: List[Anchor],
+        diff_text: str,
+        code_content: str,
+        start_line: int,
+        typed_anchors: List[Anchor]
+    ) -> Optional[List[Anchor]]:
+        """
+        Use LLM to select the correct anchor instances when duplicates exist.
+        
+        Provides the patch diff and all anchors to the LLM with deduplication rules,
+        asking it to decide which anchors are truly connected to this specific patch.
+        
+        Args:
+            anchors: All anchors (including duplicates)
+            diff_text: Patch diff text
+            code_content: Full function code (pre-patch)
+            start_line: Starting line number of the code
+            typed_anchors: Expected anchor types from category
+            
+        Returns:
+            Filtered anchor list, or None if deduplication fails (caller keeps original)
+        """
+        # Format anchors for LLM
+        def _fmt_anchor(i: int, a: Anchor) -> str:
+            reasoning_str = (a.reasoning[:100] + "...") if len(a.reasoning) > 100 else a.reasoning
+            return f"  {i+1}. Line {a.line_number} [{a.type.value}]: {a.code_snippet}  (reasoning: {reasoning_str})"
+        
+        anchors_text = "\n".join([_fmt_anchor(i, a) for i, a in enumerate(anchors)])
+        
+        # Format code with line numbers (compact: only show ±5 lines around each anchor)
+        anchor_lines = {a.line_number for a in anchors}
+        lines = code_content.splitlines()
+        context_lines = set()
+        for al in anchor_lines:
+            rel = al - start_line
+            for offset in range(-5, 6):
+                idx = rel + offset
+                if 0 <= idx < len(lines):
+                    context_lines.add(idx)
+        
+        code_context = "\n".join([
+            f"[{start_line + i:4d}] {lines[i]}"
+            for i in sorted(context_lines)
+            if 0 <= i < len(lines)
+        ])
+        
+        # Expected types
+        from collections import Counter
+        expected_counts = Counter(a.type.value for a in typed_anchors)
+        expected_str = ", ".join([f"{t}: {c}" for t, c in expected_counts.items()])
+        
+        prompt = f"""You are a Patch Relevance Analyst. A vulnerability anchor discovery agent found
+MULTIPLE instances of the same anchor type. A patch fixes ONE specific vulnerability instance.
+You must select ONLY the anchors that belong to the vulnerability instance THIS PATCH fixes.
+
+### Patch Diff
+```diff
+{diff_text}
+```
+
+### Code Context (around anchor locations)
+```c
+{code_context}
+```
+
+### All Anchors Found (some may be duplicates)
+{anchors_text}
+
+### Expected Anchor Types (from vulnerability category)
+{expected_str}
+
+### Deduplication Rules
+
+**Rule 1: Direct Patch Connection**
+An anchor is patch-relevant if:
+- The anchor line IS a patch-modified line (deleted or added), OR
+- The anchor line is DIRECTLY adjacent to a patch-modified line (within ±2 lines), OR
+- The anchor shares a variable that appears in a patch-modified line AND they are
+  on the same execution path (not in different branches/loops)
+
+**Rule 2: Same Execution Path**
+Two anchors forming a chain (e.g., object→access) must be on the SAME execution
+path as the patch modification. If the patch modifies code OUTSIDE a loop, anchors
+INSIDE the loop are a different vulnerability instance (and vice versa).
+
+**Rule 3: One Chain Per Patch**
+For each anchor type that has duplicates, select the instance that has the
+STRONGEST connection to the patch:
+- Prefer anchors on patch-modified lines
+- Prefer anchors sharing variables with patch-modified lines
+- Prefer anchors on the same execution path as patch modifications
+- Reject anchors in different branches/loops that the patch does not touch
+
+**IMPORTANT**: If multiple instances of the same type are ALL genuinely connected
+to the same patch (e.g., two sources feeding the same patched computation),
+keep them all. Only reject instances that are SEPARATE vulnerability instances
+requiring their own separate patch.
+
+### Task
+For each anchor, decide: keep (true) or reject (false), with a reason.
+"""
+        
+        try:
+            dedup_llm = self.llm.with_structured_output(AnchorDeduplicationResult)
+            dedup_result: AnchorDeduplicationResult = retry_on_connection_error(
+                lambda: dedup_llm.invoke(prompt),
+                max_retries=3
+            )
+            
+            # Build decision map: (line_number, anchor_type) -> keep
+            decision_map = {}
+            for d in dedup_result.decisions:
+                decision_map[(d.line_number, d.anchor_type)] = (d.keep, d.reason)
+            
+            # Apply decisions
+            kept = []
+            rejected = []
+            for anchor in anchors:
+                key = (anchor.line_number, anchor.type.value)
+                if key in decision_map:
+                    keep, reason = decision_map[key]
+                    if keep:
+                        kept.append(anchor)
+                        print(f"      [Dedup] ✅ KEEP L{anchor.line_number} [{anchor.type.value}]: {reason}")
+                    else:
+                        rejected.append(anchor)
+                        print(f"      [Dedup] ❌ REJECT L{anchor.line_number} [{anchor.type.value}]: {reason}")
+                else:
+                    # No decision for this anchor — keep by default
+                    kept.append(anchor)
+                    print(f"      [Dedup] ⚠️ No decision for L{anchor.line_number} [{anchor.type.value}], keeping by default")
+            
+            print(f"      [Dedup] Result: {len(kept)} kept, {len(rejected)} rejected")
+            print(f"      [Dedup] Reasoning: {dedup_result.reasoning}")
+            
+            # Safety valve: ensure we still have at least one anchor per required type
+            kept_types = set(a.type.value for a in kept)
+            required_types = set(a.type.value for a in typed_anchors if not a.is_optional)
+            missing_required = required_types - kept_types
+            
+            if missing_required:
+                print(f"      [Dedup] ⚠️ Safety valve: missing required types {missing_required} after dedup")
+                print(f"      [Dedup] Falling back to original anchors")
+                return None  # Signal caller to keep original
+            
+            if not kept:
+                print(f"      [Dedup] ⚠️ Safety valve: no anchors kept, falling back to original")
+                return None
+            
+            return kept
+            
+        except Exception as e:
+            print(f"      [Dedup] ⚠️ LLM deduplication failed: {e}")
+            print(f"      [Dedup] Falling back to original anchors")
+            return None

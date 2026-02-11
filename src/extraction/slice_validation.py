@@ -21,7 +21,7 @@ import time
 import networkx as nx
 from typing import List, Set, Dict, Any, Optional
 from extraction.anchor_analyzer import AnchorResult
-from core.categories import Anchor
+from core.categories import Anchor, DependencyType
 from core.navigator import CodeNavigator
 
 
@@ -268,6 +268,296 @@ def check_path_reachability(
             "reachable": False,
             "path_type": "none",
             "details": "No CONTROL flow path found between anchor chain halves"
+        }
+
+
+def check_single_pair(
+    src_line: int,
+    src_code: str,
+    tgt_line: int,
+    tgt_code: str,
+    dep_type: 'DependencyType',
+    pdg: nx.MultiDiGraph,
+    cfg: nx.DiGraph,
+    slicer,  # Slicer instance
+) -> Dict[str, Any]:
+    """
+    Check dependency between a single anchor pair from the constraint chain.
+    
+    Implements §3.3.2 per-pair verification: for each ChainLink (a_i, a_j, δ),
+    check whether the expected dependency type δ exists between the mapped
+    positions μ(a_i) and μ(a_j) in the target code's PDG/CFG.
+    
+    Dependency type strategies:
+    - DATA: Check DATA edge paths in PDG (e.g., alloc →d dealloc, source →d sink)
+    - TEMPORAL: Check CFG reachability (e.g., dealloc →t use, alloc →t exit)
+    - CONTROL: Check CONTROL edge paths in PDG (e.g., shared →c access)
+    
+    Args:
+        src_line: Source anchor's mapped target line number
+        src_code: Source anchor's mapped target code snippet
+        tgt_line: Target anchor's mapped target line number
+        tgt_code: Target anchor's mapped target code snippet
+        dep_type: Expected dependency type (DependencyType enum)
+        pdg: Program Dependence Graph (MultiDiGraph with DATA/CONTROL edges)
+        cfg: Control Flow Graph (DiGraph, from PDGBuilder.cfg)
+        slicer: Slicer instance for node location mapping
+        
+    Returns:
+        {
+            "reachable": bool,
+            "path_type": "data_flow" | "temporal" | "control_flow" | "none",
+            "details": str
+        }
+    """
+    # Map source and target lines to PDG node IDs
+    src_nodes = slicer.get_nodes_by_location(src_line, src_code)
+    tgt_nodes = slicer.get_nodes_by_location(tgt_line, tgt_code)
+    
+    if not src_nodes:
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"Could not map source anchor (line {src_line}) to PDG nodes"
+        }
+    
+    if not tgt_nodes:
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"Could not map target anchor (line {tgt_line}) to PDG nodes"
+        }
+    
+    src_node_ids = set(src_nodes)
+    tgt_node_ids = set(tgt_nodes)
+    
+    if dep_type == DependencyType.DATA:
+        # Strategy: Check DATA edge paths in PDG
+        return _check_data_path(src_node_ids, tgt_node_ids, pdg, src_line, tgt_line)
+    
+    elif dep_type == DependencyType.TEMPORAL:
+        # Strategy: Check CFG reachability (sequential execution order)
+        return _check_temporal_path(src_node_ids, tgt_node_ids, cfg, pdg, src_line, tgt_line)
+    
+    elif dep_type == DependencyType.CONTROL:
+        # Strategy: Check CONTROL edge paths in PDG
+        return _check_control_path(src_node_ids, tgt_node_ids, pdg, src_line, tgt_line)
+    
+    else:
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"Unknown dependency type: {dep_type}"
+        }
+
+
+def _check_data_path(
+    src_nodes: Set[str],
+    tgt_nodes: Set[str],
+    pdg: nx.MultiDiGraph,
+    src_line: int,
+    tgt_line: int
+) -> Dict[str, Any]:
+    """Check DATA edge path in PDG between source and target nodes.
+    
+    Uses a two-tier strategy:
+    1. Pure DATA path: Check only DATA edges in PDG (strict)
+    2. Mixed DATA+CONTROL fallback: If pure DATA fails, check on full PDG
+       (DATA + CONTROL edges). This handles loop-driven vulnerability patterns
+       where source controls a loop condition (DATA) which in turn controls
+       the computation (CONTROL), e.g.:
+         gf_fgets(szLine) → while(szLine[i+1]) → i++
+         source ──DATA──→ loop_cond ──CONTROL──→ computation
+    """
+    try:
+        # === Tier 1: Pure DATA path check (strict) ===
+        data_edges = [(u, v, k) for u, v, k, data in pdg.edges(keys=True, data=True)
+                     if data.get('relationship') == 'DATA']
+        if not data_edges:
+            # No DATA edges at all — skip to mixed fallback
+            pass
+        else:
+            data_graph = pdg.edge_subgraph(data_edges)
+            
+            for src_nid in src_nodes:
+                if src_nid not in data_graph.nodes:
+                    continue
+                for tgt_nid in tgt_nodes:
+                    if tgt_nid not in data_graph.nodes:
+                        continue
+                    try:
+                        if nx.has_path(data_graph, src_nid, tgt_nid):
+                            return {
+                                "reachable": True,
+                                "path_type": "data_flow",
+                                "details": f"DATA path: line {src_line} (node {src_nid}) → line {tgt_line} (node {tgt_nid})"
+                            }
+                    except (nx.NetworkXError, nx.NodeNotFound):
+                        continue
+        
+        # === Tier 2: Mixed DATA+CONTROL fallback ===
+        # Handles loop-driven patterns where source → loop_condition (DATA)
+        # → loop_body/computation (CONTROL). Common in buffer overflow via
+        # unbounded loop index (e.g., CVE-2021-40574).
+        try:
+            full_digraph = nx.DiGraph()
+            for n, d in pdg.nodes(data=True):
+                full_digraph.add_node(n, **d)
+            for u, v, _k, d in pdg.edges(keys=True, data=True):
+                if d.get('relationship') in ('DATA', 'CONTROL'):
+                    if not full_digraph.has_edge(u, v):
+                        full_digraph.add_edge(u, v, **d)
+            
+            for src_nid in src_nodes:
+                if src_nid not in full_digraph.nodes:
+                    continue
+                for tgt_nid in tgt_nodes:
+                    if tgt_nid not in full_digraph.nodes:
+                        continue
+                    try:
+                        if nx.has_path(full_digraph, src_nid, tgt_nid):
+                            return {
+                                "reachable": True,
+                                "path_type": "data_flow_mixed",
+                                "details": f"Mixed DATA+CONTROL path: line {src_line} (node {src_nid}) → line {tgt_line} (node {tgt_nid}) (via control bridge)"
+                            }
+                    except (nx.NetworkXError, nx.NodeNotFound):
+                        continue
+        except Exception:
+            pass  # Mixed fallback failure is not critical
+        
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"No DATA flow path from line {src_line} to line {tgt_line}"
+        }
+    except Exception as e:
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"DATA path check error: {e}"
+        }
+
+
+def _check_temporal_path(
+    src_nodes: Set[str],
+    tgt_nodes: Set[str],
+    cfg: nx.DiGraph,
+    pdg: nx.MultiDiGraph,
+    src_line: int,
+    tgt_line: int
+) -> Dict[str, Any]:
+    """
+    Check TEMPORAL dependency via CFG reachability.
+    
+    Temporal dependency (→t) means "a_i can execute before a_j" in the control flow.
+    This is checked on the CFG (not PDG), since PDG's CONTROL edges represent
+    control dependence (not sequential flow).
+    
+    The CFG nodes share the same IDs as PDG nodes (built from the same CFGBuilder),
+    so we can directly use PDG node IDs to query the CFG.
+    """
+    try:
+        # First try: direct CFG reachability using PDG node IDs
+        for src_nid in src_nodes:
+            if src_nid not in cfg.nodes:
+                continue
+            for tgt_nid in tgt_nodes:
+                if tgt_nid not in cfg.nodes:
+                    continue
+                try:
+                    if nx.has_path(cfg, src_nid, tgt_nid):
+                        return {
+                            "reachable": True,
+                            "path_type": "temporal",
+                            "details": f"TEMPORAL path (CFG): line {src_line} (node {src_nid}) → line {tgt_line} (node {tgt_nid})"
+                        }
+                except (nx.NetworkXError, nx.NodeNotFound):
+                    continue
+        
+        # Fallback: line-number based CFG lookup
+        # CFG nodes have 'start_line' attribute; find nodes matching our lines
+        cfg_src_nodes = set()
+        cfg_tgt_nodes = set()
+        for n, d in cfg.nodes(data=True):
+            node_line = d.get('start_line', 0)
+            if node_line == src_line:
+                cfg_src_nodes.add(n)
+            elif node_line == tgt_line:
+                cfg_tgt_nodes.add(n)
+        
+        if cfg_src_nodes and cfg_tgt_nodes:
+            for src_nid in cfg_src_nodes:
+                for tgt_nid in cfg_tgt_nodes:
+                    try:
+                        if nx.has_path(cfg, src_nid, tgt_nid):
+                            return {
+                                "reachable": True,
+                                "path_type": "temporal",
+                                "details": f"TEMPORAL path (CFG fallback): line {src_line} → line {tgt_line}"
+                            }
+                    except (nx.NetworkXError, nx.NodeNotFound):
+                        continue
+        
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"No TEMPORAL (CFG) path from line {src_line} to line {tgt_line}"
+        }
+    except Exception as e:
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"TEMPORAL path check error: {e}"
+        }
+
+
+def _check_control_path(
+    src_nodes: Set[str],
+    tgt_nodes: Set[str],
+    pdg: nx.MultiDiGraph,
+    src_line: int,
+    tgt_line: int
+) -> Dict[str, Any]:
+    """Check CONTROL edge path in PDG between source and target nodes."""
+    try:
+        control_edges = [(u, v, k) for u, v, k, data in pdg.edges(keys=True, data=True)
+                        if data.get('relationship') == 'CONTROL']
+        if not control_edges:
+            return {
+                "reachable": False,
+                "path_type": "none",
+                "details": f"No CONTROL edges in PDG; cannot verify control dep from line {src_line} to {tgt_line}"
+            }
+        
+        control_graph = pdg.edge_subgraph(control_edges)
+        
+        for src_nid in src_nodes:
+            if src_nid not in control_graph.nodes:
+                continue
+            for tgt_nid in tgt_nodes:
+                if tgt_nid not in control_graph.nodes:
+                    continue
+                try:
+                    if nx.has_path(control_graph, src_nid, tgt_nid):
+                        return {
+                            "reachable": True,
+                            "path_type": "control_flow",
+                            "details": f"CONTROL path: line {src_line} (node {src_nid}) → line {tgt_line} (node {tgt_nid})"
+                        }
+                except (nx.NetworkXError, nx.NodeNotFound):
+                    continue
+        
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"No CONTROL dep path from line {src_line} to line {tgt_line}"
+        }
+    except Exception as e:
+        return {
+            "reachable": False,
+            "path_type": "none",
+            "details": f"CONTROL path check error: {e}"
         }
 
 

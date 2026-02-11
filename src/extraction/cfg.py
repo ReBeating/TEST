@@ -563,9 +563,14 @@ class CFGBuilder:
             current_exits = exits
         return first_entry, current_exits
 
-    def _process_condition(self, node: Node) -> Tuple[str, List[str], List[str]]:
+    def _process_condition(self, node: Node, cond_range: Optional[Tuple[int, int]] = None) -> Tuple[str, List[str], List[str]]:
+        # On the first (top-level) call, capture the full condition's line range
+        # so that every leaf PREDICATE node covers the entire compound condition.
+        if cond_range is None:
+            cond_range = (node.start_point[0] + 1, node.end_point[0] + 1)
+
         if node.type == 'parenthesized_expression': # Handle (a && b)
-            return self._process_condition(node.children[1])
+            return self._process_condition(node.children[1], cond_range)
             
         if node.type == 'binary_expression':
             op = node.child_by_field_name('operator').type
@@ -573,21 +578,21 @@ class CFGBuilder:
             right = node.child_by_field_name('right')
             
             if op == '&&':
-                l_entry, l_true, l_false = self._process_condition(left)
-                r_entry, r_true, r_false = self._process_condition(right)
+                l_entry, l_true, l_false = self._process_condition(left, cond_range)
+                r_entry, r_true, r_false = self._process_condition(right, cond_range)
                 for ex in l_true: self.cfg.add_edge(ex, r_entry, type=CFGEdgeType.TRUE)
                 return l_entry, r_true, l_false + r_false
             
             elif op == '||':
-                l_entry, l_true, l_false = self._process_condition(left)
-                r_entry, r_true, r_false = self._process_condition(right)
+                l_entry, l_true, l_false = self._process_condition(left, cond_range)
+                r_entry, r_true, r_false = self._process_condition(right, cond_range)
                 for ex in l_false: self.cfg.add_edge(ex, r_entry, type=CFGEdgeType.FALSE)
                 return l_entry, l_true + r_true, r_false
 
-        nid = self._create_node(node, CFGNodeType.PREDICATE)
+        nid = self._create_node(node, CFGNodeType.PREDICATE, cond_range=cond_range)
         return nid, [nid], [nid]
 
-    def _create_node(self, node: Optional[Node], type: CFGNodeType, code: str = None, extra_defs: Set[str] = None) -> str:
+    def _create_node(self, node: Optional[Node], type: CFGNodeType, code: str = None, extra_defs: Set[str] = None, cond_range: Optional[Tuple[int, int]] = None) -> str:
         nid = f"node_{self.node_counter}"
         self.node_counter += 1
         
@@ -597,6 +602,14 @@ class CFGBuilder:
         
         start_line = node.start_point[0] + 1 if node else 0
         end_line = node.end_point[0] + 1 if node else 0
+        
+        # [FIX] For PREDICATE nodes from compound conditions (&&/||),
+        # expand line range to cover the full parent condition expression.
+        # This ensures that when any sub-expression of a multi-line condition
+        # is included in a slice, all lines of the condition are emitted.
+        if cond_range is not None and type == CFGNodeType.PREDICATE:
+            start_line = min(start_line, cond_range[0]) if start_line > 0 else cond_range[0]
+            end_line = max(end_line, cond_range[1])
         ast_type = node.type if node else "virtual"
         
         # Initial empty dictionary
