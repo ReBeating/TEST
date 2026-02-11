@@ -5,6 +5,7 @@ import sqlite3
 import hashlib
 import threading
 import re
+import sys
 from typing import List, Dict, Tuple
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from tqdm import tqdm
@@ -15,6 +16,14 @@ from core.configs import BENCHMARK_DICT_PATH, DATABASE_DIR_PATH, BENCHMARK_VUL_P
 from core.utils import read_json, read_text
 import pandas as pd
 from rapidfuzz import fuzz
+
+
+class DatabaseNotFoundError(RuntimeError):
+    """Raised when a required pre-built database is missing.
+    
+    The user must run `python build_database.py` before using the pipeline.
+    """
+    pass
 
 # ==========================================
 # Tokenizer Helper
@@ -327,6 +336,23 @@ class GlobalSymbolIndexer:
                     should_build = True
 
         if should_build:
+            if not force_rebuild:
+                # Database missing or corrupted — refuse to auto-build during pipeline runs
+                print(
+                    f"\n{'='*70}\n"
+                    f"  ERROR: Symbol database not found for repository:\n"
+                    f"    {self.repo_path}\n\n"
+                    f"  Expected database file:\n"
+                    f"    {self.db_file}\n\n"
+                    f"  Please build the database first by running:\n"
+                    f"    python build_database.py -m 0day\n"
+                    f"{'='*70}\n",
+                    file=sys.stderr,
+                )
+                raise DatabaseNotFoundError(
+                    f"Symbol database not found: {self.db_file}. "
+                    f"Run 'python build_database.py -m 0day' first."
+                )
             self.build_index()
 
     def build_index(self):
@@ -885,24 +911,45 @@ class BenchmarkSymbolIndexer:
         conn.close()
         print("[*] Benchmark index built.")
             
-    def load_index(self):
+    def load_index(self, force_rebuild: bool = False):
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
-            
-        if not os.path.exists(self.db_file):
+
+        should_build = force_rebuild
+        if not should_build:
+            if not os.path.exists(self.db_file):
+                should_build = True
+            else:
+                try:
+                    conn = self._get_conn()
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='benchmark_symbols'")
+                    if cursor.fetchone()[0] == 0:
+                        should_build = True
+                    else:
+                        cursor.execute("SELECT code_content FROM benchmark_symbols LIMIT 1")
+                        # print(f"[*] Benchmark database found: {self.db_file}")
+                except Exception:
+                    should_build = True
+
+        if should_build:
+            if not force_rebuild:
+                # Database missing or corrupted — refuse to auto-build during pipeline runs
+                print(
+                    f"\n{'='*70}\n"
+                    f"  ERROR: Benchmark database not found!\n\n"
+                    f"  Expected database file:\n"
+                    f"    {self.db_file}\n\n"
+                    f"  Please build the database first by running:\n"
+                    f"    python build_database.py -m 1day\n"
+                    f"{'='*70}\n",
+                    file=sys.stderr,
+                )
+                raise DatabaseNotFoundError(
+                    f"Benchmark database not found: {self.db_file}. "
+                    f"Run 'python build_database.py -m 1day' first."
+                )
             self.build_index()
-        else:
-            try:
-                conn = self._get_conn()
-                cursor = conn.cursor()
-                cursor.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='benchmark_symbols'")
-                if cursor.fetchone()[0] == 0:
-                    self.build_index()
-                else:
-                    cursor.execute("SELECT code_content FROM benchmark_symbols LIMIT 1")
-                    # print(f"[*] Benchmark database found: {self.db_file}")
-            except Exception:
-                self.build_index()
 
     def search_functions_by_tokens(self, vul_id: str, raw_inputs: List[str], limit: int = 100) -> List[Tuple[str, str, str, int]]:
         """

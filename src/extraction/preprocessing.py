@@ -143,14 +143,13 @@ class SlicePreprocessor:
                     ln = self.aligner.find_line_number(patch.new_code, content)
                     if ln > 0: add_instr("NEW", ln, content, "Diff-Added")
 
-        # --- Strategy 2: Semantic Anchors (From Anchor Roles) ---
-        # Note: We now derive semantic hints from origin_roles and impact_roles
-        # These provide conceptual guidance for anchor identification
+        # --- Strategy 2: Semantic Anchors (From Typed Anchor Types) ---
+        # Use taxonomy.anchor_types (e.g., ['alloc', 'dealloc', 'use']) as semantic hints
         semantic_roles = []
-        if self.taxonomy.origin_roles:
-            semantic_roles.extend([role.value for role in self.taxonomy.origin_roles])
-        if self.taxonomy.impact_roles:
-            semantic_roles.extend([role.value for role in self.taxonomy.impact_roles])
+        if hasattr(self.taxonomy, 'anchor_types') and self.taxonomy.anchor_types:
+            semantic_roles.extend(
+                at.value if hasattr(at, 'value') else str(at) for at in self.taxonomy.anchor_types
+            )
         
         for role_str in semantic_roles:
             clean_key = role_str.strip().lower()

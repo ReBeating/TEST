@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from enum import Enum
 from typing import List, Optional, Any, Dict, Literal, Set
 from dataclasses import dataclass
+from core.categories import VulnerabilityKnowledgeBase, VulnerabilityCategory, AnchorType, VulnerabilityConstraint, Anchor
 
 class AtomicPatch(BaseModel):
     file_path: str
@@ -89,54 +90,20 @@ class TypeConfidence(str, Enum):
     MEDIUM = "Medium"  # Tier 2: LLM Code Analysis Inference
     LOW = "Low"        # Tier 3: General Fallback
 
-class AnchorRole(str, Enum):
-    """Predefined anchor roles (for localization and slicing)"""
-    # Memory Operations
-    ALLOC = "Alloc"
-    FREE = "Free"
-    USE = "Use"
-    DEREF = "Deref"
-    
-    # Data Flow
-    SOURCE = "Source"
-    SINK = "Sink"
-    DEF = "Def"
-    ASSIGN = "Assign"
-    
-    # Control Flow
-    CHECK = "Check"
-    ACCESS = "Access"
-    BRANCH = "Branch"
-    
-    # Resource Management
-    ACQUIRE = "Acquire"
-    RELEASE = "Release"
-    
-    # Synchronization
-    LOCK = "Lock"
-    UNLOCK = "Unlock"
-    
-    # Computation
-    COMPUTE = "Compute"
-    DIVIDE = "Divide"
-    
-    # Impact Points
-    LEAK = "Leak"
-    CRASH = "Crash"
-    OVERFLOW = "Overflow"
-    CORRUPTION = "Corruption"
-    
-    # Fallback
-    GENERIC = "Generic"
+# NOTE: AnchorRole enum has been REMOVED per paper §3.1.3.
+# The paper uses typed anchors (AnchorType from categories.py) instead of
+# the binary Origin/Impact classification that AnchorRole supported.
+# All downstream consumers now use AnchorType directly.
 
 class GeneralVulnType(str, Enum):
     """27 specific General Vulnerability Types"""
     
-    # 1. Memory Safety (7)
+    # 1. Memory Safety (8)
     USE_AFTER_FREE = "Use After Free"
     DOUBLE_FREE = "Double Free"
-    BUFFER_OVERFLOW = "Buffer Overflow"
+    OUT_OF_BOUNDS_WRITE = "Out-of-bounds Write"
     OUT_OF_BOUNDS_READ = "Out-of-bounds Read"
+    BUFFER_OVERFLOW = "Buffer Overflow"
     MEMORY_LEAK = "Memory Leak"
     NULL_POINTER_DEREFERENCE = "Null Pointer Dereference"
     UNINITIALIZED_USE = "Uninitialized Use"
@@ -145,8 +112,9 @@ class GeneralVulnType(str, Enum):
     RACE_CONDITION = "Race Condition"
     DEADLOCK = "Deadlock"
     
-    # 3. Numeric & Type (3)
+    # 3. Numeric & Type (4)
     INTEGER_OVERFLOW = "Integer Overflow"
+    INTEGER_UNDERFLOW = "Integer Underflow"
     DIVIDE_BY_ZERO = "Divide By Zero"
     TYPE_CONFUSION = "Type Confusion"
     
@@ -186,37 +154,85 @@ class KeyLine(BaseModel):
 
 class TaxonomyFeature(BaseModel):
     """
-    Phase 3.2.1 Output - Type Determination & Semantic Hypothesis
+    §3.1.2 Output - Vulnerability Type Determination & Semantic Hypothesis
     
-    This is a hypothetical vulnerability report operating at conceptual level (per paper Definition 3).
-    Generated before concrete analysis and guides subsequent slicing/verification.
+    Primary type identifier is `category_name` — the exact name registered in
+    VulnerabilityKnowledgeBase (from categories.py). This corresponds to the
+    paper's subtype classification (e.g., "Integer Overflow", "Use After Free").
+    
+    `vuln_type` (GeneralVulnType enum) is kept for backward compatibility with
+    downstream consumers but is derived from `category_name`.
     """
     
-    # === Core Fields ===
-    vuln_type: GeneralVulnType = Field(description="Specific vulnerability type (27 categories)")
+    # === Primary Type Identifier (from categories.py KB) ===
+    category_name: str = Field(
+        description="Exact category name in VulnerabilityKnowledgeBase "
+                    "(e.g., 'Integer Overflow', 'Use After Free'). "
+                    "This is the authoritative type from categories.py."
+    )
+    
+    # === Backward-Compatible Fields ===
+    vuln_type: GeneralVulnType = Field(
+        default=GeneralVulnType.UNKNOWN,
+        description="Legacy GeneralVulnType enum — derived from category_name for backward compatibility"
+    )
     type_confidence: TypeConfidence = Field(description="Confidence level of type determination (HIGH/MEDIUM/LOW)")
     
     # CWE Information (Optional, for standardized reporting)
     cwe_id: Optional[str] = Field(default=None, description="CWE ID (e.g., 'CWE-416') - Optional")
     cwe_name: Optional[str] = Field(default=None, description="Standard CWE Name - Optional")
     
-    # Anchor Roles (Determined by vulnerability type)
-    origin_roles: List[AnchorRole] = Field(default_factory=list, description="Origin anchor roles (OR relationship)")
-    impact_roles: List[AnchorRole] = Field(default_factory=list, description="Impact anchor roles (OR relationship)")
+    # === Typed Anchor Specification (from categories.py KB) ===
+    # No longer stores origin_roles/impact_roles. Instead, anchor types and
+    # constraints are accessed via category_obj property from the KB.
     
     # === Semantic Hypothesis (Flattened, no nested class) ===
     root_cause: str = Field(
         description="Hypothesized defect description (e.g., 'missing null check before dereference')"
     )
-    attack_path: str = Field(
-        description="Conceptual Origin→Impact chain with instance-specific details (e.g., 'attacker controls input → triggers allocation failure → null pointer → dereference')"
+    attack_chain: str = Field(
+        description="Conceptual Origin→Impact chain with instance-specific details"
     )
-    fix_mechanism: str = Field(
+    patch_defense: str = Field(
         description="What the patch modifies and why it prevents the vulnerability"
     )
     
     # Reasoning
     reasoning: str = Field(description="Reasoning process for type determination")
+    
+    # § 3.1.2 Numeric priority
+    numeric_priority_applied: bool = Field(
+        default=False,
+        description="Whether Numeric priority rule was applied to override initial CWE mapping"
+    )
+
+    @property
+    def category_obj(self) -> 'VulnerabilityCategory':
+        """
+        Returns the structured VulnerabilityCategory object from categories.py.
+        Uses category_name as the primary lookup key.
+        """
+        return VulnerabilityKnowledgeBase.get_category(self.category_name)
+    
+    @property
+    def major_category(self) -> 'MajorCategory':
+        """Returns the major category (Numeric-Domain, Access-Validity, etc.)."""
+        return self.category_obj.major_category
+    
+    @property
+    def anchor_types(self) -> List['AnchorType']:
+        """Returns the typed anchor list from KB (e.g., [ALLOC, DEALLOC, USE] for UAF)."""
+        return [a.type for a in self.category_obj.anchors]
+    
+    @property
+    def constraint(self) -> 'VulnerabilityConstraint':
+        """Returns the constraint chain from KB (e.g., ALLOC →d DEALLOC →t USE)."""
+        return self.category_obj.constraint
+    
+    @property
+    def chain_description(self) -> str:
+        """Human-readable chain description for LLM prompts."""
+        return self.constraint.chain_str()
 
 class CodeLineReference(BaseModel):
     line_number: int = Field(description="The specific line number in the 'Full Code Context'.")
@@ -236,25 +252,27 @@ class SliceValidationResult(BaseModel):
     )
     reasoning: str = Field(description="Summary of the cleaning strategy.")
 
+# [DEPRECATED] TypedAnchorRef — replaced by core.categories.Anchor which carries full
+# locatability/assumption_type/assumption_rationale fields needed by the verifier.
+# Kept as alias for backward compatibility only.
+TypedAnchorRef = Anchor
+
 class SliceFeature(BaseModel):
-    """Slicing features of a single function"""
+    """Slicing features of a single function (paper §3.1.3 output per function)"""
     func_name: str
     s_post: str     # Post-Patch (or Primary) Slice Code
-    s_pre: str  # Pre-Patch (or Shadow) Slice Code
+    s_pre: str      # Pre-Patch (or Shadow) Slice Code
     
-    # [New] Origin/Impact Info for Searcher
-    # Stores the exact line content (including line number "[123]") that are identified as Origin/Impact anchors
-    pre_origins: List[str] = Field(default_factory=list)
-    pre_impacts: List[str] = Field(default_factory=list)
-    post_origins: List[str] = Field(default_factory=list)
-    post_impacts: List[str] = Field(default_factory=list)
+    # Typed anchors identified in the slice — now uses Anchor (from core.categories)
+    # which carries locatability, assumption_type, assumption_rationale and other fields
+    pre_anchors: List[Anchor] = Field(default_factory=list,
+        description="Typed anchor instances in pre-patch code")
+    post_anchors: List[Anchor] = Field(default_factory=list,
+        description="Typed anchor instances in post-patch code")
     
     # [New] Validation & Hypothesis Feedback (Defer & Aggregate)
     validation_status: Optional[str] = Field(default=None, description="The local validation role/status e.g. 'Victim', 'Allocator', 'Guard'.")
     validation_reasoning: Optional[str] = Field(default="", description="Reasoning for the local validation.")
-
-    # Optional: If you want to keep local fingerprints at the slice level, you can add them here, but global fingerprints are usually enough
-    # local_fingerprints: List[str] 
 
 class FunctionFingerprint(BaseModel):
     key_statements: List[str] = []
@@ -324,7 +342,7 @@ class FixEffect(BaseModel):
     """
     How the fix blocks the chain, expressed as checkable claims.
     """
-    fix_mechanism: Optional[str] = None
+    patch_defense: Optional[str] = None
     security_guarantee: Optional[str] = None
     blocking_points: List[DefenseRef] = Field(default_factory=list)
     residual_risks: List[str] = Field(default_factory=list)
@@ -348,8 +366,8 @@ class SemanticFeature(BaseModel):
     
     This is the final output of semantic extraction, containing:
     1. Vulnerability Type & Root Cause: Confirmed type with refined description
-    2. Attack Path: Step-by-step trace with concrete evidence (line numbers, functions)
-    3. Fix Mechanism: What the patch changes and why it prevents exploitation
+    2. Attack Chain: Step-by-step trace with concrete evidence (line numbers, functions)
+    3. Patch Defense: What the patch changes and why it prevents exploitation
     
     Used for search (Phase III) and verification (Phase IV).
     """
@@ -359,14 +377,14 @@ class SemanticFeature(BaseModel):
     cwe_name: Optional[str] = Field(default=None, description="CWE name if available")
     root_cause: str = Field(description="Refined root cause description with concrete evidence")
     
-    # Component 2: Attack Path (with evidence references)
-    attack_path: str = Field(
+    # Component 2: Attack Chain (with evidence references)
+    attack_chain: str = Field(
         description="Step-by-step trace from Origin to Impact, citing functions, line numbers, data/control flows"
     )
     
-    # Component 3: Fix Mechanism
-    fix_mechanism: str = Field(
-        description="What the patch modifies and why it prevents the attack path"
+    # Component 3: Patch Defense
+    patch_defense: str = Field(
+        description="What the patch modifies and why it prevents the attack chain"
     )
     
     # Evidence Index (for verification phase - maps evidence_id to concrete code references)
@@ -469,7 +487,7 @@ class VulnerabilityFinding(BaseModel):
     """
     Phase 4 Final Output: Confirmed Vulnerabilities
     
-    Per Methodology.tex Section 4.4: Semantic Constraint Verification
+    Per §3.3 Semantic-driven Validation:
     Verdict is determined by three constraints: C_cons, C_reach, C_def
     - VULNERABLE: C_cons ∧ C_reach ∧ ¬C_def
     - SAFE-Blocked: C_cons ∧ C_reach ∧ C_def
@@ -485,26 +503,26 @@ class VulnerabilityFinding(BaseModel):
     patch_func: str
     target_file: str
     target_func: str
-    analysis_report: str = Field(description="Exploitation Report per Methodology.tex")
+    analysis_report: str = Field(description="Exploitation Report per §3.3")
     is_vulnerable: bool
     
-    # [New] Verdict Category (per Methodology.tex Section 4.4.3)
+    # Verdict Category (per §3.3.3 Multi-Agent decision logic)
     verdict_category: str = Field(
         default="UNKNOWN",
-        description="One of: 'VULNERABLE', 'SAFE-Blocked', 'SAFE-Mismatch', 'SAFE-Unreachable', 'UNKNOWN'"
+        description="One of: 'VULNERABLE', 'SAFE-Blocked', 'SAFE-Mismatch', 'SAFE-Unreachable', 'SAFE-TypeMismatch', 'SAFE-OutOfScope', 'UNKNOWN'"
     )
     
     # Context information
     involved_functions: List[str] = Field(default_factory=list, description="Functions involved in the vulnerability chain.")
     peer_functions: List[str] = Field(default_factory=list, description="Peer functions used as context during analysis.")
     
-    # Evidence chain (per Methodology.tex Evidence Schema)
-    # Using Any type to avoid circular imports with StepAnalysis from verifier.py
-    origin: Optional[Any] = Field(default=None, description="Origin anchor: where vulnerable state is created")
-    impact: Optional[Any] = Field(default=None, description="Impact anchor: where vulnerability is triggered")
-    defense_step: Optional[Any] = Field(default=None, description="Defense mechanism location (if SAFE-Blocked)")
-    defense_status: Optional[str] = Field(default=None, description="Constraint outcomes: C_cons, C_reach, C_def status")
-    trace: Optional[List[Any]] = Field(default=None, description="Execution trace from Origin to Impact")
+    # Typed anchor evidence chain (per §3.3 Anchor-based model)
+    # Uses Any type to avoid circular imports with StepAnalysis from verifier.py
+    anchor_evidence: Optional[List[Any]] = Field(default=None, description="Ordered typed anchor evidence chain (e.g., [ALLOC, DEALLOC, USE] for UAF)")
+    trace: Optional[List[Any]] = Field(default=None, description="Intermediate trace steps between anchors in the chain")
+    defense_mechanism: Optional[Any] = Field(default=None, description="Defense mechanism location (if SAFE-Blocked)")
+    constraint_status: Optional[str] = Field(default=None, description="Constraint outcomes: C_cons, C_reach, C_def status")
+    path_verification: Optional[Any] = Field(default=None, description="Static path verification result from §3.3.2 (PDG-based)")
     
 class TargetFunctionInfo(BaseModel):
     name: str

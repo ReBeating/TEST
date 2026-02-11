@@ -1,8 +1,12 @@
 """
-Slice Validation Helper Functions
+Slice Validation Helper Functions (Typed Anchor Model)
 
 Based on Methodology §3.3.2 Implementation of Slice Quality Validation
 Strategy Refactoring: Validation of anchor coherence → Validation of generated slice quality
+
+Uses the typed anchor model from §3.1.3 — each anchor carries an AnchorType
+(e.g., SOURCE, COMPUTATION, SINK, ALLOC, DEALLOC, USE) rather than the legacy
+Origin/Impact binary split.
 
 Validation Timing: After slice extraction, not after anchor identification
 Validation Content:
@@ -16,7 +20,8 @@ If slice quality is poor → Indicates issues with anchor identification → Tri
 import time
 import networkx as nx
 from typing import List, Set, Dict, Any, Optional
-from extraction.anchor_analyzer import AnchorResult, AnchorItem
+from extraction.anchor_analyzer import AnchorResult
+from core.categories import Anchor
 from core.navigator import CodeNavigator
 
 
@@ -74,60 +79,67 @@ def extract_slice_for_validation(
     pdg: nx.MultiDiGraph
 ) -> Set[str]:
     """
-    Extract simplified slice for validation of anchor coherence
+    Extract simplified slice for validation of anchor coherence (typed anchor model).
     
-    This is a temporary slice, only used to check the connectivity of Origin→Impact
-    Uses the intersection of bidirectional slices
+    Uses midpoint split: first half of the typed anchor chain → forward slice,
+    second half → backward slice.  The intersection approximates the path
+    connecting the chain endpoints.
     
     Args:
-        anchor_result: Anchor identification result
+        anchor_result: Anchor identification result (typed anchors)
         slicer: Slicer instance
         pdg: Program Dependence Graph
         
     Returns:
         Set of slice nodes
     """
-    if not anchor_result.origin_anchors or not anchor_result.impact_anchors:
+    all_anchors = anchor_result.anchors
+    if not all_anchors:
         return set()
     
-    # 1. Extract Origin nodes and variables
-    origin_nodes = []
-    origin_vars = set()
+    # Midpoint split — mirrors generate_slice_from_anchors() in slicer.py
+    mid = max(len(all_anchors) // 2, 1)
+    fwd_anchors = all_anchors[:mid]
+    bwd_anchors = all_anchors[mid:]
     
-    for anchor in anchor_result.origin_anchors:
-        nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
-        origin_nodes.extend(nodes)
+    # 1. Extract forward (first-half) nodes and variables
+    fwd_nodes = []
+    fwd_vars = set()
+    
+    for anchor in fwd_anchors:
+        nodes = slicer.get_nodes_by_location(anchor.line_number, anchor.code_snippet)
+        fwd_nodes.extend(nodes)
         
-        # Extract variables defined in Origin
+        # Extract variables defined at forward anchor positions
         for nid in nodes:
             if nid in pdg.nodes:
                 defs = pdg.nodes[nid].get('defs', {})
-                origin_vars.update(defs.keys())
+                fwd_vars.update(defs.keys())
     
-    # 2. Extract Impact nodes and variables
-    impact_nodes = []
-    impact_vars = set()
+    # 2. Extract backward (second-half) nodes and variables
+    bwd_nodes = []
+    bwd_vars = set()
     
-    for anchor in anchor_result.impact_anchors:
-        nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
-        impact_nodes.extend(nodes)
+    for anchor in bwd_anchors:
+        nodes = slicer.get_nodes_by_location(anchor.line_number, anchor.code_snippet)
+        bwd_nodes.extend(nodes)
         
-        # Extract variables used in Impact
+        # Extract variables used at backward anchor positions
         for nid in nodes:
             if nid in pdg.nodes:
                 uses = pdg.nodes[nid].get('uses', {})
-                impact_vars.update(uses.keys())
+                bwd_vars.update(uses.keys())
     
     # 3. Bidirectional slicing
     fwd_slice = set()
-    if origin_nodes and origin_vars:
-        fwd_slice = slicer.forward_slice_pruned(origin_nodes, origin_vars)
+    if fwd_nodes and fwd_vars:
+        fwd_slice = slicer.forward_slice_pruned(fwd_nodes, fwd_vars)
     
     bwd_slice = set()
-    if impact_nodes and impact_vars:
-        bwd_slice = slicer.backward_slice_pruned(impact_nodes, impact_vars)
+    if bwd_nodes and bwd_vars:
+        bwd_slice = slicer.backward_slice_pruned(bwd_nodes, bwd_vars)
     
-    # 4. Intersection = Nodes on the Origin→Impact path
+    # 4. Intersection = Nodes on the chain path
     if fwd_slice and bwd_slice:
         return fwd_slice.intersection(bwd_slice)
     else:
@@ -136,16 +148,21 @@ def extract_slice_for_validation(
 
 
 def check_path_reachability(
-    origin_anchors: List[AnchorItem],
-    impact_anchors: List[AnchorItem],
+    fwd_anchors: List[Anchor],
+    bwd_anchors: List[Anchor],
     pdg: nx.MultiDiGraph,
     slicer,  # Slicer instance
     require_data_flow: bool = True
 ) -> Dict[str, Any]:
     """
-    Check path reachability from Origin to Impact
+    Check path reachability between forward-half and backward-half of the
+    typed anchor chain.
     
-    Implements Constraint 2 (Data-flow Connectivity) from Methodology §3.3.2
+    Implements Constraint 2 (Data-flow Connectivity) from Methodology §3.3.2.
+    
+    In the typed anchor model the caller splits anchor_result.anchors at the
+    midpoint (same strategy as extract_slice_for_validation and
+    generate_slice_from_anchors) and passes the two halves here.
     
     Check Strategy:
     - require_data_flow=True: Check DATA edge paths (used for UAF, NPD, Buffer Overflow, etc.)
@@ -158,8 +175,8 @@ def check_path_reachability(
     - Missing operation vulnerabilities (Memory Leak) should skip this function and pass validation directly
     
     Args:
-        origin_anchors: Origin anchors
-        impact_anchors: Impact anchors
+        fwd_anchors: Forward-half anchors (first half of typed chain)
+        bwd_anchors: Backward-half anchors (second half of typed chain)
         pdg: Program Dependence Graph
         slicer: Slicer instance
         require_data_flow: Whether data flow connectivity is required
@@ -171,18 +188,18 @@ def check_path_reachability(
             "details": str
         }
     """
-    # Get PDG nodes for Origin and Impact
-    origin_node_ids = set()
-    for anchor in origin_anchors:
-        nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
-        origin_node_ids.update(nodes)
+    # Get PDG nodes for forward-half and backward-half anchors
+    fwd_node_ids = set()
+    for anchor in fwd_anchors:
+        nodes = slicer.get_nodes_by_location(anchor.line_number, anchor.code_snippet)
+        fwd_node_ids.update(nodes)
     
-    impact_node_ids = set()
-    for anchor in impact_anchors:
-        nodes = slicer.get_nodes_by_location(anchor.line, anchor.content)
-        impact_node_ids.update(nodes)
+    bwd_node_ids = set()
+    for anchor in bwd_anchors:
+        nodes = slicer.get_nodes_by_location(anchor.line_number, anchor.code_snippet)
+        bwd_node_ids.update(nodes)
     
-    if not origin_node_ids or not impact_node_ids:
+    if not fwd_node_ids or not bwd_node_ids:
         return {
             "reachable": False,
             "path_type": "none",
@@ -192,12 +209,12 @@ def check_path_reachability(
     # Select check strategy based on require_data_flow
     if require_data_flow:
         # Strategy 1: Check DATA path (used for UAF, NPD, Buffer Overflow, etc.)
-        for origin_nid in origin_node_ids:
-            if origin_nid not in pdg.nodes:
+        for fwd_nid in fwd_node_ids:
+            if fwd_nid not in pdg.nodes:
                 continue
                 
-            for impact_nid in impact_node_ids:
-                if impact_nid not in pdg.nodes:
+            for bwd_nid in bwd_node_ids:
+                if bwd_nid not in pdg.nodes:
                     continue
                 
                 try:
@@ -206,11 +223,11 @@ def check_path_reachability(
                                  if data.get('relationship') == 'DATA']
                     if data_edges:
                         data_graph = pdg.edge_subgraph(data_edges)
-                        if nx.has_path(data_graph, origin_nid, impact_nid):
+                        if nx.has_path(data_graph, fwd_nid, bwd_nid):
                             return {
                                 "reachable": True,
                                 "path_type": "data_flow",
-                                "details": f"DATA path exists from node {origin_nid} to {impact_nid}"
+                                "details": f"DATA path exists from node {fwd_nid} to {bwd_nid}"
                             }
                 except Exception as e:
                     continue
@@ -218,18 +235,18 @@ def check_path_reachability(
         return {
             "reachable": False,
             "path_type": "none",
-            "details": "No DATA flow path found from Origin to Impact"
+            "details": "No DATA flow path found between anchor chain halves"
         }
     else:
         # Strategy 2: Check CONTROL edge paths (theoretical design, not recommended)
         # PDG's CONTROL edges represent control dependence, not CFG's sequential flow
         # For sequential code (e.g., alloc; return), control dependence may not exist
-        for origin_nid in origin_node_ids:
-            if origin_nid not in pdg.nodes:
+        for fwd_nid in fwd_node_ids:
+            if fwd_nid not in pdg.nodes:
                 continue
                 
-            for impact_nid in impact_node_ids:
-                if impact_nid not in pdg.nodes:
+            for bwd_nid in bwd_node_ids:
+                if bwd_nid not in pdg.nodes:
                     continue
                 
                 try:
@@ -238,11 +255,11 @@ def check_path_reachability(
                                     if data.get('relationship') == 'CONTROL']
                     if control_edges:
                         control_graph = pdg.edge_subgraph(control_edges)
-                        if nx.has_path(control_graph, origin_nid, impact_nid):
+                        if nx.has_path(control_graph, fwd_nid, bwd_nid):
                             return {
                                 "reachable": True,
                                 "path_type": "control_flow",
-                                "details": f"CONTROL path exists from node {origin_nid} to {impact_nid}"
+                                "details": f"CONTROL path exists from node {fwd_nid} to {bwd_nid}"
                             }
                 except Exception as e:
                     continue
@@ -250,7 +267,7 @@ def check_path_reachability(
         return {
             "reachable": False,
             "path_type": "none",
-            "details": "No CONTROL flow path found from Origin to Impact"
+            "details": "No CONTROL flow path found between anchor chain halves"
         }
 
 
@@ -258,18 +275,21 @@ def validate_anchor_completeness(
     anchor_result: AnchorResult
 ) -> Dict[str, Any]:
     """
-    Lightweight Anchor Completeness Check (Only Role Completeness Validation)
+    Lightweight Anchor Completeness Check (Typed Anchor Model).
     
-    Strategy Refactoring: Abandon complex static path validation in favor of posterior slice quality check
+    Strategy Refactoring: Abandon complex static path validation in favor of
+    posterior slice quality check.
     
-    This function only verifies:
-    - At least one Origin anchor
-    - At least one Impact anchor
+    This function verifies:
+    - At least one typed anchor exists
+    - The anchor types cover enough of the expected constraint chain
+      (at minimum, anchors should not be empty)
     
-    Detailed quality validation will be performed after slice generation (validate_slice_quality)
+    Detailed quality validation will be performed after slice generation
+    (validate_slice_quality).
     
     Args:
-        anchor_result: Anchor identification result
+        anchor_result: Anchor identification result (typed anchors)
         
     Returns:
         Validation result dictionary:
@@ -278,41 +298,33 @@ def validate_anchor_completeness(
             "reason": str
         }
     """
-    from core.models import AnchorRole
+    all_anchors = anchor_result.anchors
     
     # [DEBUG] Print detailed Anchor information
-    print(f"\n      [Validation] ===== Anchor Completeness Check =====")
-    print(f"      [Validation] Origin Anchors ({len(anchor_result.origin_anchors)}):")
-    for i, anchor in enumerate(anchor_result.origin_anchors, 1):
-        print(f"        {i}. Line {anchor.line}: {anchor.role.value if hasattr(anchor.role, 'value') else anchor.role}")
-        print(f"           Content: {anchor.content[:80]}...")
+    print(f"\n      [Validation] ===== Anchor Completeness Check (Typed) =====")
+    print(f"      [Validation] Total Anchors: {len(all_anchors)}")
+    for i, anchor in enumerate(all_anchors, 1):
+        print(f"        {i}. Line {anchor.line_number}: [{anchor.type.value}]")
+        print(f"           Content: {anchor.code_snippet[:80]}...")
     
-    print(f"      [Validation] Impact Anchors ({len(anchor_result.impact_anchors)}):")
-    for i, anchor in enumerate(anchor_result.impact_anchors, 1):
-        print(f"        {i}. Line {anchor.line}: {anchor.role.value if hasattr(anchor.role, 'value') else anchor.role}")
-        print(f"           Content: {anchor.content[:80]}...")
+    found_types = {a.type.value for a in all_anchors}
+    print(f"      [Validation] Found types: {found_types}")
     print(f"      [Validation] ==============================================\n")
     
-    # Role completeness check
-    has_origins = bool(anchor_result.origin_anchors)
-    has_impacts = bool(anchor_result.impact_anchors)
-    
-    if not has_origins or not has_impacts:
-        missing = []
-        if not has_origins:
-            missing.append("Origin anchors")
-        if not has_impacts:
-            missing.append("Impact anchors")
-        
-        reason = f"Incomplete anchor roles: missing {', '.join(missing)}"
+    # Typed anchor completeness check — need at least one anchor
+    if not all_anchors:
+        reason = "No typed anchors identified"
         print(f"      [Validation] ✗ {reason}")
-        
         return {
             "is_valid": False,
             "reason": reason
         }
     
-    print(f"      [Validation] ✓ Role completeness satisfied")
+    # Warn if only one anchor type (chain requires ≥2 distinct types normally)
+    if len(found_types) < 2 and len(all_anchors) >= 2:
+        print(f"      [Validation] ⚠ All {len(all_anchors)} anchors have the same type — may indicate weak identification")
+    
+    print(f"      [Validation] ✓ Typed anchor completeness satisfied ({len(all_anchors)} anchors, {len(found_types)} types)")
     print(f"      [Validation] Note: Detailed quality validation will be performed after slice extraction")
     
     return {
@@ -377,8 +389,8 @@ def validate_slice_quality(
     
     # Check 1: Anchor Presence - Identified anchors are visible in the slice
     anchor_lines = set()
-    for anchor in anchor_result.origin_anchors + anchor_result.impact_anchors:
-        anchor_lines.add(anchor.line)
+    for anchor in anchor_result.anchors:
+        anchor_lines.add(anchor.line_number)
     
     if not anchor_lines:
         anchor_present = False
@@ -407,18 +419,18 @@ def validate_slice_quality(
             from langchain_core.prompts import ChatPromptTemplate
             
             # [Enhanced] Build anchor description containing cross-function information
-            def format_anchor_desc(anchors, max_show=5):
-                """Format anchor description, including cross-function information"""
+            def format_anchor_desc(anchors, max_show=8):
+                """Format typed anchor description, including cross-function information"""
                 if not anchors:
                     return "None identified"
                 
                 desc_lines = []
                 for i, a in enumerate(anchors[:max_show], 1):
-                    role_str = a.role.value if hasattr(a.role, 'value') else str(a.role)
+                    type_str = a.type.value
                     scope_str = f" [{a.scope}]" if hasattr(a, 'scope') and a.scope != "local" else ""
                     
                     # Basic information
-                    line_desc = f"{i}. Line {a.line}: {role_str}{scope_str}"
+                    line_desc = f"{i}. Line {a.line_number}: [{type_str}]{scope_str}"
                     
                     # Add cross-function information (if any)
                     if hasattr(a, 'cross_function_info') and a.cross_function_info:
@@ -437,35 +449,30 @@ def validate_slice_quality(
                 
                 return "\n".join(desc_lines)
             
-            origin_desc = format_anchor_desc(anchor_result.origin_anchors)
-            impact_desc = format_anchor_desc(anchor_result.impact_anchors)
+            all_anchors_desc = format_anchor_desc(anchor_result.anchors)
             
             # Directly use hypothesis information from taxonomy (already analyzed in §3.2.1)
             vuln_type_str = taxonomy.vuln_type.value if hasattr(taxonomy.vuln_type, 'value') else str(taxonomy.vuln_type)
             
-            # Get anchor roles description (from taxonomy)
-            origin_roles_str = ", ".join([r.value for r in taxonomy.origin_roles]) if hasattr(taxonomy, 'origin_roles') and taxonomy.origin_roles else "N/A"
-            impact_roles_str = ", ".join([r.value for r in taxonomy.impact_roles]) if hasattr(taxonomy, 'impact_roles') and taxonomy.impact_roles else "N/A"
+            # Get typed anchor info from taxonomy
+            anchor_types_str = ", ".join(at.value if hasattr(at, 'value') else str(at) for at in taxonomy.anchor_types) if hasattr(taxonomy, 'anchor_types') and taxonomy.anchor_types else "N/A"
+            chain_desc = taxonomy.chain_description if hasattr(taxonomy, 'chain_description') and taxonomy.chain_description else "N/A"
             
             prompt = ChatPromptTemplate.from_template(
                 """You are a security expert validating a vulnerability code slice.
 
 **Vulnerability Analysis (from Type Determination §3.2.1):**
 Type: {vuln_type}
-Expected Origin Roles: {origin_roles}
-Expected Impact Roles: {impact_roles}
+Expected Anchor Types: {anchor_types}
+Constraint Chain: {chain_description}
 
 **Semantic Hypothesis (from §3.2.1):**
 Root Cause: {root_cause}
-Attack Path: {attack_path}
-Fix Mechanism: {fix_mechanism}
+Attack Chain: {attack_chain}
+Patch Defense: {patch_defense}
 
-**Identified Anchors:**
-Origin Anchors (vulnerability initiation):
-{origin_anchors}
-
-Impact Anchors (vulnerability manifestation):
-{impact_anchors}
+**Identified Typed Anchors:**
+{all_anchors}
 
 **IMPORTANT NOTES:**
 1. If an anchor has [call_site] or [inter_procedural] scope, it means the actual operation happens in another function
@@ -474,7 +481,7 @@ Impact Anchors (vulnerability manifestation):
    
 2. Focus on the CORE vulnerability mechanism described in the semantic hypothesis above
    - The Root Cause tells you what defect to look for
-   - The Attack Path tells you the Origin→Impact chain to verify
+   - The constraint chain ({chain_description}) tells you the typed dependency to verify
 
 **Generated Slice:**
 {slice_code}
@@ -483,9 +490,9 @@ Impact Anchors (vulnerability manifestation):
 Evaluate if this slice adequately explains the vulnerability mechanism described in the semantic hypothesis.
 
 A GOOD slice should:
-✓ Show Origin anchors matching the expected roles ({origin_roles})
-✓ Show Impact anchors matching the expected roles ({impact_roles})
-✓ Demonstrate the attack path: {attack_path}
+✓ Show anchors matching the expected types ({anchor_types})
+✓ Demonstrate the constraint chain: {chain_description}
+✓ Cover the attack chain: {attack_chain}
 
 A slice is ADEQUATE even if:
 ✓ It doesn't show every variable definition (focus on core issue)
@@ -510,13 +517,12 @@ Answer with a JSON object:
             result = retry_on_connection_error(
                 lambda: chain.invoke({
                     "vuln_type": vuln_type_str,
-                    "origin_roles": origin_roles_str,
-                    "impact_roles": impact_roles_str,
+                    "anchor_types": anchor_types_str,
+                    "chain_description": chain_desc,
                     "root_cause": taxonomy.root_cause,
-                    "attack_path": taxonomy.attack_path,
-                    "fix_mechanism": taxonomy.fix_mechanism if hasattr(taxonomy, 'fix_mechanism') else "N/A",
-                    "origin_anchors": origin_desc,
-                    "impact_anchors": impact_desc,
+                    "attack_chain": taxonomy.attack_chain,
+                    "patch_defense": taxonomy.patch_defense if hasattr(taxonomy, 'patch_defense') else "N/A",
+                    "all_anchors": all_anchors_desc,
                     "slice_code": slice_code
                 }),
                 max_retries=3

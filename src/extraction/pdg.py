@@ -8,11 +8,13 @@ class PDGBuilder:
     def __init__(self, code_str: str, lang: str = "c"):
         self.code_str = code_str
         self.lang = lang
+        self._cfg: nx.DiGraph = None  # Exposed for TwoPassSlicer CFG analysis
         
     def build(self, target_line: int = None) -> nx.MultiDiGraph:
         # 1. Build CFG
         cfg_builder = CFGBuilder(self.lang)
         cfg = cfg_builder.build(self.code_str, target_line=target_line)
+        self._cfg = cfg  # Save CFG for external access
         
         # 2. Build CDG
         cdg_builder = CDGBuilder(cfg)
@@ -44,3 +46,10 @@ class PDGBuilder:
             )
             
         return pdg
+    
+    @property
+    def cfg(self) -> nx.DiGraph:
+        """Access the CFG built during PDG construction (must call build() first)."""
+        if self._cfg is None:
+            raise RuntimeError("CFG not available. Call build() first.")
+        return self._cfg

@@ -15,16 +15,53 @@ from core.state import VerificationState
 from core.models import VulnerabilityFinding, SearchResultItem, PatchFeatures
 from core.navigator import CodeNavigator
 from core.indexer import BenchmarkSymbolIndexer, GlobalSymbolIndexer
+from core.categories import Anchor, AnchorType, AnchorLocatability, AssumptionType
 
 from extraction.slicer import Slicer
 from extraction.pdg import PDGBuilder
+from extraction.slice_validation import check_path_reachability
 
 # Import type-specific verification checklists
 from search.verification_checklists import format_checklist_for_prompt
 
+
+def format_anchor_for_prompt(anchor: Anchor) -> str:
+    """Format a typed Anchor object for LLM prompt display.
+    
+    Produces a compact one-liner such as:
+        [ALLOC|CONCRETE] Line 227 `ptr = kmalloc(...)` (vars: ptr)
+        [DEALLOC|ASSUMED:EXISTENCE] `kfree(ptr)` — assumed to exist in callee
+    """
+    atype = anchor.type.value if hasattr(anchor.type, 'value') else str(anchor.type)
+    loc = anchor.locatability.value if hasattr(anchor.locatability, 'value') else str(anchor.locatability)
+    
+    # Build tag: [TYPE|LOCATABILITY] or [TYPE|LOCATABILITY:ASSUMPTION]
+    tag = f"{atype}|{loc}"
+    if anchor.assumption_type:
+        at = anchor.assumption_type.value if hasattr(anchor.assumption_type, 'value') else str(anchor.assumption_type)
+        tag += f":{at}"
+    parts = [f"[{tag}]"]
+    
+    if anchor.line_number:
+        parts.append(f"Line {anchor.line_number}")
+    if anchor.code_snippet:
+        parts.append(f"`{anchor.code_snippet.strip()}`")
+    if anchor.variable_names:
+        parts.append(f"(vars: {', '.join(anchor.variable_names)})")
+    if anchor.is_optional:
+        parts.append("(optional)")
+    if anchor.assumption_rationale:
+        parts.append(f"— {anchor.assumption_rationale}")
+    return " ".join(parts)
+
 class StepAnalysis(BaseModel):
-    """Evidence item for vulnerability analysis"""
-    role: str = Field(description="One of: 'Origin', 'Impact', 'Trace', 'Defense'")
+    """Evidence item for vulnerability analysis — typed anchor chain model.
+    
+    The 'role' field uses AnchorType values (e.g., 'ALLOC', 'DEALLOC', 'USE')
+    or flow roles ('Trace', 'Defense') instead of legacy 'Origin'/'Impact'.
+    """
+    role: str = Field(description="AnchorType value (e.g. 'ALLOC','DEALLOC','USE','SOURCE','SINK') or flow role ('Trace','Defense')")
+    anchor_type: Optional[str] = Field(default=None, description="Explicit AnchorType if this step corresponds to a chain anchor")
     file_path: Optional[str] = Field(default=None, description="File path where this step occurs")
     func_name: Optional[str] = Field(default=None, description="Function name containing this step")
     line_number: Optional[int] = Field(default=None, description="Line number in target file")
@@ -33,25 +70,51 @@ class StepAnalysis(BaseModel):
 
 
 class AnchorMapping(BaseModel):
-    """Simplified anchor mapping result"""
-    anchor_type: str = Field(description="'origin' or 'impact'")
-    reference_line: str = Field(description="Reference slice anchor line")
+    """Typed anchor mapping result — maps a Phase 2 Anchor to a target location.
+    
+    Implements §3.3.1 Anchor Mapping: LLM examines aligned lines from matching phase,
+    determines if they fulfill the same semantic role as the original anchors.
+    Guided by root cause description for functional equivalence (not syntactic identity).
+    
+    Locatability-aware mapping strategy:
+    - CONCRETE: Direct alignment check via Phase 3 traces; verify semantic role
+    - ASSUMED:  Phase 3 hint + LLM semantic verification of assumption
+    - CONCEPTUAL: LLM must discover/infer from target code context
+    """
+    anchor_type: str = Field(description="AnchorType value, e.g. 'alloc', 'dealloc', 'use', 'source', 'sink', etc.")
+    is_optional: bool = Field(default=False, description="Whether this anchor is optional in the constraint chain")
+    chain_position: Optional[str] = Field(default=None, description="Position in constraint chain, e.g. 'first', 'middle', 'last'")
+    
+    # --- Reference info (from Phase 2 Anchor) ---
+    reference_line: str = Field(description="Reference slice anchor line or code snippet")
+    reference_line_number: Optional[int] = Field(default=None, description="Reference anchor line number (from Anchor.line_number)")
+    locatability: str = Field(default="concrete", description="Anchor locatability: 'concrete', 'assumed', or 'conceptual'")
+    assumption_type: Optional[str] = Field(default=None, description="If locatability is 'assumed'/'conceptual': 'controllability', 'semantic', 'existence', or 'reachability'")
+    assumption_rationale: Optional[str] = Field(default=None, description="Original assumption rationale from Phase 2")
+    
+    # --- Target mapping result ---
     target_line: Optional[int] = Field(default=None, description="Mapped target line number")
     target_code: Optional[str] = Field(default=None, description="Mapped target code")
     is_mapped: bool = Field(description="Whether mapping succeeded")
-    reason: Optional[str] = Field(default=None, description="Reason if mapping failed or semantic equivalence explanation")
+    mapping_confidence: str = Field(default="high", description="Mapping confidence: 'high' (direct match), 'medium' (semantic equivalent), 'low' (inferred)")
+    semantic_role_verified: bool = Field(default=False, description="Whether LLM verified the target fulfills the same semantic role")
+    
+    # --- Assumption verification (for ASSUMED/CONCEPTUAL anchors) ---
+    assumption_verified: Optional[bool] = Field(default=None, description="Whether the original assumption was verified in target context (only for assumed/conceptual)")
+    assumption_verification_note: Optional[str] = Field(default=None, description="How the assumption was verified or why it failed")
+    
+    reason: Optional[str] = Field(default=None, description="Semantic equivalence explanation or failure reason")
 
 
 class JudgeOutput(BaseModel):
-    """Final Judge Output"""
-    c_cons_satisfied: bool = Field(description="Consistency constraint satisfied")
-    c_reach_satisfied: bool = Field(description="Reachability constraint satisfied")
+    """Final Judge Output — typed anchor chain model (§3.3.3)."""
+    c_cons_satisfied: bool = Field(description="Consistency constraint satisfied (§3.3.1)")
+    c_reach_satisfied: bool = Field(description="Reachability constraint satisfied (§3.3.2 static + §3.3.3 semantic)")
     c_def_satisfied: bool = Field(description="Defense blocks attack")
     is_vulnerable: bool = Field(description="True if vulnerable, False otherwise")
     verdict_category: str = Field(description="'VULNERABLE', 'SAFE-Blocked', 'SAFE-Mismatch', 'SAFE-Unreachable', 'SAFE-TypeMismatch', or 'SAFE-OutOfScope'")
-    origin_anchor: Optional[StepAnalysis] = Field(default=None, description="Origin anchor evidence")
-    impact_anchor: Optional[StepAnalysis] = Field(default=None, description="Impact anchor evidence")
-    trace: List[StepAnalysis] = Field(default_factory=list, description="Trace between origin and impact")
+    anchor_evidence: List[StepAnalysis] = Field(default_factory=list, description="Typed anchor evidence chain (ordered per constraint chain, e.g. [ALLOC→DEALLOC→USE])")
+    trace: List[StepAnalysis] = Field(default_factory=list, description="Intermediate trace steps between anchors")
     defense_mechanism: Optional[StepAnalysis] = Field(default=None, description="Defense if SAFE-Blocked")
     analysis_report: str = Field(description="Brief analysis summary (1-2 sentences)")
 
@@ -70,10 +133,10 @@ class BaselineRedOutput(BaseModel):
     """Baseline Red Agent: Argue that vulnerability EXISTS in target code."""
     vulnerability_exists: bool = Field(description="Red's claim: True if vulnerability exists")
     concedes: bool = Field(default=False, description="True if Red concedes to Blue's defense argument")
-    origin_line: Optional[int] = Field(default=None, description="Line number where vulnerable state is created")
-    origin_code: Optional[str] = Field(default=None, description="Code at origin point")
-    impact_line: Optional[int] = Field(default=None, description="Line number where vulnerability triggers")
-    impact_code: Optional[str] = Field(default=None, description="Code at impact point")
+    first_anchor_line: Optional[int] = Field(default=None, description="Line number of the first anchor in the chain (e.g. ALLOC for UAF)")
+    first_anchor_code: Optional[str] = Field(default=None, description="Code at the first anchor")
+    last_anchor_line: Optional[int] = Field(default=None, description="Line number of the last anchor in the chain (e.g. USE for UAF)")
+    last_anchor_code: Optional[str] = Field(default=None, description="Code at the last anchor")
     attack_reasoning: str = Field(description="Explanation of how the attack works or response to Blue's refutation")
 
 
@@ -92,9 +155,8 @@ class BaselineBlueOutput(BaseModel):
 # ==============================================================================
 
 class Round1RedOutput(BaseModel):
-    """Round 1 Red Agent: Validate C_cons without tools"""
-    origin_mapping: Optional[AnchorMapping] = Field(default=None, description="Origin anchor mapping result")
-    impact_mapping: Optional[AnchorMapping] = Field(default=None, description="Impact anchor mapping result")
+    """Round 1 Red Agent: Validate C_cons without tools (§3.3.1 Anchor Mapping)"""
+    anchor_mappings: List[AnchorMapping] = Field(default_factory=list, description="All anchor mapping results (typed)")
     attack_path_exists: bool = Field(description="Whether attack path exists in target")
     c_cons_satisfied: bool = Field(description="Whether C_cons is satisfied")
     verdict: str = Field(description="'PROCEED' or 'SAFE'")
@@ -109,11 +171,10 @@ class Round1BlueOutput(BaseModel):
 
 
 class Round1JudgeOutput(BaseModel):
-    """Round 1 Judge: Adjudicate C_cons"""
+    """Round 1 Judge: Adjudicate C_cons (§3.3.1)"""
     c_cons_satisfied: bool = Field(description="Whether C_cons is satisfied")
     verdict: str = Field(description="'SAFE-Mismatch' or 'PROCEED'")
-    validated_origin: Optional[AnchorMapping] = Field(default=None, description="Validated origin mapping")
-    validated_impact: Optional[AnchorMapping] = Field(default=None, description="Validated impact mapping")
+    validated_anchors: List[AnchorMapping] = Field(default_factory=list, description="Validated anchor mappings (typed)")
 
 
 # ==============================================================================
@@ -122,7 +183,8 @@ class Round1JudgeOutput(BaseModel):
 
 class AttackPathStep(BaseModel):
     """A step in the attack path"""
-    step_type: str = Field(description="'Origin', 'Trace', 'Impact', or 'Call'")
+    step_type: str = Field(description="AnchorType value (e.g. 'ALLOC','DEALLOC','USE') or flow role ('Trace','Call')")
+    anchor_type: Optional[str] = Field(default=None, description="AnchorType value if this step corresponds to a chain anchor")
     target_line: Optional[int] = Field(default=None, description="Target line number")
     target_code: Optional[str] = Field(default=None, description="Target code snippet")
     matches_reference: bool = Field(description="Whether matches reference semantically")
@@ -155,14 +217,33 @@ class Round2BlueOutput(BaseModel):
 
 
 class Round2JudgeOutput(BaseModel):
-    """Round 2 Judge: Final adjudication"""
+    """Round 2 Judge: Final adjudication (§3.3.3 Multi-Agent Semantic Analysis)"""
     c_cons_satisfied: bool = Field(description="Whether C_cons is satisfied")
     c_reach_satisfied: bool = Field(description="Whether C_reach is satisfied")
     c_def_satisfied: bool = Field(description="Whether defense blocks attack")
-    origin_in_function: bool = Field(default=True, description="Whether origin is in current function")
-    impact_in_function: bool = Field(default=True, description="Whether impact is in current function")
+    first_anchor_in_function: bool = Field(default=True, description="Whether the first anchor in the chain is in current function")
+    last_anchor_in_function: bool = Field(default=True, description="Whether the last anchor in the chain is in current function")
     verdict: str = Field(description="Final verdict category")
     validated_defense: Optional[DefenseCheckResult] = Field(default=None, description="Validated defense if any")
+
+
+# ==============================================================================
+# Path Verification Result (§3.3.2 — Pure Static, No LLM)
+# ==============================================================================
+
+class PathVerificationResult(BaseModel):
+    """Result of §3.3.2 static path verification via PDG analysis.
+    
+    This step is performed through static analysis WITHOUT LLM involvement.
+    It checks whether dependency edges exist between mapped anchor positions
+    in the target code's PDG (Program Dependence Graph).
+    """
+    reachable: bool = Field(description="Whether a dependency path exists between anchor chain endpoints")
+    path_type: str = Field(default="none", description="'data_flow', 'control_flow', or 'none'")
+    details: str = Field(default="", description="Human-readable explanation of the path check result")
+    anchor_lines_checked: List[int] = Field(default_factory=list, description="Target line numbers that were checked in the PDG")
+    skipped: bool = Field(default=False, description="Whether path verification was skipped (e.g., for missing-operation vulns like MemoryLeak)")
+    skip_reason: Optional[str] = Field(default=None, description="Reason for skipping path verification")
     
 # ==============================================================================
 # 1. Tools Factory (Updated: Using CodeNavigator)
@@ -633,8 +714,7 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
         # Round1RedOutput fallback (simplified)
         if model_name == "Round1RedOutput":
             return Round1RedOutput(
-                origin_mapping=None,
-                impact_mapping=None,
+                anchor_mappings=[],
                 attack_path_exists=False,
                 c_cons_satisfied=False,  # Conservative: assume not satisfied when uncertain
                 verdict="PROCEED",  # Allow flow to continue to Round 2
@@ -654,8 +734,7 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
             return Round1JudgeOutput(
                 c_cons_satisfied=True,  # Conservative: allow flow to continue
                 verdict="PROCEED",
-                validated_origin=None,
-                validated_impact=None
+                validated_anchors=[]
             )
         
         # Round2RedOutput fallback (simplified)
@@ -684,8 +763,8 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
                 c_cons_satisfied=True,  # Conservative: allow flow to continue
                 c_reach_satisfied=False,
                 c_def_satisfied=False,
-                origin_in_function=True,
-                impact_in_function=True,
+                first_anchor_in_function=True,
+                last_anchor_in_function=True,
                 verdict="PROCEED",  # Let Round 3 decide
                 validated_defense=None
             )
@@ -698,8 +777,7 @@ def _create_fallback_output(output_model: BaseModel, raw_content: str, agent_nam
                 c_def_satisfied=False,
                 is_vulnerable=False,  # Conservative: default safe
                 verdict_category="SAFE-Unknown",
-                origin_anchor=None,
-                impact_anchor=None,
+                anchor_evidence=[],
                 trace=[],
                 defense_mechanism=None,
                 analysis_report=f"JSON parsing failed - {agent_name}"
@@ -782,10 +860,17 @@ def llm_invoke_with_retry(llm, messages, max_retries: int = 3, retry_delay: floa
 
 def build_phase3_mapping_summary(sf, ev) -> str:
     """
-    Format Phase 3 aligned_vuln_traces into readable mapping summary
+    Format Phase 3 aligned_vuln_traces into readable mapping summary.
+    
+    Implements §3.3.1 Anchor Mapping with locatability-aware strategy:
+    - CONCRETE anchors: Direct alignment via Phase 3 traces (highest confidence)
+    - ASSUMED anchors:  Phase 3 hint + assumption verification guidance
+    - CONCEPTUAL anchors: No direct trace; LLM must discover from context
+    
+    Groups anchors by locatability tier to guide the Red Agent's mapping strategy.
     
     Args:
-        sf: SliceFeature (contains pre_origins, pre_impacts)
+        sf: SliceFeature (contains pre_anchors: List[Anchor])
         ev: MatchEvidence (contains aligned_vuln_traces)
     
     Returns:
@@ -796,64 +881,111 @@ def build_phase3_mapping_summary(sf, ev) -> str:
         match = re.match(r'^\[\s*(\d+)\]', line.strip())
         return int(match.group(1)) if match else -1
     
-    def find_target_mapping(anchor_line: str, aligned_traces: list) -> tuple:
+    def find_target_mapping_for_anchor(anchor, aligned_traces: list) -> tuple:
         """
-        Find the target line that maps to a given anchor line.
+        Find the target line that maps to a given Anchor object.
+        Uses anchor.line_number first, then falls back to code_snippet content matching.
         Returns: (target_line_no, target_code, similarity) or (None, None, 0.0)
         """
-        anchor_ln = extract_line_no(anchor_line)
-        if anchor_ln == -1:
-            # Try content-based matching if no line number
-            anchor_content = re.sub(r'^\[\s*\d+\]', '', anchor_line).strip()
+        # Strategy 1: Use anchor.line_number to match slice line markers
+        if anchor.line_number:
             for trace in aligned_traces:
-                if trace.target_line and anchor_content in trace.slice_line:
+                slice_ln = extract_line_no(trace.slice_line)
+                if slice_ln == anchor.line_number and trace.target_line:
                     return (trace.line_no, trace.target_line, trace.similarity)
-            return (None, None, 0.0)
         
-        # Line number based matching
-        for trace in aligned_traces:
-            slice_ln = extract_line_no(trace.slice_line)
-            if slice_ln == anchor_ln and trace.target_line:
-                return (trace.line_no, trace.target_line, trace.similarity)
+        # Strategy 2: Use code_snippet content matching
+        if anchor.code_snippet:
+            snippet = anchor.code_snippet.strip()
+            for trace in aligned_traces:
+                if trace.target_line and snippet and snippet in trace.slice_line:
+                    return (trace.line_no, trace.target_line, trace.similarity)
         
         return (None, None, 0.0)
     
     lines = []
     
-    # Process Origin Anchors
-    origin_lines = []
-    for anchor in (sf.pre_origins or []):
-        target_ln, target_code, sim = find_target_mapping(anchor, ev.aligned_vuln_traces)
-        quality = 'good' if sim > 0.6 else ('weak' if sim > 0.3 else 'missing')
-        if target_ln:
-            origin_lines.append(f"  [{quality.upper()}] `{anchor.strip()}`")
-            origin_lines.append(f"      → Target Line {target_ln}: `{target_code.strip() if target_code else ''}` (sim={sim:.2f})")
+    # Group anchors by locatability tier
+    concrete_anchors = []
+    assumed_anchors = []
+    conceptual_anchors = []
+    
+    for anchor in (sf.pre_anchors or []):
+        loc = anchor.locatability
+        if hasattr(loc, 'value'):
+            loc_val = loc.value
         else:
-            origin_lines.append(f"  [UNMAPPED] `{anchor.strip()}`")
+            loc_val = str(loc)
+        
+        target_ln, target_code, sim = find_target_mapping_for_anchor(anchor, ev.aligned_vuln_traces)
+        entry = (anchor, target_ln, target_code, sim)
+        
+        if loc_val == 'concrete':
+            concrete_anchors.append(entry)
+        elif loc_val == 'assumed':
+            assumed_anchors.append(entry)
+        else:  # conceptual
+            conceptual_anchors.append(entry)
     
-    # Process Impact Anchors
-    impact_lines = []
-    for anchor in (sf.pre_impacts or []):
-        target_ln, target_code, sim = find_target_mapping(anchor, ev.aligned_vuln_traces)
-        quality = 'good' if sim > 0.6 else ('weak' if sim > 0.3 else 'missing')
-        if target_ln:
-            impact_lines.append(f"  [{quality.upper()}] `{anchor.strip()}`")
-            impact_lines.append(f"      → Target Line {target_ln}: `{target_code.strip() if target_code else ''}` (sim={sim:.2f})")
-        else:
-            impact_lines.append(f"  [UNMAPPED] `{anchor.strip()}`")
+    # === Tier 1: CONCRETE anchors (sliceable, searchable, no assumptions) ===
+    if concrete_anchors:
+        lines.append("**Tier 1 — CONCRETE Anchors** (direct code locations, highest confidence):")
+        lines.append("  Strategy: Verify Phase 3 alignment → confirm semantic role match")
+        for anchor, target_ln, target_code, sim in concrete_anchors:
+            quality = 'good' if sim > 0.6 else ('weak' if sim > 0.3 else 'missing')
+            label = format_anchor_for_prompt(anchor)
+            opt_tag = " (optional)" if anchor.is_optional else ""
+            if target_ln:
+                lines.append(f"  [{quality.upper()}] {label}{opt_tag}")
+                lines.append(f"      → Target Line {target_ln}: `{target_code.strip() if target_code else ''}` (sim={sim:.2f})")
+            else:
+                lines.append(f"  [UNMAPPED] {label}{opt_tag}")
     
-    lines.append("**Origin Anchor Mappings**:")
-    if origin_lines:
-        lines.extend(origin_lines)
-    else:
-        lines.append("  [No origin anchors defined in Phase 2]")
+    # === Tier 2: ASSUMED anchors (has location, but requires assumption verification) ===
+    if assumed_anchors:
+        lines.append("")
+        lines.append("**Tier 2 — ASSUMED Anchors** (location known, assumption needs verification):")
+        lines.append("  Strategy: Verify Phase 3 alignment → THEN verify assumption holds in target context")
+        for anchor, target_ln, target_code, sim in assumed_anchors:
+            quality = 'good' if sim > 0.6 else ('weak' if sim > 0.3 else 'missing')
+            label = format_anchor_for_prompt(anchor)
+            opt_tag = " (optional)" if anchor.is_optional else ""
+            at = ""
+            if anchor.assumption_type:
+                at_val = anchor.assumption_type.value if hasattr(anchor.assumption_type, 'value') else str(anchor.assumption_type)
+                at = f" [Assumption: {at_val}]"
+            rationale = f" — {anchor.assumption_rationale}" if anchor.assumption_rationale else ""
+            if target_ln:
+                lines.append(f"  [{quality.upper()}] {label}{opt_tag}{at}{rationale}")
+                lines.append(f"      → Target Line {target_ln}: `{target_code.strip() if target_code else ''}` (sim={sim:.2f})")
+                lines.append(f"      ⚠ VERIFY: Does assumption still hold in target context?")
+            else:
+                lines.append(f"  [UNMAPPED] {label}{opt_tag}{at}{rationale}")
+                lines.append(f"      ⚠ VERIFY: Search target code for equivalent; verify assumption")
     
-    lines.append("")
-    lines.append("**Impact Anchor Mappings**:")
-    if impact_lines:
-        lines.extend(impact_lines)
-    else:
-        lines.append("  [No impact anchors defined in Phase 2]")
+    # === Tier 3: CONCEPTUAL anchors (not directly in code, must be inferred) ===
+    if conceptual_anchors:
+        lines.append("")
+        lines.append("**Tier 3 — CONCEPTUAL Anchors** (inferred, not directly in slice code):")
+        lines.append("  Strategy: LLM must discover equivalent semantic role in target from context/root cause")
+        for anchor, target_ln, target_code, sim in conceptual_anchors:
+            label = format_anchor_for_prompt(anchor)
+            opt_tag = " (optional)" if anchor.is_optional else ""
+            at = ""
+            if anchor.assumption_type:
+                at_val = anchor.assumption_type.value if hasattr(anchor.assumption_type, 'value') else str(anchor.assumption_type)
+                at = f" [Assumption: {at_val}]"
+            rationale = f" — {anchor.assumption_rationale}" if anchor.assumption_rationale else ""
+            # Conceptual anchors rarely have Phase 3 mappings, but check anyway
+            if target_ln:
+                lines.append(f"  [HINT] {label}{opt_tag}{at}{rationale}")
+                lines.append(f"      → Possible Target Line {target_ln}: `{target_code.strip() if target_code else ''}` (sim={sim:.2f})")
+            else:
+                lines.append(f"  [DISCOVER] {label}{opt_tag}{at}{rationale}")
+                lines.append(f"      → No Phase 3 alignment. Must be inferred from target code and root cause.")
+    
+    if not concrete_anchors and not assumed_anchors and not conceptual_anchors:
+        lines.append("**Anchor Mappings**: [No typed anchors defined in Phase 2]")
     
     return "\n".join(lines)
 
@@ -865,53 +997,94 @@ def run_round1_red(
     llm: ChatOpenAI
 ) -> Round1RedOutput:
     """
-    Round 1 Red Agent: Validate C_cons (Consistency Constraint) WITHOUT tools.
+    Round 1 Red Agent: Anchor Mapping (§3.3.1) — Validate C_cons WITHOUT tools.
     
-    Core logic:
-    1. Extract Phase 2 pre_origins/pre_impacts
-    2. Extract Phase 3 aligned_vuln_traces mapping
-    3. Let Red Agent evaluate mapping quality
-    4. If mapping is missing, let Red Agent search in target code
-    5. If Origin or Impact not found -> Direct SAFE
+    Implements the paper's anchor mapping step with locatability-aware strategy:
+    1. Extract Phase 2 typed anchors with locatability info (CONCRETE/ASSUMED/CONCEPTUAL)
+    2. Build tiered Phase 3 mapping summary (Tier 1/2/3 by locatability)
+    3. Let Red Agent produce mapping μ: M → T per anchor
+    4. For ASSUMED anchors: verify assumption holds in target context
+    5. For CONCEPTUAL anchors: LLM discovers from root cause + target code
+    6. Verify constraint chain causality
+    7. If any critical (non-optional) anchor unmapped → SAFE
     """
-    print("      [Round1-Red] Validating C_cons (no tools)...")
+    print("      [Round1-Red] Anchor Mapping §3.3.1 — validating C_cons (no tools)...")
     
     sf = feature.slices.get(candidate.patch_func)
     ev = candidate.evidence
     
-    # Build Phase 3 Mapping Summary
+    # Build Phase 3 Mapping Summary (now tiered by locatability)
     phase3_summary = build_phase3_mapping_summary(sf, ev) if sf else "No slice found for this function"
+    
+    # Format typed anchors for prompt (now includes locatability/assumption info)
+    anchor_prompt_lines = []
+    if sf and sf.pre_anchors:
+        for i, anchor in enumerate(sf.pre_anchors):
+            pos = "first" if i == 0 else ("last" if i == len(sf.pre_anchors) - 1 else "middle")
+            line = f"  {i+1}. {format_anchor_for_prompt(anchor)} [chain_position: {pos}]"
+            anchor_prompt_lines.append(line)
+    anchor_prompt = chr(10).join(anchor_prompt_lines) if anchor_prompt_lines else '[No typed anchors identified in Phase 2]'
+    
+    # Get constraint chain description if available
+    constraint_chain = ""
+    violation_pred = ""
+    mitigation_patterns = ""
+    if sf and hasattr(sf, 'taxonomy') and sf.taxonomy and hasattr(sf.taxonomy, 'category_obj'):
+        try:
+            cat = sf.taxonomy.category_obj
+            if cat and hasattr(cat, 'constraint') and cat.constraint:
+                constraint_chain = cat.constraint.chain_str()
+                if cat.constraint.violation:
+                    violation_pred = str(cat.constraint.violation)
+                if cat.constraint.mitigations:
+                    mitigation_patterns = ", ".join(str(m) for m in cat.constraint.mitigations)
+        except Exception:
+            pass
+    
+    # Count anchor stats for prompt guidance
+    n_concrete = sum(1 for a in (sf.pre_anchors or []) if hasattr(a.locatability, 'value') and a.locatability.value == 'concrete') if sf else 0
+    n_assumed = sum(1 for a in (sf.pre_anchors or []) if hasattr(a.locatability, 'value') and a.locatability.value == 'assumed') if sf else 0
+    n_conceptual = sum(1 for a in (sf.pre_anchors or []) if hasattr(a.locatability, 'value') and a.locatability.value == 'conceptual') if sf else 0
+    n_optional = sum(1 for a in (sf.pre_anchors or []) if a.is_optional) if sf else 0
     
     # Build Prompt
     user_input = f"""
-### Phase 2 Anchors (From Reference Vulnerability Analysis)
+### Phase 2 Typed Anchors (From Reference Vulnerability Analysis)
 
-**Origin Anchors** (where vulnerable state is created):
-{chr(10).join(sf.pre_origins) if sf and sf.pre_origins else '[None identified in Phase 2]'}
+**Constraint Chain**: {constraint_chain or 'Not available'}
+**Violation Predicate**: {violation_pred or 'Not available'}
+**Known Mitigations**: {mitigation_patterns or 'None defined'}
 
-**Impact Anchors** (where vulnerability is triggered):
-{chr(10).join(sf.pre_impacts) if sf and sf.pre_impacts else '[None identified in Phase 2]'}
+**Anchor Points** (ordered per vulnerability constraint):
+{anchor_prompt}
 
-### Phase 3 Mapping Results (Slice → Target Alignment)
+**Anchor Statistics**: {n_concrete} CONCRETE, {n_assumed} ASSUMED, {n_conceptual} CONCEPTUAL ({n_optional} optional)
+
+### Phase 3 Tiered Mapping Results (Slice → Target Alignment)
 {phase3_summary}
 
 ### Target Code (with line numbers)
 {target_code_with_lines}
 
-### Vulnerability Context
+### Vulnerability Context (Root Cause Guides Semantic Equivalence)
 - **Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
 - **CWE**: {feature.semantics.cwe_id or 'Unknown'} - {feature.semantics.cwe_name or ''}
 - **Root Cause**: {feature.semantics.root_cause}
-- **Attack Path**: {feature.semantics.attack_path}
+- **Attack Chain**: {feature.semantics.attack_chain}
 
 ### Reference Slice (Pre-Patch)
 {sf.s_pre if sf else 'Not available'}
 
-**TASK**:
-1. Validate the Phase 3 mapping quality for each Origin and Impact anchor
-2. If any anchor is unmapped or has weak mapping (sim < 0.6), search the target code for a semantically equivalent statement
-3. Determine if C_cons can be satisfied (both Origin and Impact must be mapped)
-4. If either is missing, verdict = SAFE; otherwise verdict = PROCEED
+**TASK — Produce Anchor Mapping μ: M → T**:
+1. For each anchor in the constraint chain, produce an AnchorMapping entry
+2. Follow the tiered strategy: CONCRETE → ASSUMED → CONCEPTUAL
+3. For ASSUMED anchors: verify the assumption holds in target context
+4. For CONCEPTUAL anchors: infer from root cause + target code semantics
+5. Verify constraint chain causality (execution order + data flow)
+6. Optional anchors can be unmapped without failing C_cons
+7. If any critical (non-optional) anchor is unmapped → verdict = SAFE
+8. If chain causality fails → verdict = SAFE
+9. If all critical anchors mapped with valid causality → verdict = PROCEED
 """
     
     messages = [
@@ -938,8 +1111,7 @@ def run_round1_red(
                 if attempt == max_parse_retries - 1:
                     # Return default "proceed" to let Round 2 continue
                     return Round1RedOutput(
-                        origin_mapping=None,
-                        impact_mapping=None,
+                        anchor_mappings=[],
                         attack_path_exists=False,
                         c_cons_satisfied=False,
                         verdict="PROCEED",
@@ -967,8 +1139,7 @@ def run_round1_red(
             print(f"      [Round1-Red] Error (attempt {attempt+1}): {e}")
             if attempt == max_parse_retries - 1:
                 return Round1RedOutput(
-                    origin_mapping=None,
-                    impact_mapping=None,
+                    anchor_mappings=[],
                     attack_path_exists=False,
                     c_cons_satisfied=False,
                     verdict="PROCEED",
@@ -978,8 +1149,7 @@ def run_round1_red(
     
     # All retries failed, return default value
     return Round1RedOutput(
-        origin_mapping=None,
-        impact_mapping=None,
+        anchor_mappings=[],
         attack_path_exists=False,
         c_cons_satisfied=False,
         verdict="PROCEED",
@@ -999,26 +1169,30 @@ def run_round1_blue(
     """
     print("      [Round1-Blue] Attempting to refute C_cons...")
     
-    # Format Red's claims for Blue (using simplified model)
-    origin_claim = "  [No origin mapping]"
-    if red_output.origin_mapping:
-        m = red_output.origin_mapping
-        status = "✓ MAPPED" if m.is_mapped else "✗ NOT MAPPED"
-        origin_claim = f"  [{status}] Reference: {m.reference_line}"
-        if m.is_mapped:
-            origin_claim += f"\n      → Target Line {m.target_line}: `{m.target_code}`"
-            if m.reason:
-                origin_claim += f"\n      Reason: {m.reason}"
-    
-    impact_claim = "  [No impact mapping]"
-    if red_output.impact_mapping:
-        m = red_output.impact_mapping
-        status = "✓ MAPPED" if m.is_mapped else "✗ NOT MAPPED"
-        impact_claim = f"  [{status}] Reference: {m.reference_line}"
-        if m.is_mapped:
-            impact_claim += f"\n      → Target Line {m.target_line}: `{m.target_code}`"
-            if m.reason:
-                impact_claim += f"\n      Reason: {m.reason}"
+    # Format Red's anchor mapping claims for Blue (typed anchor model)
+    anchor_claims_lines = []
+    if red_output.anchor_mappings:
+        for m in red_output.anchor_mappings:
+            status = "✓ MAPPED" if m.is_mapped else "✗ NOT MAPPED"
+            loc_tag = f"|{m.locatability}" if m.locatability else ""
+            opt_tag = " (optional)" if m.is_optional else ""
+            line = f"  [{status}] [{m.anchor_type}{loc_tag}]{opt_tag} Reference: {m.reference_line}"
+            if m.is_mapped:
+                conf = f" (confidence: {m.mapping_confidence})" if m.mapping_confidence else ""
+                line += f"\n      → Target Line {m.target_line}: `{m.target_code}`{conf}"
+                if m.semantic_role_verified:
+                    line += f"\n      ✓ Semantic role verified"
+                if m.reason:
+                    line += f"\n      Reason: {m.reason}"
+            # Show assumption verification for ASSUMED/CONCEPTUAL anchors
+            if m.locatability in ('assumed', 'conceptual'):
+                at = f" [{m.assumption_type}]" if m.assumption_type else ""
+                av = "✓" if m.assumption_verified else ("✗" if m.assumption_verified is False else "?")
+                line += f"\n      Assumption{at}: {av}"
+                if m.assumption_verification_note:
+                    line += f" — {m.assumption_verification_note}"
+            anchor_claims_lines.append(line)
+    anchor_claims = chr(10).join(anchor_claims_lines) if anchor_claims_lines else "  [No anchor mappings provided]"
     
     user_input = f"""
 ### Red Agent's C_cons Claim
@@ -1028,11 +1202,8 @@ def run_round1_blue(
 **Verdict**: {red_output.verdict}
 {f"**Safe Reason**: {red_output.safe_reason}" if red_output.safe_reason else ""}
 
-**Origin Mapping**:
-{origin_claim}
-
-**Impact Mapping**:
-{impact_claim}
+**Anchor Mappings** (typed, ordered per constraint chain):
+{anchor_claims}
 
 ### Target Code (with line numbers)
 {target_code_with_lines}
@@ -1040,19 +1211,19 @@ def run_round1_blue(
 ### Vulnerability Context
 - **Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
 - **Root Cause**: {feature.semantics.root_cause}
-- **Attack Path**: {feature.semantics.attack_path}
+- **Attack Chain**: {feature.semantics.attack_chain}
 
 **TASK**:
-1. Examine Red's Origin and Impact mappings - are they semantically correct?
-2. **CRITICAL - Check Causality**: Does Origin → Impact satisfy causal relationship?
-   - **Execution Order**: Can Origin execute BEFORE Impact in any feasible path?
-   - **Data Flow**: Does the variable/state created at Origin flow to Impact?
+1. Examine Red's anchor mappings - are they semantically correct for their declared type?
+2. **CRITICAL - Check Causality**: Does the chain satisfy causal relationships?
+   - **Execution Order**: Can earlier chain anchors execute BEFORE later ones in any feasible path?
+   - **Data Flow**: Does the state created at the first anchor flow through the chain to the last?
    - **Common Causality Errors**:
-     * **Reversed Order**: Impact line number < Origin line number (check if this is valid, e.g., callbacks/macros)
-     * **Cleanup Confusion**: Both are cleanup/deallocation code (not vulnerable use)
-     * **Different Variables**: Origin affects X, Impact uses Y (no connection)
-     * **Blocked Path**: Control flow (return/goto/exit) prevents Origin from reaching Impact
-   - If causality is INVALID (e.g., line 4011 cannot be caused by line 4014 that comes after it), REFUTE with "Causality Violation"
+     * **Reversed Order**: Later chain anchor has lower line number (check if valid, e.g., callbacks/macros)
+     * **Cleanup Confusion**: Multiple anchors are cleanup/deallocation code (not vulnerable use)
+     * **Different Variables**: Anchors affect different variables with no connection
+     * **Blocked Path**: Control flow (return/goto/exit) prevents chain traversal
+   - If causality is INVALID, REFUTE with "Causality Violation"
 3. If Red's mapping is wrong (different operation, different variable role), REFUTE it
 4. If the target code has a fundamentally different mechanism, explain the MISMATCH
 5. If Red's claim is valid AND causality is correct, CONCEDE
@@ -1135,25 +1306,29 @@ def run_round1_judge(
     """
     print("      [Round1-Judge] Adjudicating C_cons...")
     
-    # Format origin/impact info from simplified model
-    origin_info = "Not mapped"
-    if red_output.origin_mapping and red_output.origin_mapping.is_mapped:
-        m = red_output.origin_mapping
-        origin_info = f"Line {m.target_line}: `{m.target_code}` (ref: {m.reference_line})"
-    
-    impact_info = "Not mapped"
-    if red_output.impact_mapping and red_output.impact_mapping.is_mapped:
-        m = red_output.impact_mapping
-        impact_info = f"Line {m.target_line}: `{m.target_code}` (ref: {m.reference_line})"
+    # Format typed anchor mappings from Red
+    anchor_info_lines = []
+    for m in (red_output.anchor_mappings or []):
+        status = "MAPPED" if m.is_mapped else "NOT MAPPED"
+        loc_tag = f"|{m.locatability}" if m.locatability else ""
+        opt_tag = " (opt)" if m.is_optional else ""
+        info = f"  [{m.anchor_type}{loc_tag}] [{status}]{opt_tag} ref: {m.reference_line}"
+        if m.is_mapped:
+            info += f" → Target L{m.target_line}: `{m.target_code}` (conf: {m.mapping_confidence})"
+        if m.locatability in ('assumed', 'conceptual') and m.assumption_verified is not None:
+            info += f" [assumption: {'verified' if m.assumption_verified else 'FAILED'}]"
+        anchor_info_lines.append(info)
+    anchor_info = chr(10).join(anchor_info_lines) if anchor_info_lines else "  [No anchor mappings]"
     
     user_input = f"""
 ### Red Agent's C_cons Claim
 - **C_cons Satisfied**: {red_output.c_cons_satisfied}
 - **Attack Path Exists**: {red_output.attack_path_exists}
 - **Verdict**: {red_output.verdict}
-- **Origin Mapping**: {origin_info}
-- **Impact Mapping**: {impact_info}
 {f"- **Safe Reason**: {red_output.safe_reason}" if red_output.safe_reason else ""}
+
+**Anchor Mappings** (typed, ordered per constraint chain):
+{anchor_info}
 
 ### Blue Agent's Refutation
 - **Refutes Mapping**: {blue_output.refutes_mapping}
@@ -1166,11 +1341,11 @@ def run_round1_judge(
 ### Vulnerability Context
 - **Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
 - **Root Cause**: {feature.semantics.root_cause}
-- **Attack Path**: {feature.semantics.attack_path}
-- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+- **Attack Chain**: {feature.semantics.attack_chain}
+- **Patch Defense**: {feature.semantics.patch_defense}
 
 **TASK**:
-1. Evaluate if Red successfully mapped both Origin and Impact anchors
+1. Evaluate if Red successfully mapped all typed anchors in the constraint chain
 2. Evaluate if Blue's refutation is valid
 3. Decide: SAFE-Mismatch (terminate) or PROCEED (to Round 2)
 """
@@ -1201,8 +1376,7 @@ def run_round1_judge(
                     return Round1JudgeOutput(
                         c_cons_satisfied=True,
                         verdict="PROCEED",
-                        validated_origin=red_output.origin_mapping,
-                        validated_impact=red_output.impact_mapping
+                        validated_anchors=red_output.anchor_mappings
                     )
                 continue
             
@@ -1228,8 +1402,7 @@ def run_round1_judge(
                 return Round1JudgeOutput(
                     c_cons_satisfied=True,
                     verdict="PROCEED",
-                    validated_origin=red_output.origin_mapping,
-                    validated_impact=red_output.impact_mapping
+                    validated_anchors=red_output.anchor_mappings
                 )
             messages.append(HumanMessage(content=f"Parse error: {e}. Please output valid JSON only."))
     
@@ -1237,8 +1410,7 @@ def run_round1_judge(
     return Round1JudgeOutput(
         c_cons_satisfied=True,
         verdict="PROCEED",
-        validated_origin=red_output.origin_mapping,
-        validated_impact=red_output.impact_mapping
+        validated_anchors=red_output.anchor_mappings
     )
 
 
@@ -1275,8 +1447,7 @@ def run_round1_debate(
         judge_output = Round1JudgeOutput(
             c_cons_satisfied=False,
             verdict="SAFE-Mismatch",
-            validated_origin=None,
-            validated_impact=None
+            validated_anchors=[]
         )
         return red_output, blue_output, judge_output, False
     
@@ -1317,24 +1488,23 @@ def run_round2_red(
     
     sf = feature.slices.get(candidate.patch_func)
     
-    # Build Round 1 validated mappings summary (using simplified model)
-    origin_info = "Not validated"
-    impact_info = "Not validated"
-    if round1_result.validated_origin and round1_result.validated_origin.is_mapped:
-        o = round1_result.validated_origin
-        origin_info = f"Line {o.target_line}: `{o.target_code}` (from: {o.reference_line})"
-    if round1_result.validated_impact and round1_result.validated_impact.is_mapped:
-        i = round1_result.validated_impact
-        impact_info = f"Line {i.target_line}: `{i.target_code}` (from: {i.reference_line})"
+    # Build Round 1 validated anchor mappings summary (typed model)
+    validated_anchor_lines = []
+    for m in (round1_result.validated_anchors or []):
+        status = "VALIDATED" if m.is_mapped else "NOT VALIDATED"
+        info = f"  [{m.anchor_type}] [{status}] ref: {m.reference_line}"
+        if m.is_mapped:
+            info += f" → Target L{m.target_line}: `{m.target_code}`"
+        validated_anchor_lines.append(info)
+    validated_anchors_str = chr(10).join(validated_anchor_lines) if validated_anchor_lines else "  [No validated anchors from Round 1]"
     
     user_input = f"""
-### Round 1 Validated Mappings
-**Origin Anchor**: {origin_info}
-**Impact Anchor**: {impact_info}
+### Round 1 Validated Anchor Mappings
+{validated_anchors_str}
 **Round 1 C_cons**: {round1_result.c_cons_satisfied}
 
-### Reference Attack Path
-{feature.semantics.attack_path}
+### Reference Attack Chain
+{feature.semantics.attack_chain}
 
 ### Reference Vulnerability Semantics
 - **Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
@@ -1349,8 +1519,8 @@ File: {candidate.target_file}
 {target_code_with_lines}
 
 **TASK**:
-1. If Round 1 had issues, use tools to reinforce C_cons (verify Origin/Impact mappings)
-2. Construct the attack path from Origin to Impact
+1. If Round 1 had issues, use tools to reinforce C_cons (verify anchor mappings)
+2. Construct the attack path through the constraint chain anchors
 3. For each step, verify semantic consistency with reference
 4. Check data flow (same variable throughout) and control flow (no blockers)
 5. Report C_reach verdict
@@ -1491,7 +1661,7 @@ def run_round2_blue(
 
 ### Reference Fix (What the patch does)
 - **Root Cause**: {feature.semantics.root_cause}
-- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+- **Patch Defense**: {feature.semantics.patch_defense}
 
 **Reference Post-Patch Slice**:
 {sf.s_post if sf else 'Not available'}
@@ -1669,7 +1839,7 @@ def run_round2_judge(
 ### Vulnerability Context
 - **Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
 - **Root Cause**: {feature.semantics.root_cause}
-- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+- **Patch Defense**: {feature.semantics.patch_defense}
 
 **TASK**:
 1. Evaluate C_cons: Is the mapping valid? Did Blue successfully refute?
@@ -1712,8 +1882,8 @@ def run_round2_judge(
                         c_cons_satisfied=round1_result.c_cons_satisfied,
                         c_reach_satisfied=round2_red_output.c_reach_satisfied,
                         c_def_satisfied=round2_blue_output.any_defense_found,
-                        origin_in_function=True,
-                        impact_in_function=True,
+                        first_anchor_in_function=True,
+                        last_anchor_in_function=True,
                         verdict="PROCEED",
                         validated_defense=find_strongest_defense()
                     )
@@ -1742,8 +1912,8 @@ def run_round2_judge(
                     c_cons_satisfied=round1_result.c_cons_satisfied,
                     c_reach_satisfied=round2_red_output.c_reach_satisfied,
                     c_def_satisfied=round2_blue_output.any_defense_found,
-                    origin_in_function=True,
-                    impact_in_function=True,
+                    first_anchor_in_function=True,
+                    last_anchor_in_function=True,
                     verdict="PROCEED",
                     validated_defense=find_strongest_defense()
                 )
@@ -1754,8 +1924,8 @@ def run_round2_judge(
         c_cons_satisfied=round1_result.c_cons_satisfied,
         c_reach_satisfied=round2_red_output.c_reach_satisfied,
         c_def_satisfied=round2_blue_output.any_defense_found,
-        origin_in_function=True,
-        impact_in_function=True,
+        first_anchor_in_function=True,
+        last_anchor_in_function=True,
         verdict="PROCEED",
         validated_defense=find_strongest_defense()
     )
@@ -1800,8 +1970,8 @@ def run_round2_debate(
             c_cons_satisfied=round1_result.c_cons_satisfied,
             c_reach_satisfied=False,
             c_def_satisfied=False,
-            origin_in_function=True,
-            impact_in_function=True,
+            first_anchor_in_function=True,
+            last_anchor_in_function=True,
             verdict="SAFE-Unreachable",
             validated_defense=None
         )
@@ -1843,7 +2013,7 @@ def run_round3_final_judge(
     The Judge synthesizes Round 1 and Round 2 results into the final verdict format.
     
     Args:
-        round1_red: Round 1 Red Agent output (origin/impact mappings)
+        round1_red: Round 1 Red Agent output (typed anchor chain mappings)
         round1_blue: Round 1 Blue Agent output (refutation attempts)
         round1_judge: Round 1 Judge output (C_cons adjudication)
         round2_red: Round 2 Red Agent output (attack path steps)
@@ -1861,18 +2031,17 @@ def run_round3_final_judge(
     
     sf = feature.slices.get(candidate.patch_func)
     
-    # === Format Round 1 Evidence (Simplified Model) ===
+    # === Format Round 1 Evidence (Typed Anchor Model) ===
     
-    # Round 1 Red: Origin/Impact mappings (single object, not list)
-    origin_info_r1 = "Not mapped"
-    if round1_red.origin_mapping and round1_red.origin_mapping.is_mapped:
-        o = round1_red.origin_mapping
-        origin_info_r1 = f"Line {o.target_line}: `{o.target_code}` (from: {o.reference_line})"
-    
-    impact_info_r1 = "Not mapped"
-    if round1_red.impact_mapping and round1_red.impact_mapping.is_mapped:
-        i = round1_red.impact_mapping
-        impact_info_r1 = f"Line {i.target_line}: `{i.target_code}` (from: {i.reference_line})"
+    # Round 1 Red: All typed anchor mappings
+    r1_anchor_lines = []
+    for m in (round1_red.anchor_mappings or []):
+        status = "MAPPED" if m.is_mapped else "NOT MAPPED"
+        info = f"  [{m.anchor_type}] [{status}] ref: {m.reference_line}"
+        if m.is_mapped:
+            info += f" → Target L{m.target_line}: `{m.target_code}`"
+        r1_anchor_lines.append(info)
+    r1_anchors_str = chr(10).join(r1_anchor_lines) if r1_anchor_lines else "  [No anchor mappings]"
     
     round1_red_summary = f"""
 **Round 1 Red Agent (C_cons Evidence)**:
@@ -1881,8 +2050,8 @@ def run_round3_final_judge(
 - Verdict: {round1_red.verdict}
 {f"- Safe Reason: {round1_red.safe_reason}" if round1_red.safe_reason else ""}
 
-Origin Mapping: {origin_info_r1}
-Impact Mapping: {impact_info_r1}
+Anchor Mappings:
+{r1_anchors_str}
 """
     
     round1_judge_summary = f"""
@@ -1937,20 +2106,19 @@ Defense Checks:
 - C_cons Satisfied: {round2_judge.c_cons_satisfied}
 - C_reach Satisfied: {round2_judge.c_reach_satisfied}
 - C_def Satisfied: {round2_judge.c_def_satisfied}
-- Origin In Function: {round2_judge.origin_in_function}
-- Impact In Function: {round2_judge.impact_in_function}
+- First Anchor In Function: {round2_judge.first_anchor_in_function}
+- Last Anchor In Function: {round2_judge.last_anchor_in_function}
 - Verdict: {round2_judge.verdict}
 """
     
-    # Format validated anchors (simplified model)
-    origin_info = "Not mapped"
-    impact_info = "Not mapped"
-    if round1_judge.validated_origin and round1_judge.validated_origin.is_mapped:
-        o = round1_judge.validated_origin
-        origin_info = f"Line {o.target_line}: `{o.target_code}` (ref: {o.reference_line})"
-    if round1_judge.validated_impact and round1_judge.validated_impact.is_mapped:
-        i = round1_judge.validated_impact
-        impact_info = f"Line {i.target_line}: `{i.target_code}` (ref: {i.reference_line})"
+    # Format validated anchors (typed model)
+    validated_anchor_summary_lines = []
+    for m in (round1_judge.validated_anchors or []):
+        if m.is_mapped:
+            validated_anchor_summary_lines.append(f"  [{m.anchor_type}] Target L{m.target_line}: `{m.target_code}` (ref: {m.reference_line})")
+        else:
+            validated_anchor_summary_lines.append(f"  [{m.anchor_type}] NOT MAPPED (ref: {m.reference_line})")
+    validated_anchors_summary = chr(10).join(validated_anchor_summary_lines) if validated_anchor_summary_lines else "  [No validated anchors]"
     
     # Format defense info (simplified model)
     defense_info = "No defense validated"
@@ -1966,8 +2134,7 @@ You are the Final Judge. Your task is to synthesize all previous round results a
 ## Complete Evidence from All Rounds
 
 ### Validated Anchor Mappings (Summary)
-- **Origin Anchor**: {origin_info}
-- **Impact Anchor**: {impact_info}
+{validated_anchors_summary}
 
 {round1_red_summary}
 
@@ -1991,8 +2158,8 @@ Function: {candidate.target_func.split(':')[-1]}
 - **Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
 - **CWE**: {feature.semantics.cwe_id or 'Unknown'} - {feature.semantics.cwe_name or ''}
 - **Root Cause**: {feature.semantics.root_cause}
-- **Attack Path**: {feature.semantics.attack_path}
-- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+- **Attack Chain**: {feature.semantics.attack_chain}
+- **Patch Defense**: {feature.semantics.patch_defense}
 
 ### Reference Slice (Pre-Patch)
 {sf.s_pre if sf else 'Not available'}
@@ -2009,41 +2176,37 @@ Based on ALL the above Round 1 and Round 2 evidence (Red/Blue/Judge outputs), ge
 
 3. **verdict_category**: 'VULNERABLE', 'SAFE-Blocked', 'SAFE-Mismatch', 'SAFE-Unreachable', 'SAFE-TypeMismatch', or 'SAFE-OutOfScope'
 
-4. **origin_anchor**: StepAnalysis for the origin point
-   - Use the ACTUAL line number from the target code
+4. **anchor_evidence**: List of StepAnalysis for ALL typed anchors in the constraint chain
+   - Each entry should have role = anchor type (e.g. "ALLOC", "DEALLOC", "USE")
+   - Use the ACTUAL line numbers from the target code
    - Include the exact code content
+   - Order them per the constraint chain
 
-5. **impact_anchor**: StepAnalysis for the impact point
-   - Use the ACTUAL line number from the target code
-   - Include the exact code content
-
-6. **trace**: List of StepAnalysis from Round 2 Red's attack_path
-   - Include Trace/Call steps between Origin and Impact
+5. **trace**: List of StepAnalysis from Round 2 Red's attack_path
+   - Include Trace/Call steps between chain anchors
    - Use actual line numbers and code from the attack path
 
-7. **defense_mechanism**: StepAnalysis from Round 2 Blue's defense_checks (if SAFE-Blocked)
+6. **defense_mechanism**: StepAnalysis from Round 2 Blue's defense_checks (if SAFE-Blocked)
    - Use the strongest defense found
    - Include its location and code
 
-8. **analysis_report**: Concise 1-2 sentence summary
+7. **analysis_report**: Concise 1-2 sentence summary
 
-**CRITICAL - CAUSALITY CHECK**:
-- **VERIFY Origin → Impact Causality**: Origin MUST causally precede Impact
-  * Check data flow: Does the variable/state created at Origin flow to Impact?
-  * Check control flow: Is there a feasible execution path from Origin to Impact?
-  * If Origin does NOT cause Impact (wrong order, different variables, disconnected flow):
-    → Either SWAP them (if Impact actually creates the state and Origin triggers it)
-    → Or mark as SAFE-Mismatch (if no causal relationship exists)
-- **Line number order is NOT always indicative** (cross-function calls, callbacks, async operations can reverse order)
-- **BUT data/control flow MUST be valid**: Origin's effect must reach Impact
+**CRITICAL - CHAIN CAUSALITY CHECK**:
+- **VERIFY chain ordering**: Each anchor in the chain MUST causally flow to the next
+  * Check data flow: Does the state created at each anchor flow to the next?
+  * Check control flow: Is there a feasible execution path through the chain?
+  * If chain ordering is invalid → mark as SAFE-Mismatch
+- **Line number order is NOT always indicative** (cross-function calls, callbacks, async operations)
+- **BUT data/control flow MUST be valid**: Each anchor's effect must reach the next
 - Use the ACTUAL line numbers from Round 2 Red's attack_path
 - Do NOT make up line numbers - use only what's provided in the evidence
-- For defense_mechanism, use the location/code from Round 2 Blue's defense_checks
 
-**CAUSALITY VALIDATION PATTERNS**:
-- For UAF: Origin should be deallocation, Impact should be subsequent use
-- For NPD: Origin should create NULL state, Impact should dereference
-- For Race: Origin should be conflicting access, Impact should be vulnerable access
+**CHAIN VALIDATION PATTERNS**:
+- For UAF: ALLOC →d DEALLOC →t USE (allocation, then deallocation, then use)
+- For NPD: SOURCE → USE (null-producing source, then dereference)
+- For Integer Overflow: SOURCE → COMPUTATION → SINK (source, arithmetic, sensitive use)
+- For OOB: OBJECT → INDEX → ACCESS (buffer, index computation, access)
 - If Blue refuted causality in Round 2, carefully review the refutation evidence
 """
     
@@ -2130,7 +2293,7 @@ def _create_fallback_judge_output(
         round2_judge.c_cons_satisfied and
         round2_judge.c_reach_satisfied and
         not round2_judge.c_def_satisfied and
-        (round2_judge.origin_in_function or round2_judge.impact_in_function)
+        (round2_judge.first_anchor_in_function or round2_judge.last_anchor_in_function)
     )
     
     # Determine verdict category
@@ -2138,22 +2301,22 @@ def _create_fallback_judge_output(
         verdict_category = "SAFE-Mismatch"
     elif not round2_judge.c_reach_satisfied:
         verdict_category = "SAFE-Unreachable"
-    elif not round2_judge.origin_in_function and not round2_judge.impact_in_function:
+    elif not round2_judge.first_anchor_in_function and not round2_judge.last_anchor_in_function:
         verdict_category = "SAFE-OutOfScope"
     elif round2_judge.c_def_satisfied:
         verdict_category = "SAFE-Blocked"
     else:
         verdict_category = "VULNERABLE" if is_vulnerable else "SAFE-Unknown"
     
-    # === Build origin/impact anchors from Round 2 Red's attack_path ===
-    # This is the primary source for accurate line numbers (simplified model)
-    origin_anchor = None
-    impact_anchor = None
+    # === Build typed anchor evidence from Round 2 Red's attack_path ===
+    # Collect all anchor steps (non-Trace/Call) into anchor_evidence,
+    # and Trace/Call steps into trace_steps.
+    anchor_evidence = []
     trace_steps = []
     
     for i, step in enumerate(round2_red.attack_path):
         step_analysis = StepAnalysis(
-            role=step.step_type,
+            role=step.anchor_type or step.step_type,
             file_path=candidate.target_file,
             func_name=candidate.target_func.split(':')[-1],
             line_number=step.target_line,
@@ -2161,35 +2324,24 @@ def _create_fallback_judge_output(
             observation=f"Step {i+1}: matches_reference={step.matches_reference}"
         )
         
-        if step.step_type == 'Origin' and origin_anchor is None:
-            origin_anchor = step_analysis
-        elif step.step_type == 'Impact' and impact_anchor is None:
-            impact_anchor = step_analysis
-        elif step.step_type in ('Trace', 'Call'):
+        if step.step_type in ('Trace', 'Call'):
             trace_steps.append(step_analysis)
+        else:
+            # Anchor step (e.g. ALLOC, DEALLOC, USE, SOURCE, SINK, etc.)
+            anchor_evidence.append(step_analysis)
     
     # Fallback to Round 1 Judge's validated mappings if Round 2 didn't have attack path
-    if origin_anchor is None and round1_judge.validated_origin and round1_judge.validated_origin.is_mapped:
-        o = round1_judge.validated_origin
-        origin_anchor = StepAnalysis(
-            role="Origin",
-            file_path=candidate.target_file,
-            func_name=candidate.target_func.split(':')[-1],
-            line_number=o.target_line,
-            code_content=o.target_code,
-            observation=f"Mapped from reference: {o.reference_line}"
-        )
-    
-    if impact_anchor is None and round1_judge.validated_impact and round1_judge.validated_impact.is_mapped:
-        i = round1_judge.validated_impact
-        impact_anchor = StepAnalysis(
-            role="Impact",
-            file_path=candidate.target_file,
-            func_name=candidate.target_func.split(':')[-1],
-            line_number=i.target_line,
-            code_content=i.target_code,
-            observation=f"Mapped from reference: {i.reference_line}"
-        )
+    if not anchor_evidence:
+        for m in (round1_judge.validated_anchors or []):
+            if m.is_mapped:
+                anchor_evidence.append(StepAnalysis(
+                    role=m.anchor_type,
+                    file_path=candidate.target_file,
+                    func_name=candidate.target_func.split(':')[-1],
+                    line_number=m.target_line,
+                    code_content=m.target_code,
+                    observation=f"Mapped from reference: {m.reference_line}"
+                ))
     
     # === Build defense mechanism from Round 2 Blue's defense_checks (flat list) ===
     defense_mechanism = None
@@ -2232,51 +2384,50 @@ def _create_fallback_judge_output(
         c_def_satisfied=round2_judge.c_def_satisfied,
         is_vulnerable=is_vulnerable,
         verdict_category=verdict_category,
-        origin_anchor=origin_anchor,
-        impact_anchor=impact_anchor,
+        anchor_evidence=anchor_evidence,
         trace=trace_steps,
         defense_mechanism=defense_mechanism,
         analysis_report=analysis_report
     )
 
 
-ROUND3_FINAL_JUDGE_PROMPT = """You are the **Final Judge** for Round 3: Verdict Synthesis.
+ROUND3_FINAL_JUDGE_PROMPT = """You are the **Final Judge** for Round 3: Verdict Synthesis (§3.3.3).
 
-Your task is to synthesize all evidence from Round 1 (C_cons validation) and Round 2 (C_reach + C_def validation)
-into a final, structured verdict following the JudgeOutput schema.
+Your task is to synthesize all evidence from Round 1 (§3.3.1 Anchor Mapping), Path Verification (§3.3.2),
+and Round 2 (§3.3.3 Multi-Agent Semantic Analysis) into a final, structured verdict following the JudgeOutput schema.
 
 ## YOUR RESPONSIBILITIES
 
 ### 1. Constraint Summary
 Summarize the constraint outcomes from previous rounds:
-- **C_cons**: Was consistency established in Round 1 and confirmed in Round 2?
-- **C_reach**: Was reachability established in Round 2?
+- **C_cons**: Was consistency established in Round 1 (anchor mapping)?
+- **C_reach**: Was reachability established via static path verification (§3.3.2) and semantic analysis (Round 2)?
 - **C_def**: Was a defense found in Round 2?
 
 ### 2. Attack Path Type Validation
 Verify that the identified attack path corresponds to the original vulnerability type:
-- If the reference is UAF, the target should also exhibit UAF pattern
+- If the reference is UAF, the target should also exhibit UAF pattern (ALLOC→DEALLOC→USE)
 - If patterns don't match, set attack_path_matches_vuln_type = false
 
 ### 3. Location Validation
-Check if at least one anchor (Origin or Impact) is within the current target function:
+Check if at least one anchor in the typed chain is within the current target function:
 - Use the function name from context
-- If both anchors are in external functions → SAFE-OutOfScope
+- If ALL anchors are in external functions → SAFE-OutOfScope
 
 ### 4. Final Verdict
 Apply the decision logic:
-- VULNERABLE: C_cons ∧ C_reach ∧ ¬C_def ∧ attack_path_matches_vuln_type ∧ (origin_in_function ∨ impact_in_function)
+- VULNERABLE: C_cons ∧ C_reach ∧ ¬C_def ∧ attack_path_matches_vuln_type ∧ (any anchor in function)
 - SAFE-Blocked: C_cons ∧ C_reach ∧ C_def
 - SAFE-Mismatch: ¬C_cons
 - SAFE-Unreachable: C_cons ∧ ¬C_reach
 - SAFE-TypeMismatch: ¬attack_path_matches_vuln_type
-- SAFE-OutOfScope: ¬origin_in_function ∧ ¬impact_in_function
+- SAFE-OutOfScope: no anchor in current function
 
 ### 5. Evidence Chain Construction
-Build the validated evidence chain:
-- **origin_anchor**: StepAnalysis with exact location and code
-- **impact_anchor**: StepAnalysis with exact location and code
-- **trace**: List of intermediate steps (if vulnerable)
+Build the validated typed anchor evidence chain:
+- **anchor_evidence**: List of StepAnalysis, one per anchor in the constraint chain
+  (e.g., for UAF: [ALLOC step, DEALLOC step, USE step]), each with role set to the AnchorType value
+- **trace**: List of intermediate steps between anchors (if vulnerable)
 - **defense_mechanism**: StepAnalysis for defense (if SAFE-Blocked)
 
 ### 6. Report Generation
@@ -2285,6 +2436,7 @@ Build the validated evidence chain:
 
 ## OUTPUT REQUIREMENTS
 Your output MUST be a valid JudgeOutput JSON with ALL required fields properly filled.
+The anchor_evidence list must have one entry per anchor in the constraint chain, with role matching the AnchorType.
 Use actual line numbers from the target code context provided.
 """
 
@@ -2328,7 +2480,136 @@ class TargetSlicerAdapter:
         return sliced_code
 
 # ==============================================================================
-# 2. Prompts (Updated: Constraint-Based per Methodology.tex Section 4.4)
+# §3.3.2 Path Verification (Pure Static, No LLM)
+# ==============================================================================
+
+def run_path_verification(
+    round1_judge: 'Round1JudgeOutput',
+    target_code: str,
+    feature: 'PatchFeatures',
+    candidate: 'SearchResultItem'
+) -> PathVerificationResult:
+    """
+    §3.3.2 Path Verification — Pure static analysis, NO LLM involvement.
+    
+    Builds the candidate PDG from target code and checks whether dependency
+    edges exist between the mapped anchor positions (μ(ai) → μ(aj)).
+    
+    Uses check_path_reachability() from slice_validation.py which performs
+    DATA/CONTROL edge path checking on the PDG.
+    
+    Args:
+        round1_judge: Round 1 Judge output with validated anchor mappings
+        target_code: The target function code
+        feature: Patch features for vulnerability type info
+        candidate: Search result candidate
+    
+    Returns:
+        PathVerificationResult with reachability info
+    """
+    validated_anchors = round1_judge.validated_anchors or []
+    
+    # Collect mapped target lines from validated anchors
+    mapped_lines = []
+    for m in validated_anchors:
+        if m.is_mapped and m.target_line is not None:
+            mapped_lines.append(m.target_line)
+    
+    if len(mapped_lines) < 2:
+        return PathVerificationResult(
+            reachable=False,
+            path_type="none",
+            details=f"Insufficient mapped anchors for path verification (need >= 2, got {len(mapped_lines)})",
+            anchor_lines_checked=mapped_lines,
+            skipped=True,
+            skip_reason="Insufficient mapped anchors"
+        )
+    
+    # Check if this vulnerability type should skip path verification
+    # (e.g., Memory Leak = missing-operation, no path between anchors)
+    vuln_type = feature.semantics.vuln_type
+    if vuln_type and hasattr(vuln_type, 'value'):
+        skip_types = {'memory_leak'}  # Missing-operation vulnerabilities
+        if vuln_type.value.lower().replace(' ', '_') in skip_types:
+            return PathVerificationResult(
+                reachable=True,  # Pass through
+                path_type="none",
+                details=f"Path verification skipped for missing-operation vulnerability type: {vuln_type.value}",
+                anchor_lines_checked=mapped_lines,
+                skipped=True,
+                skip_reason=f"Missing-operation vulnerability type: {vuln_type.value}"
+            )
+    
+    try:
+        # Build PDG from target code
+        pdg = PDGBuilder(target_code, lang="c").build()
+        slicer = Slicer(pdg, target_code)
+        
+        # Split anchors at midpoint (same strategy as slice_validation)
+        mid = max(len(validated_anchors) // 2, 1)
+        
+        # Create lightweight Anchor-like objects for check_path_reachability
+        # check_path_reachability expects Anchor objects with line_number and code_snippet
+        fwd_anchors = []
+        bwd_anchors = []
+        
+        for i, m in enumerate(validated_anchors):
+            if not m.is_mapped or m.target_line is None:
+                continue
+            
+            # Create a minimal Anchor-compatible object
+            anchor_obj = type('AnchorProxy', (), {
+                'line_number': m.target_line,
+                'code_snippet': m.target_code or '',
+                'type': m.anchor_type,
+            })()
+            
+            if i < mid:
+                fwd_anchors.append(anchor_obj)
+            else:
+                bwd_anchors.append(anchor_obj)
+        
+        if not fwd_anchors or not bwd_anchors:
+            return PathVerificationResult(
+                reachable=False,
+                path_type="none",
+                details="Could not split anchors into forward/backward halves",
+                anchor_lines_checked=mapped_lines,
+                skipped=True,
+                skip_reason="Anchor split failed"
+            )
+        
+        # Call the existing static path checking function
+        result = check_path_reachability(
+            fwd_anchors=fwd_anchors,
+            bwd_anchors=bwd_anchors,
+            pdg=pdg,
+            slicer=slicer,
+            require_data_flow=True
+        )
+        
+        return PathVerificationResult(
+            reachable=result["reachable"],
+            path_type=result["path_type"],
+            details=result["details"],
+            anchor_lines_checked=mapped_lines
+        )
+        
+    except Exception as e:
+        print(f"    [PathVerification] Static analysis failed: {e}")
+        # On failure, don't block — let semantic analysis decide
+        return PathVerificationResult(
+            reachable=True,  # Optimistic: don't reject on analysis failure
+            path_type="none",
+            details=f"Static path verification failed (error: {str(e)}), passing through to semantic analysis",
+            anchor_lines_checked=mapped_lines,
+            skipped=True,
+            skip_reason=f"Analysis error: {str(e)}"
+        )
+
+
+# ==============================================================================
+# 2. Prompts (Updated: §3.3 Anchor-based Constraint Model)
 # ==============================================================================
 
 
@@ -2336,156 +2617,196 @@ class TargetSlicerAdapter:
 # Round 1: C_cons Validation Prompts (No Tools)
 # ==============================================================================
 
-ROUND1_RED_PROMPT = """You are the **Red Agent** performing **Round 1: C_cons (Consistency) Validation**.
-Your task is to validate whether the target code exhibits the SAME vulnerability mechanism as the reference.
+ROUND1_RED_PROMPT = """You are the **Red Agent** performing **Round 1: Anchor Mapping (§3.3.1)**.
+Your task is to produce the mapping μ: M → T, determining whether each reference anchor
+has a semantically equivalent counterpart in the target code.
 You have **NO TOOLS** available - analyze ONLY the provided information.
 
 ## INPUTS PROVIDED
-1. **Phase 2 Anchors**: Pre-computed Origin/Impact anchors from vulnerability analysis
-2. **Phase 3 Mapping Results**: Alignment showing which slice lines map to which target lines
-3. **Target Code**: The actual target function code with line numbers
-4. **Vulnerability Semantics**: Type, root cause, and attack path
+1. **Phase 2 Typed Anchors**: Category-specific anchors (e.g., ALLOC/DEALLOC/USE for UAF),
+   each with a **locatability level** (CONCRETE / ASSUMED / CONCEPTUAL)
+2. **Constraint Chain**: Formal dependency chain (e.g., `alloc →d dealloc →t use`)
+3. **Phase 3 Mapping Results**: Tiered alignment (Tier 1/2/3) showing which anchors have
+   candidate target lines and which need discovery
+4. **Target Code**: The actual target function code with line numbers
+5. **Root Cause Description**: Guides what counts as "functional equivalence"
 
-## YOUR TASK: Establish C_cons (Consistency Constraint)
+## YOUR TASK: Produce Anchor Mapping μ (Mapping Function)
 
-### Step 1: Validate Phase 3 Anchor Mappings
-For each Origin and Impact anchor from Phase 2:
-- Check if Phase 3 successfully mapped it (has a target_line with similarity > 0.3)
-- Assess mapping quality: 'good' (sim > 0.6), 'weak' (0.3-0.6), 'missing' (no match or sim < 0.3)
-- Record the Phase 3 mapping details
+### Step 1: Process CONCRETE Anchors (Tier 1)
+These have direct code locations in the reference slice and Phase 3 alignment hints.
+For each CONCRETE anchor:
+- Check the Phase 3 alignment quality (good/weak/missing)
+- If mapped: verify the target line fulfills the SAME SEMANTIC ROLE
+  (guided by root cause, not syntactic identity)
+- If unmapped/weak: search target code for a semantically equivalent statement
+- Set `semantic_role_verified = true` if the role matches
+- Set `mapping_confidence` to 'high' (direct match) or 'medium' (manual search)
 
-### Step 2: Manual Search (if Phase 3 mapping is missing/weak)
-If an anchor is not mapped or has weak mapping:
-- Search the target code for a semantically equivalent statement
-- Consider: same operation type, same variable role, same data flow position
-- Report the line number and code if found
-- Explain why it is semantically equivalent
+### Step 2: Process ASSUMED Anchors (Tier 2)
+These have code locations but carry assumptions that need re-verification in target.
+For each ASSUMED anchor:
+- First, attempt mapping like CONCRETE (check Phase 3 alignment or manual search)
+- THEN, verify whether the **assumption** still holds in the target context:
+  * CONTROLLABILITY: Is the parameter/input actually controllable by attacker?
+  * SEMANTIC: Does the function/operation behave the same way in target?
+  * EXISTENCE: Does the assumed callee/operation actually exist in target?
+  * REACHABILITY: Is the assumed code path actually reachable?
+- Set `assumption_verified` to true/false based on verification
+- If assumption FAILS in target → the mapping is INVALID even if code matches
 
-### Step 3: Verify Attack Path Completeness
-Using the Attack Path description:
-- Trace each step in the target code
-- Identify whether all key steps exist (not just Origin and Impact)
-- For UAF: verify allocation → free → use pattern exists
-- For NPD: verify assignment → null path → dereference exists
+### Step 3: Process CONCEPTUAL Anchors (Tier 3)
+These are inferred roles with no direct code location. They CANNOT be found via Phase 3.
+For each CONCEPTUAL anchor:
+- Use the root cause description and vulnerability semantics to understand WHAT to look for
+- Search the target code for a statement that fulfills this semantic role
+- This requires deeper reasoning about code behavior, not pattern matching
+- Set `mapping_confidence` to 'low' (inferred)
+- If found: explain why the target code fulfills this role
 
-### Step 4: Verify Causality (CRITICAL)
-**Origin MUST causally precede Impact**:
-- **Execution Order**: Can Origin execute BEFORE Impact?
-  - Check line numbers: If Impact line < Origin line, verify this is valid (callbacks, macros, goto/error handling)
-  - If simple sequential code, later lines CANNOT cause earlier lines
-- **Data Flow**: Does the state created at Origin flow to Impact?
-  - Same variable throughout the path?
-  - Or is Origin affecting X while Impact uses Y (disconnected)?
+### Step 4: Verify Chain Causality (CRITICAL)
+After all anchors are mapped, verify the constraint chain holds:
+- **Execution Order**: Can chain anchors execute in the required order?
+  - Check if earlier chain elements can reach later ones in control flow
+  - If a later anchor has a lower line number, verify this is valid (callbacks, macros, goto)
+- **Data Flow**: Does the state flow through the chain?
+  - Same variable or connected variables throughout the path?
 - **Common Invalid Patterns**:
-  - Both are cleanup/deallocation (no vulnerable use)
+  - Both anchors are cleanup code (no vulnerable use)
   - Different variables with no flow connection
-  - Control flow blocks Origin from reaching Impact
+  - Control flow (return/goto/exit) blocks chain traversal
 
-### Step 5: C_cons Viability Decision
+### Step 5: C_cons Decision
 **CRITICAL RULES**:
-- C_cons requires BOTH Origin AND Impact anchors to be mapped (via Phase 3 or manual search)
-- The mappings must be SEMANTICALLY equivalent, not just syntactically similar
-- **The mappings must satisfy CAUSALITY**: Origin → Impact must have valid causal relationship
-- If Origin is missing (neither Phase 3 nor manual) → verdict = SAFE
-- If Impact is missing (neither Phase 3 nor manual) → verdict = SAFE
-- If mechanism differs fundamentally → verdict = SAFE
-- **If causality is invalid (e.g., Impact at line 4011 cannot be caused by Origin at line 4014) → verdict = SAFE**
-- If both are found, semantically equivalent, AND causality is valid → verdict = PROCEED
+- All NON-OPTIONAL anchors must be mapped for C_cons to hold
+- Optional anchors (is_optional=true) can be missing without failing C_cons
+- Mappings must be SEMANTICALLY equivalent (same role), not just syntactically similar
+- For ASSUMED anchors: assumption must be verified in target context
+- Chain causality must be valid
+- If any critical (non-optional) anchor is unmapped → verdict = SAFE
+- If chain causality fails → verdict = SAFE
+- If all critical anchors mapped with valid causality → verdict = PROCEED
 
-## WHAT COUNTS AS SEMANTIC EQUIVALENCE
-- **Origin anchor**: Statement that creates the vulnerable state
-  - UAF: allocation (kmalloc, kzalloc, vmalloc, etc.)
-  - NPD: pointer assignment that can be NULL
-  - Race: lock acquisition or shared resource access
-  - Integer Overflow: arithmetic operation on integer
-  
-- **Impact anchor**: Statement where vulnerability triggers
-  - UAF: use/dereference after free (ptr->field, *ptr)
-  - NPD: dereference of potentially NULL pointer
-  - Race: concurrent access without protection
-  - Integer Overflow: use of overflowed value in sensitive operation
+## SEMANTIC ROLE MATCHING (Guided by Root Cause)
+The root cause description tells you WHAT vulnerability pattern to look for.
+Match the ROLE, not the exact code:
+- An `alloc` anchor = any statement that ALLOCATES the resource in question
+- A `dealloc` anchor = any statement that RELEASES/FREES the resource
+- A `use` anchor = any statement that ACCESSES the resource after dealloc
+- A `source` anchor = where the problematic value ORIGINATES
+- A `sink` anchor = where the problematic value is CONSUMED dangerously
 
 ## OUTPUT REQUIREMENTS
-Provide a complete structured output with:
-1. All Origin anchor mappings (Phase 3 result + manual search if needed)
-2. All Impact anchor mappings (Phase 3 result + manual search if needed)
-3. Attack path trace in target code
-4. C_cons verdict with detailed reasoning
+For EACH anchor in the constraint chain, output an AnchorMapping with:
+1. `anchor_type`: The anchor's type (e.g., 'alloc', 'use', 'source')
+2. `locatability`: The anchor's locatability level
+3. `assumption_type` / `assumption_rationale`: From Phase 2 (if applicable)
+4. `target_line` / `target_code`: The mapped target location
+5. `is_mapped`: Whether mapping succeeded
+6. `mapping_confidence`: 'high', 'medium', or 'low'
+7. `semantic_role_verified`: Whether the semantic role was verified
+8. `assumption_verified` / `assumption_verification_note`: For ASSUMED/CONCEPTUAL anchors
+9. `reason`: Semantic equivalence explanation
 """
 
-ROUND1_BLUE_PROMPT = """You are the **Blue Agent** performing **Round 1: C_cons Refutation**.
-Your task is to challenge Red's claim that C_cons (Consistency) is satisfied.
+ROUND1_BLUE_PROMPT = """You are the **Blue Agent** performing **Round 1: Anchor Mapping Refutation (§3.3.1)**.
+Your task is to challenge Red's anchor mapping μ: M → T.
 You have **NO TOOLS** available - analyze ONLY the provided information.
 
 ## INPUTS PROVIDED
-1. **Red's C_cons Claim**: Red's Origin/Impact mappings and reasoning
+1. **Red's Anchor Mappings**: Typed anchor mappings (per constraint chain) with locatability info
 2. **Target Code**: The actual target function code with line numbers
 3. **Vulnerability Semantics**: Type, root cause, and attack path
 
-## YOUR TASK: Refute C_cons if Invalid
+## YOUR TASK: Refute Anchor Mappings if Invalid
 
-### Mode 1: Refute Origin Mapping
-If Red's Origin mapping is incorrect:
-- The mapped statement performs a DIFFERENT operation
+### Mode 1: Refute Semantic Role Mismatch
+For any anchor mapping Red claims is valid:
+- The target statement does NOT fulfill the claimed semantic role
+  (e.g., Red maps a non-allocation to an ALLOC anchor)
 - The variable serves a DIFFERENT role in data flow
 - The data type or context is fundamentally different
 
-### Mode 2: Refute Impact Mapping
-If Red's Impact mapping is incorrect:
-- The mapped statement is not the actual impact point
-- The variable being used is different from the one at Origin
-- The operation type is different (e.g., read vs write, local vs escaped)
+### Mode 2: Refute Assumption Failure (for ASSUMED/CONCEPTUAL anchors)
+For anchors with locatability='assumed' or 'conceptual':
+- The assumption does NOT hold in the target context
+  * CONTROLLABILITY: The input is NOT actually attacker-controllable
+  * SEMANTIC: The function behaves DIFFERENTLY in the target
+  * EXISTENCE: The assumed callee/operation does NOT exist
+  * REACHABILITY: The assumed path is NOT reachable
+- Red failed to verify the assumption properly
 
-### Mode 3: Mechanism Mismatch
-If the target code has a fundamentally different vulnerability mechanism:
-- Red claims UAF but target is actually NPD or vice versa
+### Mode 3: Refute Chain Causality
+If the constraint chain causality is invalid:
+- **Execution Order**: Later chain anchors cannot be reached from earlier ones
+  * Check line numbers: If a later anchor has a lower line number, is this valid?
+  * Valid cases: callbacks, macros, goto/error handling
+  * Invalid cases: simple sequential code
+- **Data Flow**: The state does NOT flow through the chain
+  * Different variables with no connection
+  * Both are cleanup code (no vulnerable use)
+  * Control flow blocks chain traversal (return/goto/exit between anchors)
+
+### Mode 4: Mechanism Mismatch
+If the target has a fundamentally different vulnerability mechanism:
+- Red's category mapping is wrong (e.g., UAF vs NPD)
 - The data flow pattern is completely different
 - The control flow structure prevents the claimed vulnerability
 
 ## REFUTATION REQUIREMENTS
 - **Be Specific**: Quote exact code and line numbers
-- **Be Semantic**: Explain WHY the mapping is wrong, not just that it looks different
+- **Be Semantic**: Explain WHY the role mapping is wrong, guided by root cause
 - **Be Honest**: If Red's mapping is actually correct, CONCEDE rather than fabricating issues
+- **Target ASSUMED anchors**: These are the most likely to have invalid assumptions in new context
 
 ## VERDICT OPTIONS
 - **SAFE**: You successfully refuted C_cons (provide strong evidence)
-- **CONCEDE**: Red's C_cons claim is valid, you cannot refute it
+- **CONCEDE**: Red's anchor mappings are valid, you cannot refute them
 - **CONTESTED**: You raised valid concerns but they need tool verification in Round 2
 
 ## OUTPUT REQUIREMENTS
 Provide a complete structured output with refutation details for each anchor and overall verdict.
 """
 
-ROUND1_JUDGE_PROMPT = """You are the **Judge** adjudicating **Round 1: C_cons Decision**.
-Your task is to evaluate Red's C_cons claim and Blue's refutation to decide if C_cons is satisfied.
+ROUND1_JUDGE_PROMPT = """You are the **Judge** adjudicating **Round 1: Anchor Mapping Decision (§3.3.1)**.
+Your task is to evaluate Red's anchor mapping μ and Blue's refutation to decide if C_cons is satisfied.
 
 ## INPUTS PROVIDED
-1. **Red's C_cons Claim**: Origin/Impact mappings with reasoning
-2. **Blue's Refutation**: Challenges to Red's mappings
+1. **Red's Anchor Mappings**: Typed anchor mappings per constraint chain, with locatability and assumption info
+2. **Blue's Refutation**: Challenges to Red's mappings (semantic role, assumption, causality)
 3. **Target Code**: For verification
 4. **Vulnerability Semantics**: For context
 
-## YOUR TASK: Adjudicate C_cons
+## YOUR TASK: Adjudicate C_cons (Anchor Mapping Quality)
 
 ### Evaluation Criteria
-1. **Mapping Validity**: Are Red's Origin and Impact mappings semantically correct?
-2. **CAUSALITY CHECK (CRITICAL)**: Does Origin → Impact satisfy causal relationship?
-   - **Execution Order**: Can Origin execute BEFORE Impact in any feasible path?
-   - **Data Flow**: Does the state created at Origin flow to Impact?
-   - **RED FLAG Patterns**:
-     * If Impact line < Origin line (e.g., line 4011 vs 4014): Check if this is valid
-       - Valid cases: callbacks, macro expansions, error handling with goto
-       - Invalid cases: simple sequential code where later line cannot affect earlier line
-     * If both are cleanup/deallocation operations (no vulnerable use)
-     * If different variables (no data flow connection)
-   - **Decision Rule**: If Blue raises "Causality Violation" and it's valid → C_cons NOT satisfied
-3. **Refutation Strength**: Did Blue provide valid counter-evidence?
-4. **Evidence Quality**: Which side has more concrete, verifiable claims?
+1. **Semantic Role Validity**: Does each mapped target statement fulfill the declared semantic role?
+   - Guided by root cause description, not syntactic similarity
+   - CONCRETE anchors: Should have high confidence mappings
+   - ASSUMED anchors: Must verify assumption in target context
+   - CONCEPTUAL anchors: Inferred mappings need strong reasoning
+
+2. **Assumption Verification** (for ASSUMED/CONCEPTUAL anchors):
+   - Did Red properly verify the assumption?
+   - Did Blue successfully show the assumption fails in target?
+   - Key assumption types to check: CONTROLLABILITY, SEMANTIC, EXISTENCE, REACHABILITY
+
+3. **CHAIN CAUSALITY CHECK (CRITICAL)**:
+   - Can chain anchors execute in the required order?
+   - Does state flow through the chain? (same variable or connected variables)
+   - RED FLAG Patterns:
+     * Later anchor has lower line number (check if valid: callbacks, macros, goto)
+     * Both anchors are cleanup/deallocation (no vulnerable use)
+     * Different variables with no flow connection
+   - If Blue raises "Causality Violation" and it's valid → C_cons NOT satisfied
+
+4. **Optional Anchors**: Missing optional anchors do NOT fail C_cons
 
 ### Decision Logic
-- If Red fails to map either Origin or Impact → C_cons NOT satisfied
-- If Blue successfully refutes causality (invalid Origin→Impact order/flow) → C_cons NOT satisfied
-- If Blue successfully refutes semantic equivalence → C_cons NOT satisfied
+- If any critical (non-optional) anchor is unmapped → C_cons NOT satisfied
+- If Blue successfully refutes a critical anchor's semantic role → C_cons NOT satisfied
+- If Blue shows an ASSUMED anchor's assumption fails → C_cons NOT satisfied
+- If chain causality fails → C_cons NOT satisfied
 - If Blue's refutation is weak/speculative → Give benefit of doubt to Red
 - If mappings are valid but Blue raises tool-dependent concerns → PROCEED to Round 2
 
@@ -2494,16 +2815,17 @@ Your task is to evaluate Red's C_cons claim and Blue's refutation to decide if C
 - **PROCEED**: C_cons appears satisfied or needs Round 2 verification
 
 ## OUTPUT REQUIREMENTS
-Provide verdict with confidence score and validated anchor mappings for Round 2.
-**IMPORTANT**: If Blue refuted causality and it's valid, you MUST set c_cons_satisfied=False and verdict='SAFE-Mismatch'.
+Provide verdict with validated anchor mappings for Round 2.
+**IMPORTANT**: If Blue refuted causality or assumption validity and it's correct,
+you MUST set c_cons_satisfied=False and verdict='SAFE-Mismatch'.
 """
 
 # ==============================================================================
 # Round 2: C_cons Reinforcement + C_reach + C_def Prompts (With Tools)
 # ==============================================================================
 
-ROUND2_RED_PROMPT = """You are the **Red Agent** performing **Round 2: C_cons Reinforcement + C_reach Establishment**.
-Your task is to reinforce C_cons (if contested in Round 1) and establish C_reach (attack path feasibility).
+ROUND2_RED_PROMPT = """You are the **Red Agent** performing **Round 2: Semantic Analysis — VIOL Argument (§3.3.3)**.
+Your task is to argue that the violation predicate (VIOL) holds AND that no mitigation exists (¬MITIGATED).
 You have **TOOLS** available to verify your claims.
 
 ## TOOL USAGE BEST PRACTICES
@@ -2524,49 +2846,49 @@ You have **TOOLS** available to verify your claims.
 - Analyzing a specific block that spans multiple symbols
 
 ## INPUTS PROVIDED
-1. **Round 1 Results**: Validated Origin/Impact mappings and any contested points
-2. **Reference Attack Path**: Step-by-step trace from the vulnerability analysis
-3. **Target Code**: With line numbers
-4. **Vulnerability Semantics**: Type, root cause, attack path
+1. **Round 1 Results**: Validated typed anchor mappings and any contested points
+2. **Path Verification (§3.3.2)**: Static PDG analysis result (reachable/unreachable)
+3. **Reference Attack Path**: Step-by-step trace from the vulnerability analysis
+4. **Target Code**: With line numbers
+5. **Vulnerability Semantics**: Type, root cause, constraint chain
 
 ## YOUR TASK
 
 ### Task 1: Reinforce C_cons (if Round 1 had disputes)
-If Blue contested your mappings in Round 1:
+If Blue contested your anchor mappings in Round 1:
 - Use tools to verify the mapped statements
 - Provide additional evidence for semantic equivalence
-- Show data flow connections between Origin and Impact
+- Show data flow connections between typed anchors in the constraint chain
 
-### Task 2: Establish C_reach (Core Task)
-C_reach requires proving the attack path is **semantically consistent** with the reference:
+### Task 2: Establish VIOL (Violation Predicate) — Core Task
+VIOL requires proving the attack path through the **typed anchor chain** is semantically consistent with the reference:
 
 **What to verify**:
-1. **Path Completeness**: Every key step from Origin to Impact exists in target
-2. **Semantic Consistency**: Each step performs the SAME operation as reference
-3. **Data Flow Continuity**: Same variable flows through the entire path
+1. **Chain Completeness**: Every anchor in the constraint chain has a valid target mapping
+2. **Semantic Consistency**: Each anchor step performs the SAME operation as reference
+3. **Data Flow Continuity**: Same variable flows through the entire chain
 4. **Control Flow Feasibility**: No unconditional blockers (guards, early returns)
-5. **CAUSALITY**: Origin MUST causally precede Impact (check data/control flow, not just line numbers)
+5. **CAUSALITY**: Earlier anchors MUST causally precede later anchors (check data/control flow, not just line numbers)
 
 **For each attack path step, you must show**:
-- Step ID and type (Origin, Trace, Impact, Branch, Call)
+- Step anchor type (e.g., ALLOC, DEALLOC, USE, SOURCE, SINK) or flow role (Trace, Branch, Call)
 - Target line number and code
 - Corresponding reference step
 - Evidence of semantic match (e.g., both do allocation, both do free)
 
 **CRITICAL - CAUSALITY REQUIREMENT**:
-- **Origin → Impact MUST have causal relationship**:
-  * Origin creates/modifies the vulnerable state
-  * Impact uses/triggers that state
-  * There must be a data/control flow path connecting them
+- **Earlier anchor → Later anchor MUST have causal relationship**:
+  * The first anchor creates/modifies the vulnerable state
+  * The last anchor uses/triggers that state
+  * There must be a data/control flow path connecting them through intermediate anchors
 - **Line numbers can be misleading** (macros, cross-function calls, callbacks)
-- **But data flow MUST be valid**: The effect of Origin must reach Impact
+- **But data flow MUST be valid**: The effect of each anchor must reach the next
 
-### Attack Path Step Types
-- **Origin**: Where vulnerable state is created (e.g., allocation, lock acquisition)
-- **Trace**: Intermediate steps that transform/propagate the state
+### Attack Path Step Types (Typed Anchors)
+- Use the AnchorType from the constraint chain (e.g., ALLOC, DEALLOC, USE for UAF)
+- **Trace**: Intermediate steps that transform/propagate the state between anchors
 - **Branch**: Conditional that enables the vulnerable path
 - **Call**: Function call that continues the chain (verify callee if needed)
-- **Impact**: Where vulnerability triggers (e.g., use-after-free, null dereference)
 
 ## TOOLS TO USE
 - `find_definition(symbol, file)` - Get callee implementation to verify internal behavior
@@ -2576,7 +2898,7 @@ C_reach requires proving the attack path is **semantically consistent** with the
 
 ## OUTPUT REQUIREMENTS
 1. **c_cons_reinforced**: Did you strengthen C_cons evidence?
-2. **attack_path_steps**: List of AttackPathStep with full details
+2. **attack_path_steps**: List of AttackPathStep with full details (using AnchorType values)
 3. **path_matches_reference**: Does the path match reference semantically?
 4. **data_flow_verified**: Is data flow correct?
 5. **control_flow_feasible**: Is the path reachable?
@@ -2584,8 +2906,8 @@ C_reach requires proving the attack path is **semantically consistent** with the
 7. **verdict**: 'VULNERABLE' or 'NOT_VULNERABLE'
 """
 
-ROUND2_BLUE_PROMPT = """You are the **Blue Agent** performing **Round 2: C_cons/C_reach Refutation + C_def Verification**.
-Your task is to refute Red's claims OR find defenses that block the attack.
+ROUND2_BLUE_PROMPT = """You are the **Blue Agent** performing **Round 2: Semantic Analysis — Challenge VIOL + Find MITIGATED (§3.3.3)**.
+Your task is to challenge Red's VIOL argument OR find mitigations/defenses that block the attack.
 You have **TOOLS** available.
 
 ## TOOL USAGE BEST PRACTICES
@@ -2600,26 +2922,27 @@ You have **TOOLS** available.
 ✗ BAD: Multiple `read_file` calls to piece together a function
 
 ## INPUTS PROVIDED
-1. **Red's Round 2 Claims**: C_cons evidence, attack path steps, C_reach verdict
+1. **Red's Round 2 Claims**: VIOL argument, attack path steps, C_reach verdict
 2. **Reference Fix**: What the patch does
-3. **Target Code**: With line numbers
+3. **Path Verification (§3.3.2)**: Static PDG analysis result
+4. **Target Code**: With line numbers
 
 ## YOUR TASK
 
-### Mode 1: Refute C_cons/C_reach
+### Mode 1: Challenge VIOL (Refute C_cons/C_reach)
 If Red's claims are invalid:
-- **Refute C_cons**: Show mapping is semantically wrong (different operation, different role)
+- **Refute C_cons**: Show anchor mapping is semantically wrong (different operation, different role)
 - **Refute C_reach**: Show path blockers exist (guards, early returns, dead code)
-- **Refute CAUSALITY**: Check if Origin → Impact lacks causal relationship
-  * **CRITICAL CHECK**: Does Origin's effect actually reach Impact?
-  * Use `trace_variable` to verify data flow from Origin to Impact
-  * Check execution order: Can Origin execute before Impact in any feasible path?
+- **Refute CAUSALITY**: Check if earlier anchors → later anchors lack causal relationship
+  * **CRITICAL CHECK**: Does the first anchor's effect actually reach the last anchor?
+  * Use `trace_variable` to verify data flow through the typed anchor chain
+  * Check execution order: Can anchors execute in chain order in any feasible path?
   * Common causality error patterns:
     - **Reversed order**: Effect happens after cause (e.g., allocation after use)
-    - **Blocked path**: Control flow prevents reaching Impact (e.g., exception/return between them)
-    - **Different variables**: Origin affects X, Impact uses Y (no connection)
-    - **Cleanup confusion**: Origin is cleanup code, Impact is also cleanup (not vulnerable use)
-  * If Origin and Impact have NO causal relationship → REFUTE and explain why
+    - **Blocked path**: Control flow prevents reaching later anchor (e.g., exception/return between them)
+    - **Different variables**: First anchor affects X, last anchor uses Y (no connection)
+    - **Cleanup confusion**: Both anchors are cleanup code (not vulnerable use)
+  * If anchor chain lacks causal relationship → REFUTE and explain why
 
 ### Mode 2: Verify C_def (EXPLICIT Defense Check)
 You MUST provide a **complete defense check report** covering ALL four defense types.
@@ -2656,7 +2979,7 @@ Check if the caller performs validation before calling the vulnerable function:
 ## DEFENSE VERIFICATION REQUIREMENTS
 For each defense you find, you MUST prove:
 1. **EXISTS**: Quote exact line number and code
-2. **DOMINATES**: Defense executes BEFORE the Impact anchor
+2. **DOMINATES**: Defense executes BEFORE the last anchor in the chain
 3. **BLOCKS**: Defense actually prevents the vulnerability (explain how)
 
 ## OUTPUT REQUIREMENTS (CRITICAL - Follow Exactly)
@@ -2673,7 +2996,7 @@ You MUST fill out the `defense_report` field with ALL four checks:
       "defense_exists": true,     // or false, or null if not checked
       "defense_location": "file.c:123",
       "defense_code": "if (ptr == NULL) return;",
-      "dominates_impact": true,
+      "dominates_last_anchor": true,
       "blocks_attack": true,
       "evidence": "This check prevents NULL dereference at line 150"
     },
@@ -2693,43 +3016,45 @@ You MUST fill out the `defense_report` field with ALL four checks:
 - **CONTESTED**: Raised concerns that need Round 3 resolution
 """
 
-ROUND2_JUDGE_PROMPT = """You are the **Judge** adjudicating **Round 2: C_cons, C_reach, C_def, and Location Check**.
+ROUND2_JUDGE_PROMPT = """You are the **Judge** adjudicating **Round 2: Semantic Analysis (§3.3.3)**.
 Your task is to evaluate all constraints and render a verdict.
 
 ## INPUTS PROVIDED
-1. **Red's Round 2 Output**: C_cons reinforcement, attack path steps, C_reach verdict
-2. **Blue's Round 2 Output**: Refutations and defense check report
-3. **Target Code**: For verification
-4. **Target Function Name**: The specific function being analyzed
+1. **Red's Round 2 Output**: VIOL argument, typed anchor chain attack path steps, C_reach verdict
+2. **Blue's Round 2 Output**: VIOL challenges and MITIGATED (defense check) report
+3. **Path Verification (§3.3.2)**: Static PDG analysis result
+4. **Target Code**: For verification
+5. **Target Function Name**: The specific function being analyzed
 
 ## YOUR TASK: Adjudicate All Constraints
 
 ### 1. Evaluate C_cons
-- Is Red's Origin→Impact mapping semantically correct?
+- Is Red's typed anchor chain mapping semantically correct?
 - Did Blue successfully refute the mapping?
 - **Verdict**: C_cons satisfied (True) or not (False)
 
 ### 2. Evaluate C_reach
+- Consider the §3.3.2 static path verification result
 - Is Red's attack path complete and semantically consistent?
 - Did Blue find path blockers?
 - Are all attack path steps valid?
 - **Verdict**: C_reach satisfied (True) or not (False)
 
-### 3. Evaluate C_def
+### 3. Evaluate C_def (MITIGATED)
 Review Blue's defense check report:
 - Did Blue check ALL four defense types?
 - For each CHECKED defense, verify:
   - Defense code is correctly quoted
-  - Defense dominates Impact (executes before)
+  - Defense dominates the last anchor in the chain (executes before)
   - Defense actually blocks the attack
-- **Verdict**: C_def satisfied (True = defense exists) or not (False)
+- **Verdict**: C_def satisfied (True = defense/mitigation exists) or not (False)
 
-### 4. Evaluate Anchor Location (CRITICAL - NEW)
+### 4. Evaluate Anchor Location (CRITICAL)
 Check if the anchors are within the current target function:
-- **origin_in_function**: Is the Origin anchor's func_name the same as the target function?
-- **impact_in_function**: Is the Impact anchor's func_name the same as the target function?
+- **first_anchor_in_function**: Is the first anchor in the chain within the target function?
+- **last_anchor_in_function**: Is the last anchor in the chain within the target function?
 - At least ONE must be TRUE for the vulnerability to be relevant
-- If BOTH are FALSE (anchors only exist in external helper functions) → SAFE-OutOfScope
+- If ALL anchors are in external helper functions → SAFE-OutOfScope
 
 ## VERDICT LOGIC
 
@@ -2740,32 +3065,32 @@ elif not C_reach:
     return "SAFE-Unreachable"
 elif not attack_path_matches_vuln_type:
     return "SAFE-TypeMismatch"
-elif not origin_in_function and not impact_in_function:
-    return "SAFE-OutOfScope"  # Neither anchor is in the current function
+elif not first_anchor_in_function and not last_anchor_in_function:
+    return "SAFE-OutOfScope"  # No anchor is in the current function
 elif C_def:
     return "SAFE-Blocked"
 else:
     if any contested points remain:
-        return "PROCEED"  # to Round 3
+        return "PROCEED"  # to next debate round
     else:
         return "VULNERABLE"
 ```
 
-## CONTESTED POINTS (for Round 3)
+## CONTESTED POINTS (for next debate round)
 If neither side provided conclusive evidence:
 - List specific points that need resolution
-- These will be the focus of Round 3
+- These will be the focus of the next debate round
 
 ## OUTPUT REQUIREMENTS
 1. **c_cons_satisfied**: Boolean
 2. **c_reach_satisfied**: Boolean
 3. **c_def_satisfied**: Boolean
 4. **attack_path_valid**: Is Red's attack path valid?
-5. **origin_in_function**: Is Origin anchor in the current target function? (Check func_name)
-6. **impact_in_function**: Is Impact anchor in the current target function? (Check func_name)
+5. **first_anchor_in_function**: Is the first anchor in the chain within the current target function? (Check func_name)
+6. **last_anchor_in_function**: Is the last anchor in the chain within the current target function? (Check func_name)
 7. **validated_defense**: The strongest valid defense (if any)
 8. **verdict**: 'SAFE-Mismatch', 'SAFE-Unreachable', 'SAFE-TypeMismatch', 'SAFE-OutOfScope', 'SAFE-Blocked', 'VULNERABLE', or 'PROCEED'
-9. **contested_points**: List of unresolved issues (for Round 3)
+9. **contested_points**: List of unresolved issues (for next debate round)
 """
 
 BASELINE_PROMPT = """You are an expert vulnerability analyst performing an ablation study.
@@ -2797,9 +3122,9 @@ Your goal is to PROVE that the vulnerability EXISTS in the target code.
 
 ## YOUR TASK
 1. Analyze the vulnerability description (root cause, attack path)
-2. Find the **Origin** point in target code: where vulnerable state is created
-3. Find the **Impact** point in target code: where vulnerability triggers
-4. Explain how the attack works step by step
+2. Find the **first anchor** in the typed chain in target code: where vulnerable state is created (e.g. ALLOC, SOURCE)
+3. Find the **last anchor** in the typed chain in target code: where vulnerability triggers (e.g. USE, SINK)
+4. Explain how the attack works step by step through the anchor chain
 5. If Blue has responded, address their defense arguments
 
 ## INPUTS PROVIDED
@@ -2813,15 +3138,15 @@ Your goal is to PROVE that the vulnerability EXISTS in the target code.
 Provide a JSON with:
 - vulnerability_exists: true/false (your claim)
 - concedes: true/false (set to true if you accept Blue's defense is valid and give up)
-- origin_line: line number where vulnerable state is created
-- origin_code: the code at that line
-- impact_line: line number where vulnerability triggers
-- impact_code: the code at that line
+- first_anchor_line: line number of the first anchor in the chain (e.g. ALLOC for UAF)
+- first_anchor_code: the code at that line
+- last_anchor_line: line number of the last anchor in the chain (e.g. USE for UAF)
+- last_anchor_code: the code at that line
 - attack_reasoning: step-by-step explanation of the attack OR response to Blue's refutation
 
 ## CONCEDE RULES
 - If Blue has found a valid defense that you cannot counter, set concedes=true
-- If Blue has shown your origin/impact mapping is fundamentally wrong, set concedes=true
+- If Blue has shown your anchor chain mapping is fundamentally wrong, set concedes=true
 - Otherwise, continue arguing your case
 
 Be aggressive in finding vulnerabilities - that's your job!
@@ -2831,13 +3156,13 @@ BASELINE_BLUE_PROMPT = """You are the **Blue Agent** in a simplified vulnerabili
 Your goal is to PROVE that the vulnerability does NOT exist or is BLOCKED in the target code.
 
 ## YOUR TASK
-1. Review Red's attack claim (origin, impact, reasoning)
+1. Review Red's attack claim (anchor chain mapping and reasoning)
 2. Find defenses: NULL checks, bounds validation, lock protection, etc.
 3. Find blockers: early returns, error handling that prevents the attack path
-4. Refute Red's claim if the mapping is incorrect
+4. Refute Red's claim if the anchor chain mapping is incorrect
 
 ## INPUTS PROVIDED
-- Red's Attack Claim: origin, impact, and attack reasoning
+- Red's Attack Claim: anchor chain mapping and attack reasoning
 - Vulnerability Logic: Root cause, attack path, fix mechanism
 - Reference Post-Patch Code: Shows what the fix looks like
 - Target Code: The code you need to analyze
@@ -2864,7 +3189,7 @@ Your goal is to make the FINAL VERDICT based on Red and Blue arguments from mult
 
 ## YOUR TASK
 1. Review the debate history between Red and Blue
-2. Evaluate Red's attack claim: Is the origin/impact mapping correct?
+2. Evaluate Red's attack claim: Is the typed anchor chain mapping correct?
 3. Evaluate Blue's defense claim: Is the defense valid and does it block the attack?
 4. Consider if either side conceded
 5. Make final verdict: VULNERABLE or SAFE
@@ -2872,7 +3197,7 @@ Your goal is to make the FINAL VERDICT based on Red and Blue arguments from mult
 ## DECISION LOGIC
 - If Red conceded → SAFE (Red admits no vulnerability)
 - If Blue conceded → VULNERABLE (Blue admits no defense)
-- If Red's mapping is incorrect (wrong origin/impact) → SAFE
+- If Red's anchor chain mapping is incorrect → SAFE
 - If Blue found a valid defense that blocks the attack → SAFE
 - If Red's attack path is valid AND no defense blocks it → VULNERABLE
 
@@ -2917,8 +3242,8 @@ def run_baseline_red(
             history_lines.append(f"""
 ### Round {prev_round} Summary
 **Your Previous Attack**:
-- Origin: Line {prev_red.origin_line}: `{prev_red.origin_code}`
-- Impact: Line {prev_red.impact_line}: `{prev_red.impact_code}`
+- First Anchor: Line {prev_red.first_anchor_line}: `{prev_red.first_anchor_code}`
+- Last Anchor: Line {prev_red.last_anchor_line}: `{prev_red.last_anchor_code}`
 - Reasoning: {prev_red.attack_reasoning}
 
 **Blue's Refutation**:
@@ -2938,7 +3263,7 @@ def run_baseline_red(
     user_input = f"""
 ### Vulnerability Logic
 - **Root Cause**: {feature.semantics.root_cause}
-- **Attack Path**: {feature.semantics.attack_path}
+- **Attack Chain**: {feature.semantics.attack_chain}
 - **Vulnerability Type**: {feature.semantics.vuln_type.value if feature.semantics.vuln_type else 'Unknown'}
 
 ### Reference Pre-Patch Code (Vulnerable Pattern)
@@ -2950,7 +3275,7 @@ Function: {candidate.target_func.split(':')[-1]}
 
 {target_code}
 {history_section}
-**YOUR TASK**: Find the Origin (where vulnerable state is created) and Impact (where vulnerability triggers) in the target code. Use tools if needed to verify your findings.
+**YOUR TASK**: Find the first anchor (where vulnerable state is created, e.g. ALLOC) and last anchor (where vulnerability triggers, e.g. USE) in the target code. Use tools if needed to verify your findings.
 {"Address the debate history above and respond to Blue's latest refutation." if debate_history else ""}
 """
     
@@ -3013,10 +3338,10 @@ Function: {candidate.target_func.split(':')[-1]}
     # Fallback
     return BaselineRedOutput(
         vulnerability_exists=False,
-        origin_line=None,
-        origin_code=None,
-        impact_line=None,
-        impact_code=None,
+        first_anchor_line=None,
+        first_anchor_code=None,
+        last_anchor_line=None,
+        last_anchor_code=None,
         attack_reasoning="Failed to analyze"
     )
 
@@ -3051,8 +3376,8 @@ def run_baseline_blue(
             history_lines.append(f"""
 ### Round {prev_round} Summary
 **Red's Attack**:
-- Origin: Line {prev_red.origin_line}: `{prev_red.origin_code}`
-- Impact: Line {prev_red.impact_line}: `{prev_red.impact_code}`
+- First Anchor: Line {prev_red.first_anchor_line}: `{prev_red.first_anchor_code}`
+- Last Anchor: Line {prev_red.last_anchor_line}: `{prev_red.last_anchor_code}`
 - Reasoning: {prev_red.attack_reasoning}
 
 **Your Previous Defense**:
@@ -3074,8 +3399,8 @@ def run_baseline_blue(
 **Red's Current Attack (Round {round_num})**:
 - Vulnerability Exists: {red_output.vulnerability_exists}
 - Concedes: {red_output.concedes}{concede_status}
-- Origin: Line {red_output.origin_line}: `{red_output.origin_code}`
-- Impact: Line {red_output.impact_line}: `{red_output.impact_code}`
+- First Anchor: Line {red_output.first_anchor_line}: `{red_output.first_anchor_code}`
+- Last Anchor: Line {red_output.last_anchor_line}: `{red_output.last_anchor_code}`
 - Attack Reasoning: {red_output.attack_reasoning}
 """
     
@@ -3085,7 +3410,7 @@ def run_baseline_blue(
 
 ### Vulnerability Logic
 - **Root Cause**: {feature.semantics.root_cause}
-- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+- **Patch Defense**: {feature.semantics.patch_defense}
 
 ### Reference Post-Patch Code (Shows the Fix)
 {sf.s_post if sf else 'Not available'}
@@ -3099,7 +3424,7 @@ Function: {candidate.target_func.split(':')[-1]}
 **YOUR TASK**: Find defenses or refute Red's claim. Use tools to check if:
 1. The target has the same fix as reference
 2. The target has an equivalent defense
-3. Red's origin/impact mapping is incorrect
+3. Red's anchor chain mapping is incorrect
 
 If Red's attack is clearly valid and you cannot find any defense, set concedes=true.
 """
@@ -3198,8 +3523,8 @@ def run_baseline_judge(
 ### Red Agent's Attack (Round {round_num})
 - Vulnerability Exists: {red_output.vulnerability_exists}
 - Concedes: {red_output.concedes}
-- Origin: Line {red_output.origin_line}: `{red_output.origin_code}`
-- Impact: Line {red_output.impact_line}: `{red_output.impact_code}`
+- First Anchor: Line {red_output.first_anchor_line}: `{red_output.first_anchor_code}`
+- Last Anchor: Line {red_output.last_anchor_line}: `{red_output.last_anchor_code}`
 - Attack Reasoning: {red_output.attack_reasoning}
 
 ### Blue Agent's Defense (Round {round_num})
@@ -3221,8 +3546,8 @@ def run_baseline_judge(
 
 ### Vulnerability Logic
 - **Root Cause**: {feature.semantics.root_cause}
-- **Attack Path**: {feature.semantics.attack_path}
-- **Fix Mechanism**: {feature.semantics.fix_mechanism}
+- **Attack Chain**: {feature.semantics.attack_chain}
+- **Patch Defense**: {feature.semantics.patch_defense}
 
 ### Target Code
 File: {candidate.target_file}
@@ -3393,14 +3718,14 @@ class ContextBuilder:
         Format structural hints from Phase 3 matching results.
         
         [Enhanced] Now includes Anchor Mapping Hints from Phase 2 analysis.
-        This helps Red Agent directly use the pre-computed origin/impact anchors
+        This helps Red Agent directly use the pre-computed typed anchors
         instead of re-inferring them from scratch.
         """
         ev = candidate.evidence
         hints = []
         
         # === Section 1: Anchor Mapping Hints (NEW) ===
-        # Use Phase 2's pre_origins/pre_impacts and Phase 3's alignment to provide
+        # Use Phase 2's pre_anchors (typed anchors) and Phase 3's alignment to provide
         # direct anchor mapping hints to Red Agent
         sf = feature.slices.get(candidate.patch_func)
         if sf:
@@ -3434,13 +3759,14 @@ class ContextBuilder:
     
     def _format_anchor_mapping_hints(self, sf, ev) -> str:
         """
-        Generate Anchor Mapping Hints by matching Phase 2's anchors with Phase 3's alignment.
+        Generate Anchor Mapping Hints by matching Phase 2's typed anchors with Phase 3's alignment.
         
-        This bridges the gap between:
-        - Phase 2 output: pre_origins/pre_impacts (reference anchor lines with [line_no] markers)
-        - Phase 3 output: aligned_vuln_traces (mapping between slice lines and target lines)
+        Locatability-aware hints:
+        - CONCRETE: Direct alignment from Phase 3 traces
+        - ASSUMED:  Alignment + assumption verification guidance
+        - CONCEPTUAL: Discovery guidance from root cause
         
-        Returns a formatted string with origin/impact anchor mappings for Red Agent.
+        Returns a formatted string with tiered anchor mapping hints for Red Agent.
         """
         import re
         
@@ -3449,100 +3775,118 @@ class ContextBuilder:
             match = re.match(r'^\[\s*(\d+)\]', line.strip())
             return int(match.group(1)) if match else -1
         
-        def find_target_mapping(anchor_line: str, aligned_traces: list) -> tuple:
+        def find_target_mapping_for_anchor(anchor, aligned_traces: list) -> tuple:
             """
-            Find the target line that maps to a given anchor line.
-            
+            Find the target line that maps to a given Anchor object.
             Returns: (target_line_no, target_code, similarity) or (None, None, 0.0)
             """
-            anchor_ln = extract_line_no(anchor_line)
-            if anchor_ln == -1:
-                # Try content-based matching if no line number
-                anchor_content = re.sub(r'^\[\s*\d+\]', '', anchor_line).strip()
+            # Strategy 1: Use anchor.line_number
+            if anchor.line_number:
                 for trace in aligned_traces:
-                    if trace.target_line and anchor_content in trace.slice_line:
+                    slice_ln = extract_line_no(trace.slice_line)
+                    if slice_ln == anchor.line_number and trace.target_line:
                         return (trace.line_no, trace.target_line, trace.similarity)
-                return (None, None, 0.0)
             
-            # Line number based matching
-            for trace in aligned_traces:
-                slice_ln = extract_line_no(trace.slice_line)
-                if slice_ln == anchor_ln and trace.target_line:
-                    return (trace.line_no, trace.target_line, trace.similarity)
+            # Strategy 2: Use code_snippet content matching
+            if anchor.code_snippet:
+                snippet = anchor.code_snippet.strip()
+                for trace in aligned_traces:
+                    if trace.target_line and snippet and snippet in trace.slice_line:
+                        return (trace.line_no, trace.target_line, trace.similarity)
             
             return (None, None, 0.0)
         
-        origin_mappings = []
-        impact_mappings = []
+        # Group anchors by locatability tier
+        tier1_mapped = []   # CONCRETE, mapped
+        tier1_unmapped = [] # CONCRETE, unmapped
+        tier2_mapped = []   # ASSUMED, mapped
+        tier2_unmapped = [] # ASSUMED, unmapped
+        tier3 = []          # CONCEPTUAL (rarely mapped)
         
-        # Process Origin Anchors
-        for anchor in (sf.pre_origins or []):
-            target_ln, target_code, sim = find_target_mapping(anchor, ev.aligned_vuln_traces)
-            if target_ln and sim > 0.3:  # Only include meaningful matches
-                origin_mappings.append({
-                    'reference': anchor.strip(),
-                    'target_line': target_ln,
-                    'target_code': target_code.strip() if target_code else '',
-                    'similarity': sim
-                })
-        
-        # Process Impact Anchors
-        for anchor in (sf.pre_impacts or []):
-            target_ln, target_code, sim = find_target_mapping(anchor, ev.aligned_vuln_traces)
-            if target_ln and sim > 0.3:
-                impact_mappings.append({
-                    'reference': anchor.strip(),
-                    'target_line': target_ln,
-                    'target_code': target_code.strip() if target_code else '',
-                    'similarity': sim
-                })
+        for anchor in (sf.pre_anchors or []):
+            target_ln, target_code, sim = find_target_mapping_for_anchor(anchor, ev.aligned_vuln_traces)
+            label = format_anchor_for_prompt(anchor)
+            loc = anchor.locatability.value if hasattr(anchor.locatability, 'value') else str(anchor.locatability)
+            
+            entry = {
+                'label': label,
+                'anchor_type': anchor.type.value if hasattr(anchor.type, 'value') else str(anchor.type),
+                'target_line': target_ln,
+                'target_code': target_code.strip() if target_code else '',
+                'similarity': sim,
+                'is_optional': anchor.is_optional,
+                'assumption_type': (anchor.assumption_type.value if anchor.assumption_type and hasattr(anchor.assumption_type, 'value') else str(anchor.assumption_type)) if anchor.assumption_type else None,
+                'assumption_rationale': anchor.assumption_rationale,
+            }
+            
+            if loc == 'concrete':
+                if target_ln and sim > 0.3:
+                    tier1_mapped.append(entry)
+                else:
+                    tier1_unmapped.append(entry)
+            elif loc == 'assumed':
+                if target_ln and sim > 0.3:
+                    tier2_mapped.append(entry)
+                else:
+                    tier2_unmapped.append(entry)
+            else:  # conceptual
+                tier3.append(entry)
         
         # Format output
         lines = []
+        has_content = tier1_mapped or tier1_unmapped or tier2_mapped or tier2_unmapped or tier3
         
-        if origin_mappings or impact_mappings:
-            lines.append("1. **Anchor Mapping Hints** (from Phase 2/3 Analysis):")
-            lines.append("   These are the pre-computed anchor points. Use them as starting points for your mapping.")
+        if has_content:
+            lines.append("1. **Tiered Anchor Mapping Hints** (from Phase 2/3 Analysis):")
+            lines.append("   Anchors are grouped by locatability. Use the tiered strategy for mapping.")
             
-            if origin_mappings:
+            # Tier 1: CONCRETE
+            if tier1_mapped or tier1_unmapped:
                 lines.append("   ")
-                lines.append("   **Origin Anchors** (where vulnerable state is created):")
-                for m in origin_mappings:
-                    lines.append(f"   - Reference: `{m['reference']}`")
+                lines.append("   **Tier 1 — CONCRETE** (direct code locations):")
+                for m in tier1_mapped:
+                    opt = " (optional)" if m['is_optional'] else ""
+                    lines.append(f"   - ✓ {m['label']}{opt}")
                     lines.append(f"     → Target Line {m['target_line']}: `{m['target_code']}` (sim: {m['similarity']:.2f})")
+                for m in tier1_unmapped:
+                    opt = " (optional)" if m['is_optional'] else ""
+                    lines.append(f"   - ✗ {m['label']}{opt} — UNMAPPED, needs manual search")
             
-            if impact_mappings:
+            # Tier 2: ASSUMED
+            if tier2_mapped or tier2_unmapped:
                 lines.append("   ")
-                lines.append("   **Impact Anchors** (where vulnerability is triggered):")
-                for m in impact_mappings:
-                    lines.append(f"   - Reference: `{m['reference']}`")
-                    lines.append(f"     → Target Line {m['target_line']}: `{m['target_code']}` (sim: {m['similarity']:.2f})")
+                lines.append("   **Tier 2 — ASSUMED** (location known, assumption needs verification):")
+                for m in tier2_mapped + tier2_unmapped:
+                    opt = " (optional)" if m['is_optional'] else ""
+                    at = f" [Assumption: {m['assumption_type']}]" if m['assumption_type'] else ""
+                    status = "✓" if m['target_line'] else "✗"
+                    lines.append(f"   - {status} {m['label']}{opt}{at}")
+                    if m['target_line']:
+                        lines.append(f"     → Target Line {m['target_line']}: `{m['target_code']}` (sim: {m['similarity']:.2f})")
+                    lines.append(f"     ⚠ Verify assumption in target context")
             
-            # Add unmapped anchors as hints
-            unmapped_origins = [a for a in (sf.pre_origins or [])
-                               if not any(m['reference'] == a.strip() for m in origin_mappings)]
-            unmapped_impacts = [a for a in (sf.pre_impacts or [])
-                               if not any(m['reference'] == a.strip() for m in impact_mappings)]
-            
-            if unmapped_origins or unmapped_impacts:
+            # Tier 3: CONCEPTUAL
+            if tier3:
                 lines.append("   ")
-                lines.append("   **Unmapped Anchors** (need manual verification):")
-                for a in unmapped_origins[:3]:
-                    lines.append(f"   - Origin (unmapped): `{a.strip()}`")
-                for a in unmapped_impacts[:3]:
-                    lines.append(f"   - Impact (unmapped): `{a.strip()}`")
+                lines.append("   **Tier 3 — CONCEPTUAL** (must be inferred from context):")
+                for m in tier3:
+                    opt = " (optional)" if m['is_optional'] else ""
+                    at = f" [Assumption: {m['assumption_type']}]" if m['assumption_type'] else ""
+                    lines.append(f"   - ? {m['label']}{opt}{at}")
+                    if m['assumption_rationale']:
+                        lines.append(f"     Hint: {m['assumption_rationale']}")
+                    lines.append(f"     → Must discover from root cause + target code semantics")
         
         return "\n".join(lines) if lines else ""
 
 
-def extract_involved_functions(judge_res=None, origin_anchor=None, impact_anchor=None, trace=None, defense_mechanism=None) -> List[str]:
+def extract_involved_functions(judge_res=None, anchor_evidence=None, trace=None, defense_mechanism=None) -> List[str]:
     """
     Extract list of involved functions from evidence chain.
     
     Args:
         judge_res: JudgeOutput object (if provided, all info will be extracted from it)
-        origin_anchor: Origin StepAnalysis (optional, if judge_res is not provided)
-        impact_anchor: Impact StepAnalysis (optional)
+        anchor_evidence: List of StepAnalysis for typed anchors (optional)
         trace: Trace List (optional)
         defense_mechanism: Defense StepAnalysis (optional)
     
@@ -3553,10 +3897,9 @@ def extract_involved_functions(judge_res=None, origin_anchor=None, impact_anchor
     
     # If judge_res is provided, extract all info from it
     if judge_res:
-        if judge_res.origin_anchor and judge_res.origin_anchor.func_name:
-            involved_funcs.add(judge_res.origin_anchor.func_name)
-        if judge_res.impact_anchor and judge_res.impact_anchor.func_name:
-            involved_funcs.add(judge_res.impact_anchor.func_name)
+        for step in (judge_res.anchor_evidence or []):
+            if step.func_name:
+                involved_funcs.add(step.func_name)
         for step in (judge_res.trace or []):
             if step.func_name:
                 involved_funcs.add(step.func_name)
@@ -3564,10 +3907,9 @@ def extract_involved_functions(judge_res=None, origin_anchor=None, impact_anchor
             involved_funcs.add(judge_res.defense_mechanism.func_name)
     else:
         # Extract from individually provided parameters
-        if origin_anchor and origin_anchor.func_name:
-            involved_funcs.add(origin_anchor.func_name)
-        if impact_anchor and impact_anchor.func_name:
-            involved_funcs.add(impact_anchor.func_name)
+        for step in (anchor_evidence or []):
+            if step.func_name:
+                involved_funcs.add(step.func_name)
         for step in (trace or []):
             if step.func_name:
                 involved_funcs.add(step.func_name)
@@ -3634,7 +3976,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             # [Adaptive Threshold] Check
             # Only apply new threshold if rank is outside grace period
             if candidate.confidence < current_threshold:
-                print(f"    [Skip-Adaptive] Rank {candidate.rank} (Conf {candidate.confidence:.2f}) < Threshold {current_threshold:.2f}")
+                # print(f"    [Skip-Adaptive] Rank {candidate.rank} (Conf {candidate.confidence:.2f}) < Threshold {current_threshold:.2f}")
                 continue
 
             # [Modified] Use file + func as unique key to prevent same-named functions in different files from being skipped by mistake
@@ -3835,7 +4177,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
 
             vuln_info = f"""
             [Root Cause]: {feature.semantics.root_cause}
-            [Attack Path]: {feature.semantics.attack_path}
+            [Attack Chain]: {feature.semantics.attack_chain}
             {cwe_line}
             [Reference Template (Slice)]:
             {feature.slices[candidate.patch_func].s_pre}
@@ -3846,7 +4188,7 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             """
             fix_info = f"""
             [Root Cause]: {feature.semantics.root_cause}
-            [Fix Mechanism]: {feature.semantics.fix_mechanism}
+            [Patch Defense]: {feature.semantics.patch_defense}
             [Reference Fix (Slice)]:
             {feature.slices[candidate.patch_func].s_post}
             [Reference Function (Full Post-Patch)]:
@@ -3854,19 +4196,20 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             [All Patch Diffs]:
             {combined_diffs}
             """
-            # ============== 2-Round Debate System ==============
-            # Round 1: C_cons validation (no tools) - fast screening
-            # Round 2: C_reach + C_def verification (with tools) - thorough analysis
+            # ============== §3.3 Three-Step Verification ==============
+            # Step 1 (§3.3.1): Anchor Mapping — C_cons validation (no tools)
+            # Step 2 (§3.3.2): Path Verification — pure static PDG analysis (no LLM)
+            # Step 3 (§3.3.3): Multi-Agent Semantic Analysis — multi-round debate (with tools)
             
-            # === Round 1: C_cons Validation (No Tools) ===
+            # === Step 1 (§3.3.1): Anchor Mapping (No Tools) ===
             # Returns all three agent outputs for evidence chain construction
             round1_red, round1_blue, round1_judge, should_continue = run_round1_debate(
                 feature, candidate, target_context_with_lines, llm
             )
             
-            # Round 1 Early Exit: C_cons not satisfied
+            # Step 1 Early Exit: C_cons not satisfied
             if not should_continue:
-                print(f"    [Round1-Exit] C_cons failed: {round1_judge.verdict}")
+                print(f"    [§3.3.1-Exit] C_cons failed: {round1_judge.verdict}")
                 finding = VulnerabilityFinding(
                     vul_id=state["vul_id"],
                     cwe_id=feature.semantics.cwe_id or "Unknown",
@@ -3877,44 +4220,87 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                     patch_func=candidate.patch_func,
                     target_file=candidate.target_file,
                     target_func=candidate.target_func,
-                    analysis_report=f"[Round1 Exit] C_cons not satisfied. Verdict: {round1_judge.verdict}",
+                    analysis_report=f"[§3.3.1 Exit] C_cons not satisfied. Verdict: {round1_judge.verdict}",
                     is_vulnerable=False,
                     verdict_category=round1_judge.verdict,
                     involved_functions=[],
                     peer_functions=peer_names_list,
-                    origin=None,
-                    impact=None,
+                    anchor_evidence=[],
                     trace=[],
-                    defense_step=None,
-                    defense_status=f"C_cons={round1_judge.c_cons_satisfied}"
+                    defense_mechanism=None,
+                    constraint_status=f"C_cons={round1_judge.c_cons_satisfied}"
                 )
                 findings.append(finding)
                 
                 # [Adaptive Threshold] Update - Early exit also counts as SAFE verdict
                 current_threshold += THRESHOLD_PENALTY_STEP
-                print(f"    [Adaptive] Verdict SAFE (Round1 Exit) -> Raising threshold to {current_threshold:.2f}")
-                
                 continue  # Skip to next candidate
             
-            # === Round 2: C_reach + C_def Verification (With Tools) ===
-            # Returns all three agent outputs for evidence chain construction
-            round2_red, round2_blue, round2_judge, round2_verdict = run_round2_debate(
-                round1_judge, feature, candidate, target_context_with_lines, tools, llm
+            # === Step 2 (§3.3.2): Path Verification (Pure Static, No LLM) ===
+            path_result = run_path_verification(
+                round1_judge, target_context, feature, candidate
             )
+            print(f"    [§3.3.2] Path verification: reachable={path_result.reachable}, type={path_result.path_type}"
+                  + (f", skipped={path_result.skip_reason}" if path_result.skipped else ""))
             
-            # === Round 3: Final Judge Integration (No Tools) ===
-            # Round 3 synthesizes ALL Round 1 and Round 2 agent outputs into a proper JudgeOutput
-            # with complete evidence chain (origin_anchor, impact_anchor, trace, defense_mechanism)
-            # - Round 1 Red: origin/impact mappings
-            # - Round 2 Red: attack_path_steps (for trace)
-            # - Round 2 Blue: defense_report (for defense_mechanism)
+            # Path verification early exit: unreachable
+            if not path_result.reachable and not path_result.skipped:
+                print(f"    [§3.3.2-Exit] Path unreachable: {path_result.details}")
+                finding = VulnerabilityFinding(
+                    vul_id=state["vul_id"],
+                    cwe_id=feature.semantics.cwe_id or "Unknown",
+                    cwe_name=feature.semantics.cwe_name or "Unknown",
+                    group_id=feature.group_id,
+                    repo_path=candidate.repo_path,
+                    patch_file=candidate.patch_file,
+                    patch_func=candidate.patch_func,
+                    target_file=candidate.target_file,
+                    target_func=candidate.target_func,
+                    analysis_report=f"[§3.3.2 Exit] Static path verification failed: {path_result.details}",
+                    is_vulnerable=False,
+                    verdict_category="SAFE-Unreachable",
+                    involved_functions=[],
+                    peer_functions=peer_names_list,
+                    anchor_evidence=[],
+                    trace=[],
+                    defense_mechanism=None,
+                    constraint_status=f"C_cons=True, C_reach=False (static)",
+                    path_verification=path_result
+                )
+                findings.append(finding)
+                current_threshold += THRESHOLD_PENALTY_STEP
+                continue  # Skip to next candidate
+            
+            # === Step 3 (§3.3.3): Multi-Agent Semantic Analysis (With Tools) ===
+            # Multi-round Red/Blue/Judge debate (paper: 3 rounds)
+            NUM_DEBATE_ROUNDS = 2
+            round2_red = None
+            round2_blue = None
+            round2_judge = None
+            round2_verdict = None
+            
+            for debate_round in range(1, NUM_DEBATE_ROUNDS + 1):
+                print(f"    [§3.3.3] Semantic analysis debate round {debate_round}/{NUM_DEBATE_ROUNDS}")
+                round2_red, round2_blue, round2_judge, round2_verdict = run_round2_debate(
+                    round1_judge, feature, candidate, target_context_with_lines, tools, llm
+                )
+                
+                # Early termination: if verdict is conclusive, stop debating
+                if round2_verdict in ("VULNERABLE", "SAFE-Blocked", "SAFE-Mismatch",
+                                      "SAFE-Unreachable", "SAFE-TypeMismatch", "SAFE-OutOfScope"):
+                    print(f"    [§3.3.3] Debate concluded at round {debate_round} with verdict: {round2_verdict}")
+                    break
+            
+            # === Final Judge Integration ===
+            # Synthesizes ALL step outputs into a proper JudgeOutput
+            # with complete evidence chain (anchor_evidence, trace, defense_mechanism)
             judge_res = run_round3_final_judge(
                 round1_red, round1_blue, round1_judge,
                 round2_red, round2_blue, round2_judge,
                 feature, candidate, target_context_with_lines, llm
             )
         
-            # Map new JudgeOutput fields to VulnerabilityFinding (per Methodology.tex Section 4.4)
+            # Map JudgeOutput to VulnerabilityFinding (per §3.3)
             finding = VulnerabilityFinding(
                 vul_id=state["vul_id"],
                 cwe_id=feature.semantics.cwe_id or "Unknown",
@@ -3927,15 +4313,15 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 target_func=candidate.target_func,
                 analysis_report=judge_res.analysis_report,
                 is_vulnerable=judge_res.is_vulnerable,
-                verdict_category=judge_res.verdict_category,  # VULNERABLE/SAFE-Blocked/SAFE-Mismatch/SAFE-Unreachable
+                verdict_category=judge_res.verdict_category,
                 involved_functions=extract_involved_functions(judge_res),
                 peer_functions=peer_names_list,
-                # Map constraint-based evidence (per Methodology.tex Evidence Schema)
-                origin=judge_res.origin_anchor,  # Origin anchor: where vulnerable state is created
-                impact=judge_res.impact_anchor,    # Impact anchor: where vulnerability is triggered
+                # Typed anchor chain evidence
+                anchor_evidence=judge_res.anchor_evidence,
                 trace=judge_res.trace,
-                defense_step=judge_res.defense_mechanism,
-                defense_status=f"C_cons={judge_res.c_cons_satisfied}, C_reach={judge_res.c_reach_satisfied}, C_def={judge_res.c_def_satisfied}"
+                defense_mechanism=judge_res.defense_mechanism,
+                constraint_status=f"C_cons={judge_res.c_cons_satisfied}, C_reach={judge_res.c_reach_satisfied}, C_def={judge_res.c_def_satisfied}",
+                path_verification=path_result
             )
             findings.append(finding)
         
@@ -3944,10 +4330,9 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
             print(f"    [Judge] Verdict: {judge_res.verdict_category}")
             print(f"    [Judge] Constraints: C_cons={judge_res.c_cons_satisfied}, C_reach={judge_res.c_reach_satisfied}, C_def={judge_res.c_def_satisfied}")
 
-                # [Adaptive Threshold] Update
+            # [Adaptive Threshold] Update
             if not judge_res.is_vulnerable:
                 current_threshold += THRESHOLD_PENALTY_STEP
-                print(f"    [Adaptive] Verdict SAFE -> Raising threshold to {current_threshold:.2f}")
         
         except Exception as e:
             # [Robustness] Catch any unexpected exceptions, record errors but continue processing other candidates
@@ -3971,11 +4356,10 @@ def validation_node(state: VerificationState) -> Dict[str, Any]:
                 verdict_category="ERROR",
                 involved_functions=[],
                 peer_functions=[],
-                origin=None,
-                impact=None,
+                anchor_evidence=[],
                 trace=[],
-                defense_step=None,
-                defense_status=f"Error: {str(e)}"
+                defense_mechanism=None,
+                constraint_status=f"Error: {str(e)}"
             )
             findings.append(finding)
             continue  # Continue processing next candidate
@@ -4072,8 +4456,8 @@ def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
             
             vuln_info = f"""
 [Root Cause]: {feature.semantics.root_cause}
-[Attack Path]: {feature.semantics.attack_path}
-[Fix Mechanism]: {feature.semantics.fix_mechanism}
+[Attack Chain]: {feature.semantics.attack_chain}
+[Patch Defense]: {feature.semantics.patch_defense}
 [Reference (Pre-Patch)]:
 {feature.slices[candidate.patch_func].s_pre}
 [Reference (Post-Patch)]:
@@ -4093,7 +4477,7 @@ def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
             print(f"    [Baseline] Verifying {candidate.target_func} with three-role debate...")
             
             # Run simplified three-role debate (Red → Blue → Judge)
-            # - Red: Argues vulnerability EXISTS, finds origin/impact
+            # - Red: Argues vulnerability EXISTS, finds anchor chain endpoints
             # - Blue: Argues vulnerability does NOT exist, finds defenses
             # - Judge: Makes final verdict based on both arguments
             res = run_baseline_debate(
@@ -4119,16 +4503,15 @@ def baseline_validation_node(state: VerificationState) -> Dict[str, Any]:
                 is_vulnerable=res.is_vulnerable,
                 involved_functions=[],
                 peer_functions=[],
-                origin=None,
-                impact=None,
+                anchor_evidence=[],
                 trace=[],
-                defense_step=None,
-                defense_status="Baseline: No tool analysis"
+                defense_mechanism=None,
+                constraint_status="Baseline: No tool analysis"
             )
             findings.append(finding)
             if not res.is_vulnerable:
                 current_threshold += THRESHOLD_PENALTY_STEP
-                print(f"    [Adaptive] Verdict SAFE -> Raising threshold to {current_threshold:.2f}")
+                # print(f"    [Adaptive] Verdict SAFE -> Raising threshold to {current_threshold:.2f}")
                 
         except Exception as e:
             print(f"    [Baseline] Error for {candidate.target_func}: {e}")

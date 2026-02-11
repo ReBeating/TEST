@@ -94,7 +94,7 @@ DISTILLATION_STRATEGIES: Dict[GeneralVulnType, DistillationStrategy] = {
                  "Track pointer aliasing carefully - if two pointers point to the same object, both free paths matter."
     ),
     
-    GeneralVulnType.BUFFER_OVERFLOW: DistillationStrategy(
+    GeneralVulnType.OUT_OF_BOUNDS_WRITE: DistillationStrategy(
         focus_dataflow="Buffer size vs. access size relationship",
         keep_signals=[
             "Buffer allocation with size",

@@ -1,18 +1,18 @@
 """
-Vulnerability Report Generation (Methodology §3.2.3)
+Vulnerability Report Generation (Paper §3.1.4)
 
-This module transforms the conceptual semantic hypothesis from §3.2.1 into a concrete 
-vulnerability report by grounding it with validated anchors and extracted slices from §3.2.2.
+This module transforms the conceptual semantic hypothesis into a concrete
+vulnerability report by grounding it with typed anchors and extracted slices.
 
-Per Methodology Definition 3, the VulnerabilityReport captures:
+Per Paper Definition 3, the VulnerabilityReport captures:
 - Vulnerability type: The identified category
 - Root cause: High-level description of the defect
-- Attack path: Step-by-step trace from Origin to Impact with line numbers
-- Fix mechanism: What the patch modifies and why
+- Attack chain: Step-by-step trace along the typed anchor chain with line numbers
+- Patch defense: What the patch modifies and why
 
-Evidence Grounding Tasks (per §3.2.3):
-1. Anchor Mapping: Link hypothesized Origin/Impact operations to specific anchor statements
-2. Path Instantiation: Trace data/control flow through slices, connecting Origins to Impacts
+Evidence Grounding Tasks:
+1. Anchor Mapping: Link typed anchors to specific code statements
+2. Path Instantiation: Trace data/control flow through slices along the constraint chain
 3. Fix Grounding: Identify which specific code changes break the attack chain
 """
 
@@ -43,27 +43,27 @@ class SemanticExtractor:
         self.analysis_prompt = ChatPromptTemplate.from_template(
             """
             You are a Senior Security Researcher performing **Evidence Grounding** for a vulnerability report.
-            Your task: Transform the conceptual semantic hypothesis into a concrete vulnerability report by mapping it to validated anchors and extracted slices.
+            Your task: Transform the conceptual semantic hypothesis into a concrete vulnerability report by mapping it to typed anchors and extracted slices.
             
             ### Context
             - **Vulnerability Type**: {vuln_type}
             - **Type Confidence**: {type_confidence}
             
-            ### Anchor Role Specifications (from Type Determination)
-            - **Expected Origin Roles**: {origin_roles}
-            - **Expected Impact Roles**: {impact_roles}
+            ### Typed Anchor Specification (from Vulnerability Category)
+            - **Expected Anchor Types**: {anchor_types}
+            - **Constraint Chain**: {chain_description}
             
-            ### Input Data (per Methodology §3.2.3)
+            ### Input Data
             
-            1. **Semantic Hypothesis** (Conceptual, from §3.2.1):
+            1. **Semantic Hypothesis** (Conceptual):
             - **Root Cause**: {hyp_root_cause}
-            - **Attack Path**: {hyp_attack_path}
-            - **Fix Mechanism**: {hyp_fix_mechanism}
+            - **Attack Chain**: {hyp_attack_chain}
+            - **Patch Defense**: {hyp_patch_defense}
             
-            2. **Validated Anchors** (from §3.2.2 - with roles and line locations):
+            2. **Typed Anchors** (with types and line locations):
             {validated_anchors}
             
-            3. **Vulnerability & Patch Slices** (from §3.2.2 - extracted code):
+            3. **Vulnerability & Patch Slices** (extracted code):
             {slices_content}
             
             4. **Commit Message** (Developer Intent):
@@ -71,21 +71,18 @@ class SemanticExtractor:
             
             ---
             
-            ### Evidence Grounding Tasks (per Methodology §3.2.3)
+            ### Evidence Grounding Tasks
             
             #### Task 1: Anchor Mapping
-            Link hypothesized Origin/Impact operations to specific anchor statements:
-            - **Origin Anchors**: Map conceptual "vulnerable state creation" to concrete statements
-              - Look for operations matching expected Origin roles: {origin_roles}
-              - Cite exact line numbers from the slices
-              - Verify variable bindings and semantic roles match the hypothesis
-            - **Impact Anchors**: Map conceptual "exploitation point" to concrete statements
-              - Look for operations matching expected Impact roles: {impact_roles}
-              - Cite exact line numbers from the slices
+            Link typed anchors to specific code statements:
+            - For each anchor type in the chain ({anchor_types}), verify the code statement
+            - Cite exact line numbers from the slices
+            - Verify variable bindings and semantic roles match the hypothesis
             
             #### Task 2: Path Instantiation
-            Trace data/control flow through slices, connecting Origins to Impacts:
+            Trace data/control flow through slices along the constraint chain:
             - Build a step-by-step trace with evidence IDs: "func:pre:123", "func:post:456"
+            - Follow the chain: {chain_description}
             - Cite intermediate statements (line numbers, functions, variables)
             - For inter-procedural cases, include call chains across functions
             
@@ -101,11 +98,8 @@ class SemanticExtractor:
             Return JSON with structured evidence references:
             {{
                 "anchor_mapping": {{
-                    "origin_anchors": [
-                        {{"func": "...", "version": "pre/post", "line": 123, "code": "...", "role": "Alloc/Def/Free/...", "reasoning": "..."}}
-                    ],
-                    "impact_anchors": [
-                        {{"func": "...", "version": "pre/post", "line": 456, "code": "...", "role": "Use/Deref/Sink/...", "reasoning": "..."}}
+                    "anchors": [
+                        {{"func": "...", "version": "pre/post", "line": 123, "code": "...", "anchor_type": "alloc/dealloc/use/source/sink/...", "reasoning": "..."}}
                     ]
                 }},
                 "attack_chain": {{
@@ -119,13 +113,13 @@ class SemanticExtractor:
                     "blocking_points": [
                         {{"description": "Null check added", "evidence_ids": ["func:post:125"], "defense_type": "validation"}}
                     ],
-                    "fix_mechanism": "...",
+                    "patch_defense": "...",
                     "security_guarantee": "..."
                 }},
                 "summaries": {{
                     "root_cause": "One-sentence technical summary with concrete evidence",
-                    "attack_path": "High-level Origin→Impact flow with line references",
-                    "fix_mechanism": "High-level remediation description with blocking point references"
+                    "attack_chain": "Anchor chain flow with line references",
+                    "patch_defense": "High-level remediation description with blocking point references"
                 }}
             }}
             """
@@ -135,37 +129,24 @@ class SemanticExtractor:
     # §3.2.3: Helper to format validated anchors for LLM prompt
     def _format_validated_anchors(self, slices_map: Dict[str, SliceFeature]) -> str:
         """
-        Format validated anchors from SliceFeature (pre_origins, pre_impacts, etc.)
+        Format typed anchors from SliceFeature (pre_anchors, post_anchors)
         into a structured text for LLM consumption.
-        
-        Per Methodology §3.2.3: "We provide an LLM with validated anchors with roles and line locations"
         """
         lines = []
         for func_name, feat in slices_map.items():
             lines.append(f"=== Function: {func_name} ===")
             
-            # Origin anchors (pre-patch)
-            if feat.pre_origins:
-                lines.append("  Origin Anchors (Pre-Patch):")
-                for anchor_line in feat.pre_origins:
-                    lines.append(f"    {anchor_line}")
+            # Typed anchors (pre-patch)
+            if feat.pre_anchors:
+                lines.append("  Pre-Patch Typed Anchors:")
+                for a in feat.pre_anchors:
+                    lines.append(f"    [{a.type.value}] Line {a.line_number}: {a.code_snippet}")
             
-            # Impact anchors (pre-patch)
-            if feat.pre_impacts:
-                lines.append("  Impact Anchors (Pre-Patch):")
-                for anchor_line in feat.pre_impacts:
-                    lines.append(f"    {anchor_line}")
-            
-            # Post-patch anchors (for fix grounding)
-            if feat.post_origins:
-                lines.append("  Origin Anchors (Post-Patch):")
-                for anchor_line in feat.post_origins:
-                    lines.append(f"    {anchor_line}")
-            
-            if feat.post_impacts:
-                lines.append("  Impact Anchors (Post-Patch):")
-                for anchor_line in feat.post_impacts:
-                    lines.append(f"    {anchor_line}")
+            # Typed anchors (post-patch, for fix grounding)
+            if feat.post_anchors:
+                lines.append("  Post-Patch Typed Anchors:")
+                for a in feat.post_anchors:
+                    lines.append(f"    [{a.type.value}] Line {a.line_number}: {a.code_snippet}")
             
             lines.append("")
         
@@ -230,12 +211,12 @@ class SemanticExtractor:
         
         # Get semantic hypothesis from taxonomy (§3.2.1 output)
         hyp_root = taxonomy.root_cause if taxonomy.root_cause else "N/A"
-        hyp_attack = taxonomy.attack_path if taxonomy.attack_path else "N/A"
-        hyp_fix = taxonomy.fix_mechanism if taxonomy.fix_mechanism else "N/A"
+        hyp_attack = taxonomy.attack_chain if taxonomy.attack_chain else "N/A"
+        hyp_fix = taxonomy.patch_defense if taxonomy.patch_defense else "N/A"
         
-        # Format anchor roles from taxonomy (key addition per Methodology)
-        origin_roles_str = ", ".join([r.value for r in taxonomy.origin_roles]) if taxonomy.origin_roles else "N/A"
-        impact_roles_str = ", ".join([r.value for r in taxonomy.impact_roles]) if taxonomy.impact_roles else "N/A"
+        # Format anchor types and constraint chain from taxonomy
+        anchor_types_str = ", ".join(at.value if hasattr(at, 'value') else str(at) for at in taxonomy.anchor_types) if taxonomy.anchor_types else "N/A"
+        chain_description = taxonomy.chain_description if taxonomy.chain_description else "N/A"
         
         # §3.2.3: Define structured LLM output matching Methodology requirements
         class AnchorMappingItem(BaseModel):
@@ -247,8 +228,7 @@ class SemanticExtractor:
             reasoning: str
         
         class AnchorMapping(BaseModel):
-            origin_anchors: List[AnchorMappingItem]
-            impact_anchors: List[AnchorMappingItem]
+            anchors: List[AnchorMappingItem]
         
         class AttackChainStep(BaseModel):
             step: str
@@ -264,13 +244,13 @@ class SemanticExtractor:
         
         class FixEffectOutput(BaseModel):
             blocking_points: List[BlockingPoint]
-            fix_mechanism: str
+            patch_defense: str
             security_guarantee: str
         
         class SummariesOutput(BaseModel):
             root_cause: str
-            attack_path: str
-            fix_mechanism: str
+            attack_chain: str
+            patch_defense: str
         
         # Complete output structure (simplified to match Methodology 3 tasks)
         class EvidenceGroundingOutput(BaseModel):
@@ -285,11 +265,11 @@ class SemanticExtractor:
         ).invoke({
             "vuln_type": taxonomy.vuln_type.value,
             "type_confidence": taxonomy.type_confidence.value,
-            "origin_roles": origin_roles_str,
-            "impact_roles": impact_roles_str,
+            "anchor_types": anchor_types_str,
+            "chain_description": chain_description,
             "hyp_root_cause": hyp_root,
-            "hyp_attack_path": hyp_attack,
-            "hyp_fix_mechanism": hyp_fix,
+            "hyp_attack_chain": hyp_attack,
+            "hyp_patch_defense": hyp_fix,
             "validated_anchors": validated_anchors_text,
             "slices_content": full_context,
             "commit_message": commit_message,
@@ -303,11 +283,11 @@ class SemanticExtractor:
             cwe_name=taxonomy.cwe_name,
             root_cause=grounding_result.summaries.root_cause,
             
-            # Component 2: Attack Path (with evidence references embedded in text)
-            attack_path=grounding_result.summaries.attack_path,
+            # Component 2: Attack Chain (with evidence references embedded in text)
+            attack_chain=grounding_result.summaries.attack_chain,
             
-            # Component 3: Fix Mechanism
-            fix_mechanism=grounding_result.summaries.fix_mechanism,
+            # Component 3: Patch Defense
+            patch_defense=grounding_result.summaries.patch_defense,
             
             # Evidence Index (for verification phase)
             evidence_index=evidence_index

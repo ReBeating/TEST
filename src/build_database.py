@@ -73,7 +73,7 @@ if __name__ == "__main__":
                 print(f"[*] Start indexing repo: {repo_path}")
                 start = time()
                 indexer = GlobalSymbolIndexer(repo_path)
-                indexer.load_index()
+                indexer.load_index(force_rebuild=True)
                 end = time()
                 duration = end - start
                 res_dict[repo_path] = duration
@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
     if args.mode == '1day':
     # 1. Build Benchmark Index
-        print("[*] Checking Benchmark Index...")
+        print("[*] Building Benchmark Index...")
         indexer = BenchmarkSymbolIndexer()
-        indexer.load_index()
+        indexer.load_index(force_rebuild=True)
         print("[*] Benchmark index ready.")

@@ -91,7 +91,7 @@ VERIFICATION_CHECKLISTS: Dict[GeneralVulnType, Dict[str, any]] = {
         """
     },
     
-    GeneralVulnType.BUFFER_OVERFLOW: {
+    GeneralVulnType.OUT_OF_BOUNDS_WRITE: {
         "critical_checks": [
             "Confirm size/bound check is MISSING or INCORRECT (off-by-one, wrong variable)",
             "Verify overflow target is actually a fixed-size buffer (not dynamically allocated with correct size)",

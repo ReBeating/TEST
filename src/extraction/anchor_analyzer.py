@@ -1,18 +1,19 @@
 """
-Anchor-Guided Analysis Module
+Anchor-Guided Analysis Module (Paper §3.1.3)
 
-Implemented based on Methodology §3.3.2 (Anchor-Guided Signature Extraction)
-Uses LLM Agent + CodeNavigator toolchain to identify vulnerability anchors
+Uses LLM Agent + CodeNavigator toolchain to identify typed vulnerability anchors.
+Each anchor has a specific AnchorType from the vulnerability's constraint model (categories.py).
 
 Core Concepts:
-- Origin Anchors: Operations that create the vulnerable state (e.g., Alloc, Def, Lock)
-- Impact Anchors: Operations that trigger the vulnerability (e.g., Use, Deref, Double Unlock)
+- Typed Anchors: Each anchor carries an AnchorType (e.g., alloc, dealloc, use, source, sink)
+- Constraint Chain: Anchors form a dependency chain (e.g., alloc →d dealloc →t use)
+- ViolationPredicate: Formal condition that makes the chain vulnerable
 
 Discovery Process:
 1. Start from modified lines (search hints)
 2. Expand via data flow/control flow dependencies
-3. Type-based search based on vulnerability type anchor roles
-4. Verify Origin → Impact connectivity
+3. Type-based search for each AnchorType in the constraint chain
+4. Verify anchor connectivity matches the constraint chain
 
 Design Principles:
 - Anchors must be within the currently analyzed function (for slice extraction)
@@ -23,7 +24,6 @@ import os
 import json
 import time
 from typing import List, Set, Dict, Optional, Any
-from enum import Enum
 from pydantic import BaseModel, Field
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -32,8 +32,8 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 from core.navigator import CodeNavigator
-from core.models import AnchorRole, TaxonomyFeature
-from extraction.taxonomy import get_anchor_spec
+from core.models import TaxonomyFeature
+from core.categories import AnchorType, Anchor
 
 
 # ==============================================================================
@@ -89,84 +89,49 @@ def retry_on_connection_error(func, max_retries=3, initial_delay=2.0, backoff_fa
 # Data Models
 # ==============================================================================
 
-class AnchorScope(str, Enum):
-    """Scope type of the Anchor"""
-    LOCAL = "local"                      # Purely intra-procedural operations
-    CALL_SITE = "call_site"              # Call site (actual operation is in callee)
-    INTER_PROCEDURAL = "inter_procedural" # Cross-function data flow
-
-class CrossFunctionInfo(BaseModel):
-    """Cross-function information (supplementary metadata for semantic reports)"""
-    callee_file: Optional[str] = Field(
-        default=None,
-        description="Path to the file containing the callee"
-    )
-    callee_function: Optional[str] = Field(
-        default=None,
-        description="Name of the callee function"
-    )
-    callee_line: Optional[int] = Field(
-        default=None,
-        description="Line number of the actual operation in the callee"
-    )
-    callee_content: Optional[str] = Field(
-        default=None,
-        description="Code content of the actual operation in the callee"
-    )
-    callee_role: Optional[AnchorRole] = Field(
-        default=None,
-        description="Role of the actual operation in the callee"
-    )
-    data_flow_chain: Optional[List[str]] = Field(
-        default=None,
-        description="Data flow trace chain (for inter-procedural cases)"
-    )
-
-class AnchorItem(BaseModel):
-    """
-    Data model for a single anchor (Expanded)
-    
-    Design Principles:
-    - Core fields (file_path, function_name, line, content) are used for slice extraction
-    - These fields must point to the CURRENT function being analyzed
-    - cross_function_info serves only as supplementary metadata for semantic reports
-    """
-    # ========== Core Location Info (for Slice Extraction) ==========
-    file_path: str = Field(description="Full path of the file containing the Anchor")
-    function_name: str = Field(description="Name of the function containing the Anchor")
-    line: int = Field(description="Absolute line number of the Anchor (within current function)")
-    content: str = Field(description="Code content of the Anchor (within current function)")
-    
-    # ========== Semantic Info ==========
-    role: AnchorRole = Field(description="Semantic role of the anchor (from taxonomy definition)")
-    reasoning: str = Field(description="Why this is an anchor (Agent reasoning)")
-    
-    # ========== Scope Info ==========
-    scope: AnchorScope = Field(
-        default=AnchorScope.LOCAL,
-        description="Scope type of the Anchor"
-    )
-    
-    # ========== Cross-Function Supplement (For Semantic Reports Only) ==========
-    cross_function_info: Optional[CrossFunctionInfo] = Field(
-        default=None,
-        description="Cross-function info (when scope is CALL_SITE or INTER_PROCEDURAL)"
-    )
+# Note: AnchorItem has been unified into core.categories.Anchor (Pydantic BaseModel).
+# AnchorScope enum removed — scope is now a plain str field on Anchor.
+# CrossFunctionInfo removed — cross_function_info is now a plain dict field on Anchor.
 
 
 class AnchorResult(BaseModel):
-    """Anchor identification result"""
-    origin_anchors: List[AnchorItem] = Field(
-        description="Origin anchors (operations creating the vulnerable state)",
-        default_factory=list
-    )
-    impact_anchors: List[AnchorItem] = Field(
-        description="Impact anchors (operations triggering the vulnerability)",
+    """
+    Anchor identification result (paper §3.1.3 Algorithm 1 output).
+    
+    Uses a single `anchors` list of typed Anchor instances (from core.categories)
+    instead of the old origin_anchors/impact_anchors split.
+    Each anchor carries its own AnchorType.
+    """
+    anchors: List[Anchor] = Field(
+        description="All typed anchors identified (each with type from categories.py)",
         default_factory=list
     )
     reasoning: str = Field(
-        description="Overall reasoning: how anchors were found from modified lines and how they form a vulnerability chain"
+        description="Overall reasoning: how anchors were found and how they form the vulnerability chain"
     )
+    
+    def get_by_type(self, anchor_type_value: str) -> List[Anchor]:
+        """Get anchors of a specific AnchorType."""
+        return [a for a in self.anchors if a.type.value == anchor_type_value]
+    
+    # === Phase 2 Compatibility Properties ===
+    # search/verifier still reads origin_anchors/impact_anchors.
+    # Derive from typed anchors: first half → origin, second half → impact.
+    @property
+    def origin_anchors(self) -> List[Anchor]:
+        """Compat: first half of typed anchors chain → origin semantics."""
+        if not self.anchors:
+            return []
+        mid = max(len(self.anchors) // 2, 1)
+        return self.anchors[:mid]
+    
+    @property
+    def impact_anchors(self) -> List[Anchor]:
+        """Compat: second half of typed anchors chain → impact semantics."""
+        if not self.anchors:
+            return []
+        mid = max(len(self.anchors) // 2, 1)
+        return self.anchors[mid:]
 
 
 # ==============================================================================
@@ -175,13 +140,13 @@ class AnchorResult(BaseModel):
 
 class AnchorAnalyzer:
     """
-    Agent-driven Anchor Analyzer
+    Agent-driven Typed Anchor Analyzer (Paper §3.1.3)
     
-    Implements Anchor Discovery process based on Methodology §3.3.2:
+    Implements Anchor Discovery using typed anchor model from categories.py:
     1. Extract search hints from diff (modified lines + key variables)
-    2. Get expected anchor roles based on vulnerability type
-    3. Use Agent + tools to expand search from hints to find anchors
-    4. Verify Origin → Impact connectivity
+    2. Load expected AnchorTypes and constraint chain from VulnerabilityCategory
+    3. Use Agent + tools to expand search from hints to find typed anchors
+    4. Verify anchor chain connectivity matches the constraint model
     """
     
     def __init__(self, navigator: CodeNavigator):
@@ -201,7 +166,8 @@ class AnchorAnalyzer:
                  file_path: str,
                  function_name: str,
                  start_line: int = 1,
-                 attempt: int = 1) -> AnchorResult:
+                 attempt: int = 1,
+                 candidates: str = "") -> AnchorResult:
         """
         Identify anchors (Agent-driven)
         
@@ -217,16 +183,34 @@ class AnchorAnalyzer:
             function_name: Name of the function being analyzed
             start_line: Starting line number of the code
             attempt: Current attempt count (for Refinement, default 1)
+            candidates: TwoPassSlice candidate text (from TwoPassSlicer.collect_candidates())
+                Formatted as "L{line}: {code}  [def={defs}, use={uses}]" per line.
+                Empty string if no candidates available.
             
         Returns:
-            AnchorResult: Identified Origin and Impact anchors
+            AnchorResult: Typed anchor instances matching the vulnerability chain
         """
         
-        # 1. Get anchor specification (based on vulnerability type)
-        anchor_spec = get_anchor_spec(taxonomy.vuln_type)
-        origin_roles = anchor_spec['origin_roles']
-        impact_roles = anchor_spec['impact_roles']
-        vuln_chain = anchor_spec['vulnerability_chain']
+        # 1. Get typed anchor specification from categories.py KB
+        category = taxonomy.category_obj
+        typed_anchors = category.anchors  # List[Anchor] with AnchorType
+        constraint = category.constraint
+        chain_str = constraint.chain_str()  # e.g., "alloc →d dealloc →t use"
+        
+        # Build anchor descriptions for LLM
+        anchor_specs_text = "\n".join([
+            f"  - **{a.type.value}** ({a.locatability.value}): {a.description}\n"
+            f"    Identification: {a.type.identification_guide}"
+            for a in typed_anchors
+        ]) if typed_anchors else "No specific anchors defined — use generic analysis."
+        
+        # Build chain description
+        chain_parts = [f"{a.description} ({a.type.value})" for a in typed_anchors]
+        vuln_chain = (
+            f"{category.description}\nChain: " + " → ".join(chain_parts)
+            if chain_parts
+            else category.description
+        )
         
         # 2. Format search hints
         deleted_lines_text = "\n".join([
@@ -252,9 +236,8 @@ class AnchorAnalyzer:
             formatted_code_lines.append(f"[{start_line + i:4d}] {line}")
         formatted_code = "\n".join(formatted_code_lines)
         
-        # 5. Build System Prompt (General guidance, no specific code or data)
-        origin_roles_str = ", ".join([r.value for r in origin_roles]) if origin_roles else "N/A (Generic)"
-        impact_roles_str = ", ".join([r.value for r in impact_roles]) if impact_roles else "N/A (Generic)"
+        # 5. Build System Prompt (typed anchor model)
+        anchor_types_str = ", ".join([a.type.value for a in typed_anchors]) if typed_anchors else "N/A (Generic)"
         
         # Extract line ranges actually affected by the patch
         patch_affected_lines = self._extract_patch_affected_lines(diff_text, start_line)
@@ -265,10 +248,10 @@ class AnchorAnalyzer:
         if attempt > 1:
             attempt_context = f"""
 ### ⚠️ IMPORTANT: This is Attempt {attempt}/3
-The previous attempt failed validation (anchors were not coherent or incomplete).
-**What went wrong**: Either the Origin→Impact connection was broken, or required anchor roles were missing.
+The previous attempt failed validation (anchors were not coherent or chain was incomplete).
+**What went wrong**: Either the anchor chain was broken, or required anchor types were missing.
 **Your task now**:
-- Try to find ALTERNATIVE anchor candidates (different lines with same roles)
+- Try to find ALTERNATIVE anchor candidates (different lines with same types)
 - Expand search scope (check more variables, deeper call chains, broader context)
 - Reconsider the vulnerability pattern - the actual mechanism might differ from the hypothesis
 """
@@ -277,17 +260,18 @@ The previous attempt failed validation (anchors were not coherent or incomplete)
 {attempt_context}
 
 ### Your Mission
-Identify **Anchors** - critical operations that embody the vulnerability mechanism:
-- **Origin Anchors**: Operations that CREATE the vulnerable state (e.g., {origin_roles_str})
-- **Impact Anchors**: Operations that TRIGGER/EXPLOIT the vulnerability (e.g., {impact_roles_str})
+Identify **Typed Anchors** — critical operations that form the vulnerability chain.
+Each anchor has a specific **type** from the vulnerability's constraint model.
 
-### Expert Knowledge for {taxonomy.vuln_type.value}
-**Typical Vulnerability Pattern**:
-{vuln_chain}
+### Vulnerability Chain Model for {taxonomy.vuln_type.value}
+**Description**: {category.description}
+**Anchor Chain**: {chain_str}
+**Violation**: {constraint.violation.description}
 
-**Expected Anchor Roles**:
-- Origin Roles: {origin_roles_str}
-- Impact Roles: {impact_roles_str}
+**Required Anchor Types** (find one or more concrete code statements per type — multiple instances of the same type are allowed when the vulnerability involves multiple sources, sinks, or access points):
+{anchor_specs_text}
+
+**Dependency Chain**: The anchors must be connected as: {chain_str}
 
 ### Your Toolkit
 You have access to `CodeNavigator` tools to explore code (including cross-file references):
@@ -309,27 +293,40 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
 2. **Expand via Data/Control Flow**: Use `trace_variable()` and `get_guard_conditions()` to find related code
 3. **Type-Specific Search**: Look for operations matching the expected anchor roles
 
-### 🔴 CRITICAL CONSTRAINT: Patch Coverage Scope
-**This patch fixes a specific vulnerability instance. Your task: identify the EXACT vulnerability that this patch addresses.**
+### 🔴 CRITICAL CONSTRAINT: Patch Relevance Test
+**This patch fixes ONE specific vulnerability instance. Every anchor you report MUST pass the Patch Relevance Test below.**
 
-**Key Principle**: The patch may modify function A to protect against a vulnerability triggered in function B.
-- ✅ Include: Operations protected by this patch (even if not directly modified)
-- ✅ Include: Call sites or data flow paths leading to the vulnerability
-- ❌ Exclude: Similar code patterns that this patch does NOT protect
+**The Test — ask for EACH candidate anchor**:
+> "If I remove this patch (revert to vulnerable code), does this specific code location become exploitable AS PART OF the same vulnerability chain?"
 
-**Example 1 (Direct Protection)**:
-- Patch adds `if (!ptr) return;` before `use(ptr);`
-- ✅ Impact Anchor: `use(ptr);` (protected by the check)
-- ❌ NOT Impact: `use(other_ptr);` elsewhere (different variable, not protected)
+An anchor passes the test if **at least one** of these holds:
+1. **Direct modification**: The anchor line is itself added/deleted/modified by the patch
+2. **Data-flow connected**: A key variable in the anchor has a def-use or use-def chain that reaches a patch-modified line (trace with `trace_variable`)
+3. **Control-flow protected**: The anchor is guarded by a condition that the patch adds/modifies (check with `get_guard_conditions`)
+4. **Same branch/path**: The anchor is on the same execution path (same if/else branch, same switch case) as a patch-modified line
 
-**Example 2 (Indirect Protection via Lifecycle)**:
-- Patch moves `wq = alloc_workqueue()` from `open()` to `probe()`
-- Root cause: `resume()` uses `wq` before `open()` is called
-- ✅ Origin Anchor: `alloc_workqueue()` call site in probe (the fix location)
-- ✅ Impact Anchor: Use the call site or data flow in probe that leads to resume's usage
-- Note: Even though resume() is not modified, it's the protected vulnerability site
+**What FAILS the test**:
+- Code in a **different branch** (different `if`/`else`/`switch case`) that happens to use the same variable with the same pattern
+- Code that is **structurally similar** but operates on **independent data** not touched by the patch
+- Code that has the **same vulnerability pattern** but would need a **separate patch** to fix
 
-**How to handle cross-function Impact**:
+**Example (Integer Underflow in two branches)**:
+```c
+if (dataset == 255) {{
+    // Branch A — patch adds bounds check here
+    while (len--)  // ✅ PASS: same branch as patch, data-flow connected
+        WriteBlobByte(ofile, token[next++]);  // ✅ PASS: same branch
+}} else {{
+    // Branch B — patch does NOT touch this branch
+    while (len--)  // ❌ FAIL: different branch, patch doesn't protect this
+        WriteBlobByte(ofile, token[next++]);  // ❌ FAIL: same pattern but separate instance
+}}
+```
+Even though Branch B has the identical vulnerability, it is a **separate vulnerability instance** that this patch does not address.
+
+**How to verify**: Use `get_guard_conditions(line)` to check if the candidate anchor shares control-flow guards with patch-modified lines. If they are in different branches, the anchor fails the test.
+
+**Cross-function anchors**:
 1. If current function calls the vulnerable function → use call site as anchor
 2. If indirect relationship (callbacks, shared data) → use the connection point + cross_function_info
 
@@ -344,37 +341,37 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
   ```
   // Current function calls helper, helper frees ptr inside
   {{
-    "line": 51,
-    "content": "helper(ptr);",
-    "role": "FREE",  # Semantic role based on what helper does
+   "line_number": 51,
+   "code_snippet": "helper(ptr);",
+   "type": "dealloc",
     "scope": "call_site",
     "reasoning": "Calls helper() which frees ptr inside",
     "cross_function_info": {{
       "callee_function": "helper",
       "callee_line": 80,
       "callee_content": "free(ptr);",
-      "callee_role": "FREE"
+      "callee_anchor_type": "dealloc"
     }}
   }}
   ```
 
-**Case 2: Caller - Bad input from calling function** (Current function is Callee, Origin is in Caller)
-- Use the **parameter reception/use point** in current function as Impact anchor
+**Case 2: Caller - Bad input from calling function** (Current function is Callee, source is in Caller)
+- Use the **parameter reception/use point** in current function as anchor
 - Mark scope as "inter_procedural"
 - Record the caller's bad input in cross_function_info
 - Example (NULL pointer from caller):
   ```
   // Caller passes NULL, current function uses without checking
   {{
-    "line": 203,
-    "content": "struct data *info = dev->platform_data;",  # First use of bad param
-    "role": "USE",  # This is the Impact
+   "line_number": 203,
+   "code_snippet": "struct data *info = dev->platform_data;",
+   "type": "use",
     "scope": "inter_procedural",
     "reasoning": "Uses platform_data which caller may pass as NULL without validation",
     "cross_function_info": {{
-      "callee_function": "probe_device",  # Caller that passes bad value
+      "callee_function": "probe_device",
       "callee_line": 150,
-      "callee_content": "driver_register(&dev_driver);  # Calls with NULL platform_data",
+      "callee_content": "driver_register(&dev_driver);",
       "data_flow_chain": [
         "Line 150 (probe_device): Registers driver with dev.platform_data=NULL",
         "Line 203 (current): Directly uses dev->platform_data without NULL check"
@@ -391,9 +388,9 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
   ```
   // In probe(): stores wq to shared struct, resume() may use before initialization
   {{
-    "line": 1363,
-    "content": "priv->wq = alloc_workqueue(...);",
-    "role": "ASSIGN",  # Creates the resource (Origin)
+   "line_number": 1363,
+   "code_snippet": "priv->wq = alloc_workqueue(...);",
+   "type": "alloc",
     "scope": "inter_procedural",
     "reasoning": "Allocates workqueue stored in shared priv struct, used by resume() which may run before open()",
     "cross_function_info": {{
@@ -402,7 +399,7 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
         "priv struct shared across driver lifecycle",
         "resume() accesses priv->wq without checking if open() was called"
       ],
-      "callee_function": "mcp251x_can_resume",  # Peer function that uses the resource
+      "callee_function": "mcp251x_can_resume",
       "callee_line": 1486,
       "callee_content": "queue_work(priv->wq, &priv->restart_work);"
     }}
@@ -416,9 +413,9 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
 - Example (Race condition via callback):
   ```
   {{
-    "line": 120,
-    "content": "register_callback(dev, handler);",
-    "role": "USE",  # Sets up vulnerable callback
+   "line_number": 120,
+   "code_snippet": "register_callback(dev, handler);",
+   "type": "use",
     "scope": "inter_procedural",
     "reasoning": "Registers handler which may be called before initialization completes",
     "cross_function_info": {{
@@ -433,28 +430,36 @@ You have access to `CodeNavigator` tools to explore code (including cross-file r
   ```
 
 **Key Principle for Inter-Procedural Cases**:
-- Focus on what THIS function does (Origin) and how it connects to vulnerabilities elsewhere (Impact via data flow/control flow)
+- Focus on what THIS function does and how it connects to vulnerabilities elsewhere (via data flow/control flow)
 - Don't try to mark lines in other functions as anchors - use cross_function_info instead
 - When you find yourself repeatedly reading other functions, that's a signal to use cross_function_info
 
 ### Output Requirements
 Return a JSON object with:
-- `origin_anchors`: List of anchor objects with fields:
-  - `line`: int (absolute line number in current function)
-  - `content`: str (code at that line)
-  - `role`: AnchorRole (semantic role from taxonomy)
+- `anchors`: List of typed anchor objects, each with fields:
+  - `line_number`: int (absolute line number in current function)
+  - `code_snippet`: str (code at that line)
+  - `type`: str (**MUST be one of: {anchor_types_str}** — any other type will be REJECTED)
   - `reasoning`: str (why this is an anchor)
+  - `locatability`: "concrete"|"assumed"|"conceptual" (default: "concrete")
+    - "concrete": Has specific code location with clear semantics (e.g., malloc, free, scanf)
+    - "assumed": Has specific code location but semantics need assumption (e.g., function parameter assumed controllable)
+    - "conceptual": No specific code location, purely inferred existence (e.g., UAF use in another function)
+  - `assumption_type`: str (required when locatability != "concrete") — one of: "controllability"|"semantic"|"existence"|"reachability"
+  - `assumption_rationale`: str (required when locatability != "concrete") — explain the assumption
   - `scope`: "local"|"call_site"|"inter_procedural" (default: "local")
   - `cross_function_info`: object (optional, for scope != "local")
-- `impact_anchors`: Same structure as origin_anchors
 - `reasoning`: Detailed trace explaining your discovery process and the vulnerability chain
 
 ### Critical Rules
 1. **ALL anchors MUST be in the current function** (lines within the provided code range)
-2. **Anchors MUST be related to what the patch fixes** - Don't include similar vulnerabilities that this patch doesn't touch
+2. **Every anchor MUST pass the Patch Relevance Test** (see above) — verify with `get_guard_conditions()` and `trace_variable()` that each anchor is on the same execution path and data-flow chain as the patch. Do NOT include code in different branches that the patch does not touch.
 3. For operations in callees, use the call site + cross_function_info
 4. Use tools to verify relationships - don't guess
-5. Try to find required anchor roles (Origin: {origin_roles_str}, Impact: {impact_roles_str})
+5. Try to find all required anchor types: {anchor_types_str}
+6. The anchors should form the dependency chain: {chain_str}
+7. **Multiple anchors of the same type are allowed** — but ONLY if each instance independently passes the Patch Relevance Test. E.g., two `source` anchors feeding the same patch-protected computation are fine; two `sink` anchors in different branches where only one branch is patched means only the patched branch's sink qualifies.
+8. **STRICT TYPE CONSTRAINT**: The `type` field MUST be one of [{anchor_types_str}]. Do NOT use anchor types from other vulnerability categories (e.g., do NOT use "access" or "object" for Numeric-Domain vulnerabilities). If a code location doesn't fit any of the allowed types, describe it in the `reasoning` of the nearest matching anchor instead.
 """
 
         # 6. Build User Content (Specific Task Data)
@@ -468,8 +473,8 @@ Return a JSON object with:
 
 ### The Hypothesis (Your Lead)
 - **Root Cause**: {taxonomy.root_cause}
-- **Attack Path**: {taxonomy.attack_path}
-- **Fix Mechanism**: {taxonomy.fix_mechanism}
+- **Attack Chain**: {taxonomy.attack_chain}
+- **Patch Defense**: {taxonomy.patch_defense}
 
 ### Search Hints (Starting Points)
 These are your **initial anchors** - expand from here using tools:
@@ -483,6 +488,9 @@ These are your **initial anchors** - expand from here using tools:
 **Key Variables to Track**:
 {key_vars}
 
+### Static Analysis Candidates (from PDG two-pass slice)
+{candidates if candidates else "No static analysis candidates available — rely on tool-based exploration."}
+
 ### Patch Diff
 ```diff
 {diff_text}
@@ -493,7 +501,8 @@ These are your **initial anchors** - expand from here using tools:
 {formatted_code}
 ```
 
-**Task**: Please identify the Origin and Impact anchors using the search hints and tools.
+**Task**: Please identify the **typed anchors** ({anchor_types_str}) that form the vulnerability chain: {chain_str}
+Use the search hints and tools to trace each anchor type.
 """
         
         messages = [
@@ -526,8 +535,7 @@ These are your **initial anchors** - expand from here using tools:
                 print(f"      [AnchorAnalyzer] LLM invocation failed after retries: {e}")
                 # Return empty result on connection failure
                 return AnchorResult(
-                    origin_anchors=[],
-                    impact_anchors=[],
+                    anchors=[],
                     reasoning=f"LLM invocation failed after retries: {e}"
                 )
             
@@ -653,47 +661,44 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
                 max_retries=3
             )
             
-            # 9. Populate complete location info (file_path and function_name)
-            for anchor in result.origin_anchors + result.impact_anchors:
+            # 9. Populate complete location info (file_path and func_name)
+            for anchor in result.anchors:
                 anchor.file_path = file_path
-                anchor.function_name = function_name
+                anchor.func_name = function_name
             
-            # 10. Role Completeness Check (OR relationship: as long as one role is found)
-            found_origin_roles = set(a.role for a in result.origin_anchors)
-            found_impact_roles = set(a.role for a in result.impact_anchors)
+            # 10. HARD FILTER: Remove anchors with types not in current category
+            allowed_types = set(a.type.value for a in typed_anchors) if typed_anchors else None
+            if allowed_types:
+                original_count = len(result.anchors)
+                filtered = [a for a in result.anchors if a.type.value in allowed_types]
+                rejected = [a for a in result.anchors if a.type.value not in allowed_types]
+                if rejected:
+                    for r in rejected:
+                        print(f"      [AnchorAnalyzer] ⚠️ REJECTED anchor type '{r.type.value}' (not in allowed types {allowed_types}): L{r.line_number} {r.code_snippet}")
+                    result.anchors = filtered
             
-            expected_origin = set(origin_roles) if origin_roles else set()
-            expected_impact = set(impact_roles) if impact_roles else set()
+            # 11. Anchor Type Completeness Check
+            found_types = set(a.type.value for a in result.anchors)
+            expected_types = set(a.type.value for a in typed_anchors) if typed_anchors else set()
             
-            # Check if at least one Origin role and one Impact role are found
-            has_origin = bool(found_origin_roles & expected_origin) if expected_origin else bool(found_origin_roles)
-            has_impact = bool(found_impact_roles & expected_impact) if expected_impact else bool(found_impact_roles)
+            if expected_types:
+                missing_types = expected_types - found_types
+                if missing_types:
+                    print(f"      [AnchorAnalyzer] Incomplete anchor chain: missing types {missing_types}")
+                    print(f"        Expected chain: {chain_str}")
+                    print(f"        Found types: {found_types}")
             
-            if not has_origin or not has_impact:
-                warning_msg = "      [AnchorAnalyzer] Incomplete anchor roles:"
-                if not has_origin:
-                    if expected_origin:
-                        warning_msg += f"\n        No Origin anchor found (expected any of: {[r.value for r in expected_origin]})"
-                    else:
-                        warning_msg += f"\n        No Origin anchor found"
-                if not has_impact:
-                    if expected_impact:
-                        warning_msg += f"\n        No Impact anchor found (expected any of: {[r.value for r in expected_impact]})"
-                    else:
-                        warning_msg += f"\n        No Impact anchor found"
-                print(warning_msg)
-            
-            # 11. Basic Validation (No anchors found at all)
-            if not result.origin_anchors and not result.impact_anchors:
+            # 12. Basic Validation (No anchors found at all)
+            if not result.anchors:
                 print(f"      [AnchorAnalyzer] Warning: No anchors identified at all")
-            
+            for anchor in result.anchors:
+                print(f"      [AnchorAnalyzer] Anchor: {anchor.line_number} {anchor.code_snippet} {anchor.type.value} {anchor.reasoning} {anchor.scope} {anchor.cross_function_info}")
             return result
             
         except Exception as e:
             print(f"      [AnchorAnalyzer] Extraction Error: {e}")
             return AnchorResult(
-                origin_anchors=[],
-                impact_anchors=[],
+                anchors=[],
                 reasoning=f"Extraction failed: {e}"
             )
     
@@ -840,7 +845,7 @@ If you need different information, use DIFFERENT parameters or a DIFFERENT tool.
     
     def _extract_patch_affected_lines(self, diff_text: str, start_line: int) -> Set[int]:
         """
-        Extract line numbers affected by patch (used to constrain Impact Anchor range)
+        Extract line numbers affected by patch (used to constrain anchor search range)
         
         Includes:
         1. Deleted lines (deleted lines) - vulnerability code itself

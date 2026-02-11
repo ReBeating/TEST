@@ -1,8 +1,9 @@
 import difflib
 import re
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from tqdm import tqdm
 from core.models import PatchFeatures, MatchEvidence, MatchTrace, SearchResultItem, AlignedTrace
+from core.categories import Anchor, AnchorType
 from core.state import WorkflowState
 import concurrent.futures
 from core.indexer import GlobalSymbolIndexer, BenchmarkSymbolIndexer, tokenize_code
@@ -267,8 +268,8 @@ class LineCorrespondence:
 
 class DualChannelMatcher:
     def __init__(self, s_pre: str, s_post: str,
-                 pre_origins: List[str] = None, pre_impacts: List[str] = None,
-                 post_origins: List[str] = None, post_impacts: List[str] = None):
+                 pre_anchors: Optional[List[Anchor]] = None,
+                 post_anchors: Optional[List[Anchor]] = None):
         
         # [Modified] Use normalize_program_structure for normalization
         # Slices usually carry line markers [ 123], so enable has_line_markers=True
@@ -288,13 +289,11 @@ class DualChannelMatcher:
                 self.modified_pre_to_post[corr.pre_idx] = corr.post_idx
                 self.modified_post_to_pre[corr.post_idx] = corr.pre_idx
         
-        # [New] Precise Anchors
-        # Clean them similarly to how we filter lines (remove empty ones)
-        # Anchors should also correspond one-to-one, simple handling here, use normalized line list during matching
-        self.pre_origins = [l.strip() for l in (pre_origins or []) if tokenize_line(l)]
-        self.pre_impacts = [l.strip() for l in (pre_impacts or []) if tokenize_line(l)]
-        self.post_origins = [l.strip() for l in (post_origins or []) if tokenize_line(l)]
-        self.post_impacts = [l.strip() for l in (post_impacts or []) if tokenize_line(l)]
+        # [Modified] Typed Anchors (per paper §3.1.3)
+        # Store Anchor objects directly — each carries type, line_number, code_snippet, locatability etc.
+        # Filter out anchors without code_snippet (they can't be matched)
+        self.pre_anchors = [a for a in (pre_anchors or []) if a.code_snippet and tokenize_line(a.code_snippet)]
+        self.post_anchors = [a for a in (post_anchors or []) if a.code_snippet and tokenize_line(a.code_snippet)]
         
     def _tag_regions_with_correspondence(self) -> Tuple[List[str], List[str], List[LineCorrespondence]]:
         """
@@ -752,112 +751,79 @@ class DualChannelMatcher:
 
     def _compute_anchor_score(self, aligned_trace: List[AlignedTrace], raw_lines: List[str],
                                slice_map: List[List[int]],
-                               sources: List[str], sinks: List[str]) -> float:
+                               anchors: List[Anchor]) -> float:
         """
-        Compute anchor matching score
+        Compute typed anchor matching score (per paper §3.2 Anchor-Weighted Scoring)
         
-        Idea:
-        - Check if source (data source) and sink (impact point) match to target
-        - Return score between 0-1
-        
-        Note: raw_lines are normalized via normalize_program_structure, multi-line statements merged.
-        sources/sinks are original multi-line anchors.
-        
-        Matching Strategy: Based on line number matching
-        - Extract line number from anchor (e.g., "[ 227] ..." -> 227)
-        - Find line in slice_lines containing that line number (normalization may merge 227-228 into one line)
+        For each typed anchor (e.g., ALLOC, DEALLOC, USE), find its corresponding
+        line in the normalized slice via line_number, then check if the alignment
+        trace matched it to the target.
         
         Args:
             aligned_trace: Alignment trace results
             raw_lines: Normalized slice line list
             slice_map: Original line number list for each line (returned by normalize_program_structure)
-            sources: origin anchor line list
-            sinks: impact anchor line list
+            anchors: List of typed Anchor objects (each has line_number, code_snippet, type)
         
         Returns:
             anchor_score: Anchor match score [0, 1]
-                - 1.0: Both anchors matched
-                - 0.5: Only one anchor matched
-                - 0.0: Neither anchor matched
-                - 1.0: No explicit anchors (no penalty)
+                - Average similarity of all matched anchors
+                - 1.0 if no anchors defined (no penalty)
+                - 0.0 if anchors exist but none matched
         """
         if not aligned_trace:
             return 0.0
         
         n_trace = len(aligned_trace)
         
-        def extract_line_no(s):
-            """Extract line number from line with line number marker"""
-            match = re.match(r'^\[\s*(\d+)\]', s.strip())
-            return int(match.group(1)) if match else -1
+        # If no typed anchors, return full score (no penalty)
+        if not anchors:
+            return 1.0
         
-        def get_indices_by_line_number(key_lines):
+        def get_slice_index_by_line_number(line_no: int) -> List[int]:
             """
-            Find corresponding indices in slice_lines based on line numbers.
+            Find corresponding indices in slice_lines based on a single line number.
             
             Args:
-                key_lines: anchor line list (with line number markers)
+                line_no: Original source line number from Anchor
             
             Returns:
                 List of matched slice_lines indices
             """
-            indices = set()
-            if not key_lines:
-                return list(indices)
+            indices = []
+            if line_no <= 0:
+                return indices
             
-            # Extract all anchor line numbers
-            anchor_line_nos = set()
-            for anchor in key_lines:
-                ln = extract_line_no(anchor)
-                if ln != -1:
-                    anchor_line_nos.add(ln)
-            
-            if not anchor_line_nos:
-                return list(indices)
-            
-            # Find indices in slice_map containing these line numbers
             for i, orig_line_nos in enumerate(slice_map):
-                # orig_line_nos is a list representing original line numbers merged into normalized line i
-                # e.g.: [227, 228] means line i was merged from original lines 227, 228
-                for ln in orig_line_nos:
-                    if ln in anchor_line_nos:
-                        indices.add(i)
-                        break
+                if line_no in orig_line_nos:
+                    indices.append(i)
             
-            return list(indices)
+            return indices
         
-        has_sources = bool(sources)
-        has_sinks = bool(sinks)
-        
-        # If no explicit anchors, return full score (no penalty)
-        if not has_sources and not has_sinks:
-            return 1.0
-        
-        source_score = 0.0
-        sink_score = 0.0
+        total_score = 0.0
         anchor_count = 0
         
-        # Source Check - Use line number matching
-        if has_sources:
+        for anchor in anchors:
+            ln = anchor.line_number
+            if not ln or ln <= 0:
+                continue
+            
             anchor_count += 1
-            explicit_source_indices = get_indices_by_line_number(sources)
-            if explicit_source_indices:
-                sims = max((aligned_trace[i].similarity for i in explicit_source_indices if i < n_trace), default=0.0)
-                source_score = sims  # Use similarity directly as score
+            matched_indices = get_slice_index_by_line_number(ln)
+            
+            if matched_indices:
+                # Get the best similarity among matched indices
+                best_sim = max(
+                    (aligned_trace[i].similarity for i in matched_indices if i < n_trace),
+                    default=0.0
+                )
+                total_score += best_sim
         
-        # Sink Check - Use line number matching
-        if has_sinks:
-            anchor_count += 1
-            explicit_sink_indices = get_indices_by_line_number(sinks)
-            if explicit_sink_indices:
-                sims = max((aligned_trace[i].similarity for i in explicit_sink_indices if i < n_trace), default=0.0)
-                sink_score = sims  # Use similarity directly as score
-        
-        # Calculate mean score
+        # If no anchors had valid line numbers, return full score (no penalty)
         if anchor_count == 0:
             return 1.0
         
-        return (source_score + sink_score) / anchor_count
+        return total_score / anchor_count
     
     def _compute_scores_from_alignment(self, aligned_vuln: List[AlignedTrace], aligned_fix: List[AlignedTrace]
                                        ) -> Tuple[float, float, float, float]:
@@ -981,7 +947,7 @@ class DualChannelMatcher:
         
         # 1. Compute 2D score for Vuln channel
         anchor_score_vuln = self._compute_anchor_score(
-            aligned_vuln, self.s_pre_lines, self.s_pre_map, self.pre_origins, self.pre_impacts
+            aligned_vuln, self.s_pre_lines, self.s_pre_map, self.pre_anchors
         )
         
         total_vuln = (
@@ -991,7 +957,7 @@ class DualChannelMatcher:
         
         # 2. Compute 2D score for Fix channel
         anchor_score_fix = self._compute_anchor_score(
-            aligned_fix, self.s_post_lines, self.s_post_map, self.post_origins, self.post_impacts
+            aligned_fix, self.s_post_lines, self.s_post_map, self.post_anchors
         )
         
         # Weighted calculation for final_fix
@@ -1087,9 +1053,9 @@ class VulnerabilitySearchEngine:
             candidates = self.benchmark_indexer.search_functions_by_tokens(vul_id, search_tokens, limit=MatcherConfig.SEARCH_LIMIT_FAST)
             
             matchers = {
-                name: DualChannelMatcher(sf.s_pre, sf.s_post, 
-                                         pre_origins=sf.pre_origins, pre_impacts=sf.pre_impacts,
-                                         post_origins=sf.post_origins, post_impacts=sf.post_impacts) 
+                name: DualChannelMatcher(sf.s_pre, sf.s_post,
+                                         pre_anchors=sf.pre_anchors,
+                                         post_anchors=sf.post_anchors)
                 for name, sf in feature.slices.items()
             }
             
@@ -1145,7 +1111,7 @@ class VulnerabilitySearchEngine:
         else:
             # [Refactor] Iterate per function to search and match individually
             for func_name, sf in feature.slices.items():
-                
+
                 # [Optimization] Skip if s_pre is effectively empty (no context/code)
                 if not any(tokenize_line(line) for line in sf.s_pre.splitlines()):
                     print(f"    [Skip] Skipping {func_name} because s_pre is empty (no context/code).")
@@ -1174,16 +1140,24 @@ class VulnerabilitySearchEngine:
 
                 # 3. Match ONLY against this function's matcher
                 matcher = DualChannelMatcher(sf.s_pre, sf.s_post,
-                                             pre_origins=sf.pre_origins, pre_impacts=sf.pre_impacts,
-                                             post_origins=sf.post_origins, post_impacts=sf.post_impacts)
+                                             pre_anchors=sf.pre_anchors,
+                                             post_anchors=sf.post_anchors)
                 
                 for i, (file_path, target_func_name, code, start_line) in enumerate(candidates):
                     # debug only
-                    # if target_func_name != 'decode_mime_type':
+                    # if target_func_name != 'parse8BIMW':
                     #     continue
+                    # print(f'func_name: {target_func_name}')
                     # print(f'    [Matcher] Matching candidate {i+1}/{len(candidates)}: {target_func_name} in {file_path}')
                     evidence = matcher.match(code, start_line)
-                    
+                    # print(f'evidence.verdict: {evidence.verdict}')
+                    # print(f'evidence.confidence: {evidence.confidence}')
+                    # print(f'evidence.score_vuln: {evidence.score_vuln}')
+                    # print(f'evidence.score_fix: {evidence.score_fix}')
+                    # print(f'evidence.score_feat_vuln: {evidence.score_feat_vuln}')
+                    # print(f'evidence.score_feat_fix: {evidence.score_feat_fix}')
+                    # print(f'evidence.aligned_vuln_traces: {evidence.aligned_vuln_traces}')
+                    # print(f'evidence.aligned_fix_traces: {evidence.aligned_fix_traces}')
                     # Prepare patch path
                     specific_patch = next((p for p in feature.patches if p.function_name == func_name), None)
                     patch_file_path = specific_patch.file_path if specific_patch else None

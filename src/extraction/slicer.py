@@ -27,7 +27,8 @@ from core.models import (SliceFeature, SemanticFeature, SliceEntryPoint, FixType
 from core.navigator import CodeNavigator
 from core.models import GeneralVulnType
 from .pdg import PDGBuilder
-from .anchor_analyzer import AnchorAnalyzer, AnchorResult, AnchorItem
+from .anchor_analyzer import AnchorAnalyzer, AnchorResult
+from core.categories import Anchor, AnchorLocatability, DependencyType, ChainLink
 from .distillation_strategies import get_strategy_prompt_section
 from .slice_validation import (
     validate_anchor_completeness,
@@ -443,6 +444,410 @@ class Slicer:
                 output.append(f"[{abs_line:4d}] {self.code_lines[idx]}")
         
         return "\n".join(output)
+
+# ==============================================================================
+# TwoPassSlicer: Anchor Candidate Collection (Algorithm 1, Line 3)
+# ==============================================================================
+
+class TwoPassSlicer:
+    """
+    TwoPassSlice anchor candidate collector (based on VERDICT paper Algorithm 1, Line 3).
+    
+    Collects vulnerability-related candidate statements from patch modification lines (Δ),
+    for use by anchor_analyzer.identify().
+    
+    Three parallel sources for related_nodes:
+      - Δ_nodes: deleted lines' PDG nodes
+      - cfg_diff_nodes: CFG reachability difference between OLD/NEW
+      - body_nodes: PREDICATE branch body nodes
+    
+    Then extracts V_Δ (variable set) and searches PDG for all def/use nodes.
+    Final: candidates = related_nodes ∪ S_def ∪ S_use
+    
+    See plans/two_pass_slice_design_v2.md for full design rationale.
+    """
+    
+    def __init__(self,
+                 pdg_pri: nx.MultiDiGraph,
+                 cfg_pri: nx.DiGraph,
+                 cfg_shadow: nx.DiGraph,
+                 code_pri: str,
+                 code_shadow: str,
+                 sl_pri: int,
+                 sl_shadow: int,
+                 search_hints: Dict[str, Any],
+                 patch_diff: str):
+        """
+        Args:
+            pdg_pri: OLD (pre-patch) PDG
+            cfg_pri: OLD (pre-patch) CFG
+            cfg_shadow: NEW (post-patch) CFG
+            code_pri: OLD source code
+            code_shadow: NEW source code
+            sl_pri: OLD code start line (absolute)
+            sl_shadow: NEW code start line (absolute)
+            search_hints: Output from extract_search_hints()
+            patch_diff: Unified diff text
+        """
+        self.pdg_pri = pdg_pri
+        self.cfg_pri = cfg_pri
+        self.cfg_shadow = cfg_shadow
+        self.code_pri = code_pri
+        self.code_shadow = code_shadow
+        self.sl_pri = sl_pri
+        self.sl_shadow = sl_shadow
+        self.search_hints = search_hints
+        self.patch_diff = patch_diff
+    
+    def collect_candidates(self) -> str:
+        """
+        Main entry: collect anchor candidates and format as text.
+        
+        Returns:
+            Formatted candidate text for anchor_analyzer prompt injection.
+            Empty string if no candidates found.
+        """
+        print(f"    [TwoPassSlicer] Starting candidate collection...")
+        
+        # Phase 1: Collect related nodes (parallel)
+        delta_nodes = self._find_delta_nodes()
+        print(f"      Δ_nodes: {len(delta_nodes)} nodes")
+        
+        cfg_diff_nodes = self._cfg_diff_analysis(delta_nodes)
+        print(f"      cfg_diff_nodes: {len(cfg_diff_nodes)} nodes")
+        
+        body_nodes = self._get_body_nodes(delta_nodes)
+        print(f"      body_nodes: {len(body_nodes)} nodes")
+        
+        related_nodes = delta_nodes | cfg_diff_nodes | body_nodes
+        print(f"      related_nodes total: {len(related_nodes)} nodes")
+        
+        # Extract V_Δ from related_nodes + search_hints
+        v_delta = self._extract_variables_from_nodes(related_nodes)
+        key_vars = self.search_hints.get('key_variables', set())
+        v_delta |= key_vars
+        print(f"      V_Δ: {v_delta}")
+        
+        # Fallback: all function defs
+        if not v_delta:
+            print(f"      V_Δ empty, falling back to all function defs")
+            v_delta = self._all_function_def_vars()
+            print(f"      V_Δ (fallback): {v_delta}")
+        
+        # Phase 2: Search def/use nodes in PDG
+        s_def, s_use = self._search_def_use(v_delta)
+        print(f"      S_def: {len(s_def)} nodes, S_use: {len(s_use)} nodes")
+        
+        # Phase 3: Merge
+        candidates = related_nodes | s_def | s_use
+        print(f"      Total candidates: {len(candidates)} nodes")
+        
+        if not candidates:
+            return ""
+        
+        return self._format_candidates(candidates)
+    
+    # ==================== Phase 1: Collect Related Nodes ====================
+    
+    def _find_delta_nodes(self) -> Set[str]:
+        """
+        Find Δ nodes: deleted lines' corresponding nodes in OLD PDG.
+        For Additive patches, returns empty set (relies on key_variables).
+        """
+        delta_nodes = set()
+        deleted_lines = self.search_hints.get('deleted_lines', [])
+        
+        if not deleted_lines:
+            return delta_nodes
+        
+        for mod_line in deleted_lines:
+            # mod_line.line_number is absolute line number from diff
+            abs_line = mod_line.line_number
+            # Convert to relative line number for PDG lookup
+            rel_line = abs_line - self.sl_pri + 1
+            
+            # Find matching PDG nodes
+            for n, d in self.pdg_pri.nodes(data=True):
+                if d.get('type') in ('EXIT', 'MERGE', 'ENTRY'):
+                    continue
+                node_rel_line = d.get('start_line', 0)
+                if node_rel_line == rel_line:
+                    delta_nodes.add(n)
+        
+        return delta_nodes
+    
+    def _cfg_diff_analysis(self, delta_nodes: Set[str]) -> Set[str]:
+        """
+        CFG reachability difference analysis.
+        
+        Find nodes that are reachable from Δ in NEW CFG but NOT in OLD CFG.
+        Then match them back to OLD PDG nodes by code content.
+        
+        Key: Must start from Δ nodes, NOT from function entry.
+        This ensures we only see "what the fix changed on the error path".
+        """
+        if not delta_nodes or self.cfg_pri is None or self.cfg_shadow is None:
+            return set()
+        
+        try:
+            # 1. Find OLD Δ nodes in OLD CFG (by relative line number)
+            old_delta_cfg_nodes = set()
+            delta_rel_lines = set()
+            for n in delta_nodes:
+                d = self.pdg_pri.nodes.get(n, {})
+                rel_line = d.get('start_line', 0)
+                if rel_line > 0:
+                    delta_rel_lines.add(rel_line)
+            
+            for n, d in self.cfg_pri.nodes(data=True):
+                if d.get('start_line', 0) in delta_rel_lines:
+                    old_delta_cfg_nodes.add(n)
+            
+            # 2. Find NEW Δ nodes in NEW CFG (added lines)
+            new_delta_cfg_nodes = set()
+            added_lines = self.search_hints.get('added_lines', [])
+            added_rel_lines = set()
+            for mod_line in added_lines:
+                abs_line = mod_line.line_number
+                rel_line = abs_line - self.sl_shadow + 1
+                if rel_line > 0:
+                    added_rel_lines.add(rel_line)
+            
+            for n, d in self.cfg_shadow.nodes(data=True):
+                if d.get('start_line', 0) in added_rel_lines:
+                    new_delta_cfg_nodes.add(n)
+            
+            if not old_delta_cfg_nodes and not new_delta_cfg_nodes:
+                return set()
+            
+            # 3. Compute reachable sets from Δ (not from entry!)
+            old_reachable = set()
+            for n in old_delta_cfg_nodes:
+                old_reachable |= nx.descendants(self.cfg_pri, n)
+            
+            new_reachable = set()
+            for n in new_delta_cfg_nodes:
+                new_reachable |= nx.descendants(self.cfg_shadow, n)
+            
+            # 4. Find newly reachable code (by content matching)
+            old_reachable_code = set()
+            for n in old_reachable:
+                code = self.cfg_pri.nodes[n].get('code', '').strip()
+                if code and code not in ('EXIT', 'ENTRY', 'RETURN', 'BREAK', 'CONTINUE'):
+                    old_reachable_code.add(code)
+            
+            newly_reachable_code = set()
+            for n in new_reachable:
+                code = self.cfg_shadow.nodes[n].get('code', '').strip()
+                if code and code not in ('EXIT', 'ENTRY', 'RETURN', 'BREAK', 'CONTINUE'):
+                    if code not in old_reachable_code:
+                        newly_reachable_code.add(code)
+            
+            if not newly_reachable_code:
+                return set()
+            
+            # 5. Match back to OLD PDG nodes by code content
+            matched_nodes = set()
+            for n, d in self.pdg_pri.nodes(data=True):
+                if d.get('type') in ('EXIT', 'MERGE', 'ENTRY'):
+                    continue
+                node_code = d.get('code', '').strip()
+                if node_code in newly_reachable_code:
+                    matched_nodes.add(n)
+            
+            return matched_nodes
+            
+        except Exception as e:
+            print(f"      [CFG Diff] Error: {e}")
+            return set()
+    
+    def _get_body_nodes(self, delta_nodes: Set[str]) -> Set[str]:
+        """
+        For PREDICATE Δ nodes, collect branch body nodes via CFG TRUE/FALSE edges.
+        
+        Uses CFG structure (not brace matching) to handle:
+        - if (flag) { ... }     (with braces)
+        - if (flag) stmt;       (single statement, same line)
+        - if (flag)\\n  stmt;   (single statement, next line)
+        """
+        if not delta_nodes or self.cfg_pri is None:
+            return set()
+        
+        body_nodes = set()
+        max_depth = 10  # Limit traversal depth to prevent explosion
+        
+        for node in delta_nodes:
+            node_data = self.pdg_pri.nodes.get(node, {})
+            node_type = node_data.get('type', '')
+            
+            # Only process PREDICATE nodes (if/while/for conditions)
+            if node_type != 'PREDICATE':
+                continue
+            
+            # Find this node in CFG (same node ID since PDG copies CFG nodes)
+            if node not in self.cfg_pri:
+                continue
+            
+            # Collect TRUE and FALSE branch body nodes
+            for _, v, edge_data in self.cfg_pri.out_edges(node, data=True):
+                edge_type = str(edge_data.get('type', ''))
+                if edge_type in ('TRUE', 'FALSE', 'CFGEdgeType.TRUE', 'CFGEdgeType.FALSE'):
+                    self._collect_branch_nodes(v, body_nodes, max_depth)
+        
+        return body_nodes
+    
+    def _collect_branch_nodes(self, start: str, result: Set[str], max_depth: int):
+        """BFS along FLOW edges to collect branch body nodes."""
+        visited = set()
+        queue = [(start, 0)]
+        
+        while queue:
+            node, depth = queue.pop(0)
+            if node in visited or depth > max_depth:
+                continue
+            visited.add(node)
+            
+            # Skip virtual nodes
+            node_data = self.cfg_pri.nodes.get(node, {})
+            node_type = node_data.get('type', '')
+            if node_type in ('EXIT', 'MERGE', 'ENTRY'):
+                continue
+            
+            # Add to result (map back to PDG node - same ID)
+            if node in self.pdg_pri:
+                result.add(node)
+            
+            # Continue along FLOW edges only (stop at branch points)
+            for _, v, edge_data in self.cfg_pri.out_edges(node, data=True):
+                edge_type = str(edge_data.get('type', ''))
+                if edge_type in ('FLOW', 'CFGEdgeType.FLOW'):
+                    queue.append((v, depth + 1))
+    
+    # ==================== Phase 2: Variable Extraction & Search ====================
+    
+    @staticmethod
+    def _normalize_var_name(raw_name: str) -> Set[str]:
+        """
+        Extract base variable names from a raw PDG var path.
+        
+        PDG's _get_var_path() may return complex expressions like:
+        - "(unsigned char) token[next++]" → {token, next}
+        - "obj->member" → {obj}
+        - "*ptr" → {ptr}
+        - "buf" → {buf}
+        
+        We extract all C identifier tokens and filter out type keywords/casts.
+        """
+        # Extract all identifier-like tokens
+        tokens = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', raw_name)
+        
+        # Filter out C type keywords and casts
+        type_keywords = {
+            'unsigned', 'signed', 'char', 'short', 'int', 'long', 'float', 'double',
+            'void', 'const', 'volatile', 'static', 'extern', 'register', 'auto',
+            'struct', 'union', 'enum', 'typedef', 'sizeof', 'typeof',
+            'NULL', 'true', 'false', 'bool', 'size_t', 'ssize_t',
+            'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+            'int8_t', 'int16_t', 'int32_t', 'int64_t',
+            'u8', 'u16', 'u32', 'u64', 's8', 's16', 's32', 's64',
+        }
+        
+        return {t for t in tokens if t not in type_keywords and len(t) > 1}
+    
+    def _extract_variables_from_nodes(self, nodes: Set[str]) -> Set[str]:
+        """Extract all variable names from a set of PDG nodes (defs ∪ uses), with normalization."""
+        variables = set()
+        for node in nodes:
+            data = self.pdg_pri.nodes.get(node, {})
+            defs = data.get('defs', {})
+            uses = data.get('uses', {})
+            for raw_name in defs.keys():
+                variables |= self._normalize_var_name(raw_name)
+            for raw_name in uses.keys():
+                variables |= self._normalize_var_name(raw_name)
+        return variables
+    
+    def _all_function_def_vars(self) -> Set[str]:
+        """Fallback: collect all def variables in the entire function."""
+        variables = set()
+        for _, data in self.pdg_pri.nodes(data=True):
+            defs = data.get('defs', {})
+            for raw_name in defs.keys():
+                variables |= self._normalize_var_name(raw_name)
+        return variables
+    
+    def _search_def_use(self, v_delta: Set[str]) -> Tuple[Set[str], Set[str]]:
+        """
+        Search PDG for all nodes that define or use V_Δ variables.
+        Uses _normalize_var_name to match against raw PDG var paths.
+        
+        Returns:
+            (S_def, S_use) - sets of node IDs
+        """
+        s_def = set()
+        s_use = set()
+        
+        for n, data in self.pdg_pri.nodes(data=True):
+            if data.get('type') in ('EXIT', 'MERGE', 'ENTRY'):
+                continue
+            
+            # Normalize raw PDG var names before matching
+            node_def_vars = set()
+            for raw_name in data.get('defs', {}).keys():
+                node_def_vars |= self._normalize_var_name(raw_name)
+            
+            node_use_vars = set()
+            for raw_name in data.get('uses', {}).keys():
+                node_use_vars |= self._normalize_var_name(raw_name)
+            
+            if node_def_vars & v_delta:
+                s_def.add(n)
+            if node_use_vars & v_delta:
+                s_use.add(n)
+        
+        return s_def, s_use
+    
+    # ==================== Phase 3: Formatting ====================
+    
+    def _format_candidates(self, candidate_nodes: Set[str]) -> str:
+        """
+        Format candidate nodes as text for anchor_analyzer prompt injection.
+        
+        Format: L{abs_line}: {code}  [type={node_type}, def={defs}, use={uses}]
+        """
+        lines = []
+        
+        # Sort by line number for readability
+        sorted_nodes = sorted(
+            candidate_nodes,
+            key=lambda n: self.pdg_pri.nodes.get(n, {}).get('start_line', 0)
+        )
+        
+        for node in sorted_nodes:
+            data = self.pdg_pri.nodes.get(node, {})
+            rel_line = data.get('start_line', 0)
+            abs_line = rel_line + self.sl_pri - 1 if rel_line > 0 else 0
+            code = data.get('code', '').strip()
+            node_type = data.get('type', '')
+            defs = set(data.get('defs', {}).keys())
+            uses = set(data.get('uses', {}).keys())
+            
+            # Skip if no meaningful code
+            if not code or code in ('EXIT', 'ENTRY'):
+                continue
+            
+            line_str = f"L{abs_line}: {code}"
+            if defs or uses:
+                line_str += f"  [def={defs}, use={uses}]"
+            lines.append(line_str)
+        
+        # Limit output size (max 50 lines)
+        if len(lines) > 50:
+            print(f"      [TwoPassSlicer] Truncating candidates from {len(lines)} to 50 lines")
+            lines = lines[:50]
+        
+        return '\n'.join(lines)
+
 
 # ==============================================================================
 # Shadow Slice Mapper (Context Synchronization)
@@ -1024,13 +1429,25 @@ class ShadowMapper:
         for abs_p in pri_abs_lines:
             rel_p = abs_p - self.sl_pri + 1
             
-            # Case 1: Direct mapping
+            # Case 1: Direct mapping (EXACT / WHITESPACE)
             if rel_p in self.pri_to_shadow:
                 rel_s = self.pri_to_shadow[rel_p]
                 result.append(rel_s - 1 + self.sl_shadow)
                 continue
             
-            # Case 2: Content similarity matching
+            # Case 2: MOVED mapping (same content, different position)
+            if rel_p in self.moved_pri_to_shadow:
+                rel_s = self.moved_pri_to_shadow[rel_p]
+                result.append(rel_s - 1 + self.sl_shadow)
+                continue
+            
+            # Case 3: MODIFIED mapping (context-based pairing of changed lines)
+            if rel_p in self.modified_pri_to_shadow:
+                rel_s = self.modified_pri_to_shadow[rel_p]
+                result.append(rel_s - 1 + self.sl_shadow)
+                continue
+            
+            # Case 4: Content similarity matching (fallback)
             if 1 <= rel_p <= len(self.lines_pri):
                 p_content = self.lines_pri[rel_p - 1].strip()
                 if p_content:
@@ -1076,7 +1493,7 @@ class SliceValidator:
     Responsibility: Semantically review static slices (forward ∪ backward) to remove noise code
     
     Distillation Strategy (based on Methodology §3.3.2):
-    1. **Anchor Retention**: Origin and Impact anchors are unconditionally kept
+    1. **Anchor Retention**: All typed anchors are unconditionally kept
     2. **Semantic Filtering**: Use LLM to review all data-flow and control-flow statements
        - Keep statements directly participating in vulnerability mechanism
        - Remove irrelevant noise (e.g., logging, feature flags, unrelated error handling)
@@ -1160,7 +1577,7 @@ class SliceValidator:
     def distill_slice(self, slice_code: str, diff_text: str, commit_message: str,
                       focus_var: str, vuln_type: GeneralVulnType,
                       hypothesis: TaxonomyFeature, func_name: str,
-                      origins: List[AnchorItem] = [], impacts: List[AnchorItem] = [],
+                      anchors: List[Anchor] = [],
                       cwe_info: str = "Unknown",
                       navigator: CodeNavigator = None,
                       file_path: str = None) -> Optional[SliceValidationResult]:
@@ -1175,8 +1592,7 @@ class SliceValidator:
             vuln_type: Vulnerability type (GeneralVulnType enum)
             hypothesis: Vulnerability hypothesis (taxonomy)
             func_name: Function name
-            origins: Origin anchors
-            impacts: Impact anchors
+            anchors: Typed anchors (all types)
             cwe_info: CWE information
             navigator: Code navigator
             file_path: File path
@@ -1187,9 +1603,8 @@ class SliceValidator:
         if not slice_code:
             return None
         
-        # Origins/Impacts text
-        origins_text = "\n".join([f"- Line {o.line}: {o.content}" for o in origins]) if origins else "None identified."
-        impacts_text = "\n".join([f"- Line {i.line}: {i.content}" for i in impacts]) if impacts else "None identified."
+        # Anchor text (typed)
+        anchors_text = "\n".join([f"- Line {a.line_number}: {a.code_snippet} [{a.type.value}]" for a in anchors]) if anchors else "None identified."
 
         # Primary is fixed as Pre-Patch (Vulnerable)
         slice_version = "Pre-Patch (Vulnerable)"
@@ -1198,8 +1613,8 @@ class SliceValidator:
         vuln_type_strategy = get_strategy_prompt_section(vuln_type)
         vuln_type_name = vuln_type.value if isinstance(vuln_type, GeneralVulnType) else str(vuln_type)
         
-        print(f"      [Distillation] Engaging semantic filtering ({len(slice_code.splitlines())} lines).")
-        print(f"      [Distillation] Using strategy for: {vuln_type_name}")
+        # print(f"      [Distillation] Engaging semantic filtering ({len(slice_code.splitlines())} lines).")
+        # print(f"      [Distillation] Using strategy for: {vuln_type_name}")
         
         # Setup Tools
         tools = self._create_tools(navigator, file_path, slice_code)
@@ -1215,7 +1630,7 @@ class SliceValidator:
         You are an expert **Semantic Reviewer** for vulnerability slicing.
         
         ### Background
-        The slice is generated from static program analysis (forward ∪ backward slicing from Origins and Impacts).
+        The slice is generated from static program analysis (forward ∪ backward slicing from typed anchors).
         It may contain noise: irrelevant data processing, logging, feature flags, etc.
         
         ### Your Task
@@ -1223,17 +1638,17 @@ class SliceValidator:
         
         **CRITICAL CONSTRAINT**: You must be **highly selective**. Keep ONLY the minimal set of lines that directly participate in the vulnerability mechanism.
         - **Maximum lines to keep**: {max_output_lines} lines (strictly enforced)
-        - **Prioritize**: Origin/Impact anchors > direct data-flow > control guards > context
+        - **Prioritize**: Typed anchors > direct data-flow > control guards > context
         - **Be ruthless**: If uncertain whether a line is essential, REMOVE it
         
         ### Context
         - **Function**: `{func_name}`
         - **Vuln Type**: {vuln_type_name} ({cwe_info})
         - **Root Cause**: {hypothesis.root_cause}
-        - **Attack Path**: {hypothesis.attack_path}
+        - **Attack Chain**: {hypothesis.attack_chain}
         - **Key Variable**: {focus_var}
-        - **Origin Anchors** (vulnerability initiation): {origins_text}
-        - **Impact Anchors** (vulnerability manifestation): {impacts_text}
+        - **Typed Anchors** (vulnerability chain):
+{anchors_text}
         - **Version**: {slice_version}
         
         ### Input Data
@@ -1243,10 +1658,10 @@ class SliceValidator:
 
         ### Classification Rules (Strict Priority Order)
         **Priority 1 - MUST KEEP**:
-        - Origin or Impact anchor lines (MANDATORY)
+        - Typed anchor lines (MANDATORY)
         
         **Priority 2 - KEEP if directly relevant**:
-        - Data-flow statements that directly compute or propagate the vulnerable data to Impact
+        - Data-flow statements that directly compute or propagate the vulnerable data along the chain
         - Control guards that directly determine if vulnerability is triggered
         - Lines modified in the patch diff
         
@@ -1260,7 +1675,7 @@ class SliceValidator:
         {vuln_type_strategy}
         
         ### Analysis Tools
-        - Use `trace_variable` to verify if a variable reaches Impact
+        - Use `trace_variable` to verify if a variable reaches downstream anchors
         - Use `get_control_dependency` to check if control statement guards vulnerability
         - Use `check_variable_usage` to see variable's role in function
         
@@ -1295,7 +1710,7 @@ class SliceValidator:
             
             if response.tool_calls:
                 for t in response.tool_calls:
-                    print(f"      [DistillationAgent] Calling Tool: {t['name']}")
+                    # print(f"      [DistillationAgent] Calling Tool: {t['name']}")
                     tool_result = "Error"
                     try:
                         selected_tool = next((x for x in tools if x.name == t['name']), None)
@@ -1469,6 +1884,192 @@ def extract_deleted_lines(diff_text: str) -> List[str]:
     return deleted
 
 # ==============================================================================
+# ShortestPath Context Extraction (Algorithm 1 L14-17)
+# ==============================================================================
+
+def _build_filtered_subgraph(
+    pdg: nx.MultiDiGraph,
+    dep_type: DependencyType
+) -> nx.DiGraph:
+    """
+    Build a δ-filtered subgraph from the PDG, keeping only edges matching the
+    given dependency type.
+    
+    Mapping:
+    - DATA / TEMPORAL → keep only relationship='DATA' edges
+    - CONTROL → keep only relationship='CONTROL' edges
+    
+    Returns a simplified nx.DiGraph (collapses multi-edges) for shortest_path.
+    """
+    allowed = 'DATA' if dep_type in (DependencyType.DATA, DependencyType.TEMPORAL) else 'CONTROL'
+    
+    filtered = nx.DiGraph()
+    # Add all nodes (preserve attributes for later line-number lookup)
+    for n, d in pdg.nodes(data=True):
+        filtered.add_node(n, **d)
+    
+    # Add only matching edges (collapse multi-edges into single edges)
+    for u, v, _k, d in pdg.edges(keys=True, data=True):
+        if d.get('relationship') == allowed:
+            if not filtered.has_edge(u, v):
+                filtered.add_edge(u, v, **d)
+    
+    return filtered
+
+
+def _find_typed_shortest_path(
+    pdg: nx.MultiDiGraph,
+    src_node: str,
+    dst_node: str,
+    dep_type: DependencyType,
+    max_intermediate: int = 15
+) -> Optional[List[str]]:
+    """
+    Find shortest path between src_node and dst_node on a δ-filtered PDG subgraph.
+    
+    Implements fallback strategy:
+      1. δ-filtered subgraph (only matching edge type)
+      2. Full PDG (all edge types) if δ-filtered fails
+      3. None if no path exists at all
+    
+    Args:
+        pdg: The full PDG (nx.MultiDiGraph)
+        src_node: Source PDG node ID
+        dst_node: Destination PDG node ID
+        dep_type: Dependency type for edge filtering
+        max_intermediate: Max intermediate nodes before truncation
+        
+    Returns:
+        List of node IDs on the path (including endpoints), or None
+    """
+    if src_node == dst_node:
+        return [src_node]
+    
+    # Fallback 1: δ-filtered subgraph
+    filtered = _build_filtered_subgraph(pdg, dep_type)
+    try:
+        path = nx.shortest_path(filtered, src_node, dst_node)
+        # Truncate if path is too long (keep first N/2 + last N/2 + endpoints)
+        if len(path) - 2 > max_intermediate:
+            half = max_intermediate // 2
+            path = path[:half + 1] + path[-(half + 1):]
+            print(f"        [ShortestPath] Path truncated to {len(path)} nodes (max_intermediate={max_intermediate})")
+        return path
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        pass
+    
+    # Fallback 2: Full PDG (all edge types) — build a simple DiGraph from all edges
+    full_digraph = nx.DiGraph()
+    for n, d in pdg.nodes(data=True):
+        full_digraph.add_node(n, **d)
+    for u, v, _k, d in pdg.edges(keys=True, data=True):
+        if not full_digraph.has_edge(u, v):
+            full_digraph.add_edge(u, v, **d)
+    
+    try:
+        path = nx.shortest_path(full_digraph, src_node, dst_node)
+        if len(path) - 2 > max_intermediate:
+            half = max_intermediate // 2
+            path = path[:half + 1] + path[-(half + 1):]
+            print(f"        [ShortestPath] Fallback path truncated to {len(path)} nodes")
+        return path
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        pass
+    
+    # Fallback 3: No path found at all
+    return None
+
+
+def shortest_path_context(
+    pdg: nx.MultiDiGraph,
+    anchor_nodes: List[Tuple[str, str]],
+    chain: List[ChainLink],
+    slicer,
+    sl: int
+) -> Set[str]:
+    """
+    Algorithm 1 L14-17: Extract inter-anchor context via ShortestPath.
+    
+    For each ChainLink(m_i, m_j, δ) in the constraint chain:
+      1. Find all anchor instances matching m_i type and m_j type
+      2. For each (src, dst) pair, find shortest path on δ-filtered PDG
+      3. Collect intermediate nodes into S_ctx
+    
+    Args:
+        pdg: The full PDG (nx.MultiDiGraph)
+        anchor_nodes: List of (node_id, anchor_type_str) tuples
+        chain: List of ChainLink from category.constraint.chain
+        slicer: Slicer instance (for get_nodes_by_location)
+        sl: Start line offset (absolute line of first code line)
+        
+    Returns:
+        Set of PDG node IDs: M ∪ S_ctx (anchor nodes + intermediate context)
+    """
+    # M = all anchor node IDs
+    M = {nid for nid, _ in anchor_nodes}
+    S_ctx = set()
+    
+    # Build anchor_type → [node_id, ...] mapping
+    type_to_nodes: Dict[str, List[str]] = {}
+    for nid, atype in anchor_nodes:
+        if atype not in type_to_nodes:
+            type_to_nodes[atype] = []
+        type_to_nodes[atype].append(nid)
+    
+    print(f"      [ShortestPath] Anchor type mapping: { {k: len(v) for k, v in type_to_nodes.items()} }")
+    print(f"      [ShortestPath] Chain: {[str(link) for link in chain]}")
+    
+    for link in chain:
+        src_type = link.source.value  # e.g., 'source', 'alloc'
+        dst_type = link.target.value  # e.g., 'computation', 'dealloc'
+        dep_type = link.dependency    # DependencyType enum
+        
+        src_nodes = type_to_nodes.get(src_type, [])
+        dst_nodes = type_to_nodes.get(dst_type, [])
+        
+        if not src_nodes or not dst_nodes:
+            if link.is_optional:
+                print(f"        [ShortestPath] Optional link {link}: missing anchors, skipping")
+                continue
+            else:
+                print(f"        [ShortestPath] ⚠ Required link {link}: missing anchors "
+                      f"(src={src_type}:{len(src_nodes)}, dst={dst_type}:{len(dst_nodes)})")
+                continue
+        
+        # Cartesian product: find path for each (src, dst) pair
+        paths_found = 0
+        for s_nid in src_nodes:
+            for d_nid in dst_nodes:
+                if s_nid == d_nid:
+                    continue
+                
+                path = _find_typed_shortest_path(pdg, s_nid, d_nid, dep_type)
+                
+                if path is not None:
+                    # Collect intermediate nodes (exclude endpoints which are already in M)
+                    intermediate = set(path[1:-1]) if len(path) > 2 else set()
+                    S_ctx.update(intermediate)
+                    paths_found += 1
+                    
+                    # Debug: show path info
+                    src_line = pdg.nodes.get(s_nid, {}).get('start_line', '?')
+                    dst_line = pdg.nodes.get(d_nid, {}).get('start_line', '?')
+                    print(f"        [ShortestPath] {link}: L{src_line}→L{dst_line}, "
+                          f"path={len(path)} nodes, intermediate={len(intermediate)}")
+                else:
+                    src_line = pdg.nodes.get(s_nid, {}).get('start_line', '?')
+                    dst_line = pdg.nodes.get(d_nid, {}).get('start_line', '?')
+                    print(f"        [ShortestPath] {link}: L{src_line}→L{dst_line}, NO PATH FOUND")
+        
+        if paths_found == 0 and not link.is_optional:
+            print(f"        [ShortestPath] ⚠ No paths found for required link {link}")
+    
+    result = M | S_ctx
+    print(f"      [ShortestPath] Result: M={len(M)} nodes, S_ctx={len(S_ctx)} nodes, total={len(result)}")
+    return result
+
+
+# ==============================================================================
 # Slice generation function (generate slice from Anchors)
 # ==============================================================================
 
@@ -1482,9 +2083,14 @@ def generate_slice_from_anchors(
     func_name: str
 ) -> Tuple[Set[str], str]:
     """
-    Generate program slice from Anchor results (without distillation)
+    Generate program slice from Anchor results using ShortestPath context extraction.
     
-    This function is decoupled for use in retry loops
+    Implements Algorithm 1 L14-17 from the VERDICT paper:
+    - For each ChainLink(m_i, m_j, δ), find shortest path on δ-filtered PDG
+    - Collect intermediate nodes as context (S_ctx)
+    - Final slice = M (anchor nodes) ∪ S_ctx (intermediate context) ∪ diff nodes
+    
+    This function is decoupled for use in retry loops.
     
     Args:
         anchor_result: Anchor identification result
@@ -1500,154 +2106,120 @@ def generate_slice_from_anchors(
     """
     import re
     
-    # Convert Anchors to Instructions
-    instructions = []
-    for origin_item in anchor_result.origin_anchors:
-        instructions.append(SlicingInstruction(
-            function_name=func_name,
-            target_version="OLD",
-            line_number=origin_item.line,
-            code_content=origin_item.content,
-            strategy="forward",
-            description=f"Origin Anchor ({origin_item.role.value})"
-        ))
+    all_anchors = anchor_result.anchors
     
-    for impact_item in anchor_result.impact_anchors:
-        instructions.append(SlicingInstruction(
-            function_name=func_name,
-            target_version="OLD",
-            line_number=impact_item.line,
-            code_content=impact_item.content,
-            strategy="backward",
-            description=f"Impact Anchor ({impact_item.role.value})"
-        ))
-    
-    # Helper function: extract start nodes and variables
-    def _extract_start(instr_list):
-        _nodes = []
-        _vars = set()
-        for _i in instr_list:
-            _found = slicer_pri.get_nodes_by_location(_i.line_number, _i.code_content)
-            _nodes.extend(_found)
-            if _i.focus_variable: _vars.add(_i.focus_variable)
-        return _nodes, _vars
-
-    origins_instrs = [i for i in instructions if i.strategy == 'forward']
-    impacts_instrs = [i for i in instructions if i.strategy == 'backward']
-    
-    # Execute slicing
-    fwd_nodes = set()
-    if origins_instrs:
-        ns, vs = _extract_start(origins_instrs)
-        fwd_nodes = slicer_pri.forward_slice_pruned(ns, vs)
-
-    bwd_nodes = set()
-    if impacts_instrs:
-        ns, vs = _extract_start(impacts_instrs)
-        bwd_nodes = slicer_pri.backward_slice_pruned(ns, vs)
-    
-    union_nodes = fwd_nodes.union(bwd_nodes)
-    
-    final_nodes = set()
-    if origins_instrs and impacts_instrs:
-        src_lines = [i.line_number for i in origins_instrs]
-        sink_lines = [i.line_number for i in impacts_instrs]
+    # =========================================================================
+    # Step 1: Map Anchors to PDG nodes
+    # =========================================================================
+    anchor_nodes = []  # [(node_id, anchor_type_str), ...]
+    for anchor in all_anchors:
+        # L5-L11: Skip CONCEPTUAL anchors (no concrete code location)
+        if hasattr(anchor, 'locatability') and anchor.locatability in (AnchorLocatability.CONCEPTUAL, 'conceptual'):
+            print(f"      [Slicing] Skipping CONCEPTUAL anchor: ({anchor.type.value}) — {anchor.reasoning[:60]}")
+            continue
         
-        min_limit = min(min(src_lines), min(sink_lines))
-        max_limit = max(max(src_lines), max(sink_lines))
+        nodes = slicer_pri.get_nodes_by_location(anchor.line_number, anchor.code_snippet)
+        if nodes:
+            loc_tag = ""
+            if hasattr(anchor, 'locatability') and anchor.locatability in (AnchorLocatability.ASSUMED, 'assumed'):
+                loc_tag = " [ASSUMED]"
+            anchor_nodes.append((nodes[0], anchor.type.value))
+            print(f"      [Slicing] Anchor mapped: L{anchor.line_number} ({anchor.type.value}){loc_tag} → node {nodes[0]}")
+        else:
+            print(f"      [Slicing] ⚠ Anchor NOT mapped: L{anchor.line_number} ({anchor.type.value}) '{anchor.code_snippet[:50]}'")
+    
+    # =========================================================================
+    # Step 2: Get constraint chain from taxonomy
+    # =========================================================================
+    category = taxonomy.category_obj
+    chain = category.constraint.chain  # List[ChainLink]
+    
+    # =========================================================================
+    # Step 3: ShortestPath Context Extraction (Algorithm 1 L14-17)
+    # =========================================================================
+    if chain and anchor_nodes:
+        # Non-Control-Logic: use ShortestPath to find inter-anchor context
+        print(f"      [Slicing] Using ShortestPath context extraction (chain={len(chain)} links)")
+        final_nodes = shortest_path_context(pdg_pri, anchor_nodes, chain, slicer_pri, sl_pri)
+    elif anchor_nodes:
+        # Control-Logic (chain=[]) or Unknown: just return M (anchor nodes only)
+        print(f"      [Slicing] Control-Logic/empty chain: returning anchor nodes only")
+        final_nodes = {nid for nid, _ in anchor_nodes}
+    else:
+        # No anchors mapped at all — empty result
+        print(f"      [Slicing] ⚠ No anchors mapped to PDG nodes")
+        final_nodes = set()
+    
+    # =========================================================================
+    # Step 4: Inject diff line nodes (deleted lines from patch)
+    # =========================================================================
+    patch_diff = patch.clean_diff if patch.clean_diff else patch.raw_diff
+    diff_lines_abs = []
+    
+    if patch_diff:
+        hunk_re = re.compile(r'^@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@')
+        c_old = 0
+        c_new = 0
         
-        # Extract diff line numbers and expand range
-        patch_diff = patch.clean_diff if patch.clean_diff else patch.raw_diff
-        diff_lines_abs = []
-        
-        if patch_diff:
-            hunk_re = re.compile(r'^@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@')
-            c_old = 0
-            c_new = 0
+        for line in patch_diff.splitlines():
+            if line.startswith('---') or line.startswith('+++'): continue
             
-            for line in patch_diff.splitlines():
-                if line.startswith('---') or line.startswith('+++'): continue
-                
-                m = hunk_re.match(line)
-                if m:
-                    try:
-                        c_old = int(m.group(1))
-                        c_new = int(m.group(3))
-                    except (ValueError, IndexError):
-                        pass
-                    continue
-                
-                if line.startswith('-'):
-                    content = line[1:].strip()
-                    if content and not content.startswith(('/', '*')):
-                        diff_lines_abs.append(c_old)
-                    c_old += 1
-                elif line.startswith('+'):
-                    c_new += 1
-                else:
-                    c_old += 1
-                    c_new += 1
-        
-        # Expand range to include all diff lines
-        for dln in diff_lines_abs:
-            if dln < min_limit:
-                min_limit = dln
-            if dln > max_limit:
-                max_limit = dln
-        
-        # Filter nodes
-        for nid in union_nodes:
-            if nid not in pdg_pri.nodes: continue
-            n_start_rel = pdg_pri.nodes[nid].get('start_line', 0)
-            n_start_abs = n_start_rel - 1 + sl_pri
+            m = hunk_re.match(line)
+            if m:
+                try:
+                    c_old = int(m.group(1))
+                    c_new = int(m.group(3))
+                except (ValueError, IndexError):
+                    pass
+                continue
             
-            if min_limit <= n_start_abs <= max_limit:
-                final_nodes.add(nid)
+            if line.startswith('-'):
+                content = line[1:].strip()
+                if content and not content.startswith(('/', '*')):
+                    diff_lines_abs.append(c_old)
+                c_old += 1
+            elif line.startswith('+'):
+                c_new += 1
+            else:
+                c_old += 1
+                c_new += 1
+    
+    # Inject diff lines within anchor range
+    if diff_lines_abs and anchor_nodes:
+        anchor_abs_lines = []
+        for nid, _ in anchor_nodes:
+            n_rel = pdg_pri.nodes.get(nid, {}).get('start_line', 0)
+            if n_rel > 0:
+                anchor_abs_lines.append(n_rel - 1 + sl_pri)
         
-        # Inject diff lines
-        if diff_lines_abs:
+        if anchor_abs_lines:
+            min_anchor = min(anchor_abs_lines)
+            max_anchor = max(anchor_abs_lines)
+            
+            injected_count = 0
             for d_abs in diff_lines_abs:
-                if min_limit <= d_abs <= max_limit:
+                if min_anchor <= d_abs <= max_anchor:
                     d_rel = d_abs - sl_pri + 1
                     if d_rel > 0:
-                        final_nodes.update(slicer_pri.get_nodes_by_location(d_rel, None))
-    else:
-        final_nodes = union_nodes
+                        diff_nodes = slicer_pri.get_nodes_by_location(d_rel, None)
+                        final_nodes.update(diff_nodes)
+                        if diff_nodes:
+                            injected_count += 1
+            
+            if injected_count > 0:
+                print(f"      [Slicing] Injected {injected_count} diff line nodes")
     
-    # Helper for strict node extraction
-    def _get_strict_nodes(instr_list):
-        nodes = set()
-        for i in instr_list:
-            if i.line_number is not None and i.line_number > 0:
-                found = slicer_pri.get_nodes_by_location(i.line_number, None)
-                nodes.update(found)
-        return nodes
-    
-    critical_nodes = set()
-    if origins_instrs:
-        critical_nodes.update(_get_strict_nodes(origins_instrs))
-    if impacts_instrs:
-        critical_nodes.update(_get_strict_nodes(impacts_instrs))
-    
-    final_nodes.update(critical_nodes)
-    
-    # [FIX] Force add ENTRY node if it's an Origin/Impact anchor
-    # This handles cases where function definition itself is the vulnerability origin
+    # =========================================================================
+    # Step 5: Force add ENTRY node if it's an anchor
+    # =========================================================================
     for nid, data in pdg_pri.nodes(data=True):
         if data.get('type') == 'ENTRY':
             entry_line_rel = data.get('start_line', 0)
-            # ENTRY nodes may have start_line=0, treat as line 1 (first line of function)
             if entry_line_rel == 0:
                 entry_line_rel = 1
             entry_line_abs = entry_line_rel - 1 + sl_pri
-            print(f"      [Debug] ENTRY node: rel={entry_line_rel}, abs={entry_line_abs}, sl_pri={sl_pri}")
             # Check if ENTRY line matches any anchor
-            is_anchor = False
-            for a in anchor_result.origin_anchors + anchor_result.impact_anchors:
-                print(f"      [Debug] Comparing ENTRY line {entry_line_abs} with anchor line {a.line}")
-                if entry_line_abs == a.line:
-                    is_anchor = True
-                    break
+            is_anchor = any(a.line_number == entry_line_abs for a in anchor_result.anchors)
             if is_anchor:
                 final_nodes.add(nid)
                 print(f"      [Slicing] Including ENTRY node at line {entry_line_abs} (matches anchor)")
@@ -1730,8 +2302,13 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             sl_pri = sl_pri if sl_pri is not None else 1
             sl_shadow = sl_shadow if sl_shadow is not None else 1
             
-            pdg_pri = PDGBuilder(code_pri, lang=lang).build(target_line=sl_pri)
-            pdg_shadow = PDGBuilder(code_shadow, lang=lang).build(target_line=sl_shadow) 
+            pdg_builder_pri = PDGBuilder(code_pri, lang=lang)
+            pdg_pri = pdg_builder_pri.build(target_line=sl_pri)
+            cfg_pri = pdg_builder_pri.cfg  # Expose CFG for TwoPassSlicer
+            
+            pdg_builder_shadow = PDGBuilder(code_shadow, lang=lang)
+            pdg_shadow = pdg_builder_shadow.build(target_line=sl_shadow)
+            cfg_shadow = pdg_builder_shadow.cfg  # Expose CFG for TwoPassSlicer
         except Exception as e:
             print(f"      [Error] PDG Build failed: {e}")
             continue
@@ -1747,6 +2324,28 @@ def slicing_node(state: PatchExtractionState) -> Dict:
         print(f"      - Deleted lines: {len(search_hints['deleted_lines'])}")
         print(f"      - Added lines: {len(search_hints['added_lines'])}")
         print(f"      - Key variables: {search_hints['key_variables']}")
+        
+        # ===== TwoPassSlice: Anchor Candidate Collection (Algorithm 1, L3) =====
+        candidates_text = ""
+        try:
+            two_pass = TwoPassSlicer(
+                pdg_pri=pdg_pri,
+                cfg_pri=cfg_pri,
+                cfg_shadow=cfg_shadow,
+                code_pri=code_pri,
+                code_shadow=code_shadow,
+                sl_pri=sl_pri,
+                sl_shadow=sl_shadow,
+                search_hints=search_hints,
+                patch_diff=patch_diff
+            )
+            candidates_text = two_pass.collect_candidates()
+            if candidates_text:
+                print(f"    [TwoPassSlicer] Generated {len(candidates_text.splitlines())} candidate lines")
+            else:
+                print(f"    [TwoPassSlicer] No candidates generated (will rely on Agent exploration)")
+        except Exception as e:
+            print(f"    [TwoPassSlicer] Error: {e} (falling back to Agent-only discovery)")
         
         # ===== §3.3.2.2: Discovery-Validation-Refinement Loop =====
         anchor_analyzer = AnchorAnalyzer(navigator)
@@ -1769,43 +2368,44 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                 file_path=patch.file_path,
                 function_name=func,
                 start_line=sl_pri,
-                attempt=attempt
+                attempt=attempt,
+                candidates=candidates_text  # TwoPassSlice candidates
             )
             
-            print(f"        - Origin: {[(a.line, a.role.value) for a in anchor_result.origin_anchors]}")
-            print(f"        - Impact: {[(a.line, a.role.value) for a in anchor_result.impact_anchors]}")
+            print(f"        - Typed Anchors:")
+            for a in anchor_result.anchors:
+                assume_str = f", assumption={a.assumption_type.value}" if a.assumption_type else ""
+                print(f"          L{a.line_number} [{a.type.value}] loc={a.locatability.value}{assume_str}")
             
             # ===== Improvement 2: Validate anchors exist in actual code =====
             print(f"      [Validation] Verifying anchor lines exist in code...")
             code_pri_lines = code_pri.splitlines()
             invalid_anchors = []
             
-            for anchor_list, anchor_type in [(anchor_result.origin_anchors, "Origin"),
-                                              (anchor_result.impact_anchors, "Impact")]:
-                for anchor in anchor_list:
-                    # Convert absolute line to relative (0-indexed)
-                    rel_line = anchor.line - sl_pri
-                    
-                    # Check if line number is valid
-                    if rel_line < 0 or rel_line >= len(code_pri_lines):
-                        invalid_anchors.append(f"{anchor_type} line {anchor.line} out of range (code has {len(code_pri_lines)} lines, start={sl_pri})")
-                        continue
-                    
-                    # Check if content matches (fuzzy match: normalized)
-                    actual_content = code_pri_lines[rel_line].strip()
-                    anchor_content = anchor.content.strip()
-                    
-                    # Normalize for comparison (remove extra whitespace)
-                    actual_normalized = ' '.join(actual_content.split())
-                    anchor_normalized = ' '.join(anchor_content.split())
-                    
-                    # Check if anchor content is substring of actual line (allows partial matches)
-                    if anchor_normalized not in actual_normalized and actual_normalized not in anchor_normalized:
-                        invalid_anchors.append(
-                            f"{anchor_type} line {anchor.line}: content mismatch\n"
-                            f"  Expected: {anchor_content}\n"
-                            f"  Actual:   {actual_content}"
-                        )
+            for anchor in anchor_result.anchors:
+                # Convert absolute line to relative (0-indexed)
+                rel_line = anchor.line_number - sl_pri
+                
+                # Check if line number is valid
+                if rel_line < 0 or rel_line >= len(code_pri_lines):
+                    invalid_anchors.append(f"Anchor ({anchor.type.value}) line {anchor.line_number} out of range (code has {len(code_pri_lines)} lines, start={sl_pri})")
+                    continue
+                
+                # Check if content matches (fuzzy match: normalized)
+                actual_content = code_pri_lines[rel_line].strip()
+                anchor_content = anchor.code_snippet.strip()
+                
+                # Normalize for comparison (remove extra whitespace)
+                actual_normalized = ' '.join(actual_content.split())
+                anchor_normalized = ' '.join(anchor_content.split())
+                
+                # Check if anchor content is substring of actual line (allows partial matches)
+                if anchor_normalized not in actual_normalized and actual_normalized not in anchor_normalized:
+                    invalid_anchors.append(
+                        f"Anchor ({anchor.type.value}) line {anchor.line_number}: content mismatch\n"
+                        f"  Expected: {anchor_content}\n"
+                        f"  Actual:   {actual_content}"
+                    )
             
             if invalid_anchors:
                 print(f"        ✗ Anchor validation failed:")
@@ -1944,13 +2544,15 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             
             # If slice has not been generated yet, regenerate using the last anchor_result
             if final_pri_nodes is None or raw_code is None:
-                if anchor_result is None or not anchor_result.origin_anchors or not anchor_result.impact_anchors:
+                if anchor_result is None or not anchor_result.anchors:
                     print(f"        ✗ No valid anchor result available. Skipping function {func}")
                     continue
                 
                 print(f"      [Fallback] Using last anchor result:")
-                print(f"        - Origin: {[(a.line, a.role.value) for a in anchor_result.origin_anchors]}")
-                print(f"        - Impact: {[(a.line, a.role.value) for a in anchor_result.impact_anchors]}")
+                print(f"        - Anchors:")
+                for a in anchor_result.anchors:
+                    assume_str = f", assumption={a.assumption_type.value}" if a.assumption_type else ""
+                    print(f"          L{a.line_number} [{a.type.value}] loc={a.locatability.value}{assume_str}")
                 
                 print(f"      [Fallback] Generating slice from last anchors...")
                 try:
@@ -1977,36 +2579,30 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             continue
         
         print(f"    [Success] Final slice for {func}:")
-        print(f"      - Origin Anchors: {[(a.line, a.role.value) for a in anchor_result.origin_anchors]}")
-        print(f"      - Impact Anchors: {[(a.line, a.role.value) for a in anchor_result.impact_anchors]}")
+        print(f"      - Typed Anchors:")
+        for a in anchor_result.anchors:
+            assume_str = f", assumption={a.assumption_type.value}" if a.assumption_type else ""
+            print(f"          L{a.line_number} [{a.type.value}] loc={a.locatability.value}{assume_str}")
         print(f"      - Raw slice: {len(raw_code.splitlines())} lines")
         print(f'\nRaw slice:\n{raw_code}\n')
         
-        # Prepare instructions (for subsequent processing)
-        origin_instrs = [SlicingInstruction(
+        # Build unified anchor instructions (no origin/impact split)
+        all_anchors = anchor_result.anchors
+        anchor_instrs = [SlicingInstruction(
             function_name=func,
             target_version="OLD",
-            line_number=a.line,
-            code_content=a.content,
-            strategy="forward",
-            description=f"Origin Anchor ({a.role.value})"
-        ) for a in anchor_result.origin_anchors]
-        
-        impact_instrs = [SlicingInstruction(
-            function_name=func,
-            target_version="OLD",
-            line_number=a.line,
-            code_content=a.content,
-            strategy="backward",
-            description=f"Impact Anchor ({a.role.value})"
-        ) for a in anchor_result.impact_anchors]
+            line_number=a.line_number,
+            code_content=a.code_snippet,
+            strategy="bidirectional",
+            description=f"Anchor ({a.type.value})"
+        ) for a in all_anchors]
         
         # ===== §3.3.2.3: Distillation (Agent-driven semantic filtering) =====
         
         # Heuristically determine main focus variable (extract from search_hints)
         main_var = list(search_hints['key_variables'])[0] if search_hints.get('key_variables') else "N/A"
 
-        print(f"    [Distillation] Applying semantic filtering...")
+        # print(f"    [Distillation] Applying semantic filtering...")
         validation_result = validator.distill_slice(
             slice_code=raw_code,
             diff_text=patch_diff,
@@ -2015,8 +2611,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             focus_var=main_var,
             vuln_type=taxonomy.vuln_type,
             hypothesis=taxonomy,
-            origins=anchor_result.origin_anchors,
-            impacts=anchor_result.impact_anchors,
+            anchors=anchor_result.anchors,
             cwe_info=f"{taxonomy.cwe_id}: {taxonomy.cwe_name}" if taxonomy.cwe_id else "Generic",
             navigator=navigator,
             file_path=patch.file_path
@@ -2052,12 +2647,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                 print(f"      [Validator] Reason: Agent failed to be selective enough, using minimal anchor-based slice.")
                 
                 # Fallback: Keep ONLY anchor lines
-                anchor_only_nodes = set()
-                if origin_instrs:
-                    anchor_only_nodes.update(_get_strict_nodes(origin_instrs))
-                if impact_instrs:
-                    anchor_only_nodes.update(_get_strict_nodes(impact_instrs))
-                
+                anchor_only_nodes = _get_strict_nodes(anchor_instrs)
                 final_pri_nodes = anchor_only_nodes
                 print(f"      [Validator] Fallback result: {len(final_pri_nodes)} anchor nodes kept.")
             else:
@@ -2070,22 +2660,15 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                     final_kept_nodes.update(found)
                     
                 # [Protection] Critical Nodes Enforcement (Anchor lines must be present)
-                if origin_instrs:
-                    final_kept_nodes.update(_get_strict_nodes(origin_instrs))
-                if impact_instrs:
-                    final_kept_nodes.update(_get_strict_nodes(impact_instrs))
+                final_kept_nodes.update(_get_strict_nodes(anchor_instrs))
                     
                 # Apply Filter: final_pri_nodes becomes the intersection of what we had & what is kept
                 final_pri_nodes.intersection_update(final_kept_nodes)
         else:
             print(f"      [Validator] ⚠️  Agent returned no results or error, keeping original slice.")
         
-        # [Enforcement] Force add Origin/Impact nodes to ensure they exist
-        critical_nodes_force = set()
-        if origin_instrs:
-            critical_nodes_force.update(_get_strict_nodes(origin_instrs))
-        if impact_instrs:
-            critical_nodes_force.update(_get_strict_nodes(impact_instrs))
+        # [Enforcement] Force add anchor nodes to ensure they exist
+        critical_nodes_force = _get_strict_nodes(anchor_instrs)
         
         # [FIX] Force add ENTRY node if it's an anchor (e.g., function definition as Origin)
         for nid, data in pdg_pri.nodes(data=True):
@@ -2093,8 +2676,8 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                 entry_line_rel = data.get('start_line', 0)
                 entry_line_abs = entry_line_rel - 1 + sl_pri if entry_line_rel > 0 else 0
                 # Check if ENTRY line matches any anchor
-                for a in anchor_result.origin_anchors + anchor_result.impact_anchors:
-                    if entry_line_abs == a.line:
+                for a in anchor_result.anchors:
+                    if entry_line_abs == a.line_number:
                         critical_nodes_force.add(nid)
                         print(f"      [Slicing] Force-added ENTRY node at line {entry_line_abs} (anchor)")
                         break
@@ -2112,11 +2695,11 @@ def slicing_node(state: PatchExtractionState) -> Dict:
         # [FIX] Fallback: Add anchor lines that are missing from slice
         # This should rarely trigger now that ENTRY nodes are properly included
         anchor_lines_outside_pdg = []
-        for a in anchor_result.origin_anchors + anchor_result.impact_anchors:
+        for a in anchor_result.anchors:
             # Check if the line is not in slice
-            if not any(f"[{a.line:4d}]" in line for line in s_pri_text.splitlines()):
-                anchor_lines_outside_pdg.append((a.line, a.content))
-                print(f"      [Warning] Anchor line {a.line} missing from slice (PDG issue?), adding manually")
+            if not any(f"[{a.line_number:4d}]" in line for line in s_pri_text.splitlines()):
+                anchor_lines_outside_pdg.append((a.line_number, a.code_snippet))
+                print(f"      [Warning] Anchor line {a.line_number} missing from slice (PDG issue?), adding manually")
         
         if anchor_lines_outside_pdg:
             # Prepend these lines to the slice (they're typically function signatures)
@@ -2231,94 +2814,6 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             if tag == 'replace':
                 replace_map_pri_to_shadow.append(((i1 + 1, i2), (j1 + 1, j2)))
         
-        # Remove unmodified function header (avoid function name differences affecting matching)
-        def strip_header_if_unmodified(slice_text: str, diff_text: str, nodes: Set[str], pdg: nx.MultiDiGraph, anchor_lines: Set[int] = None) -> str:
-            """
-            Strip unmodified function header to avoid function name differences affecting matching.
-            
-            Args:
-                slice_text: The slice code text
-                diff_text: The patch diff
-                nodes: PDG nodes in the slice
-                pdg: The PDG
-                anchor_lines: Anchor line numbers (absolute) to protect from stripping
-                
-            Returns:
-                Slice text with header potentially stripped
-            """
-            lines = slice_text.splitlines()
-            if not lines: return slice_text
-            
-            # 1. Check if the first line corresponds to an ENTRY node
-            min_line = float('inf')
-            min_line_abs = None  # Absolute line number
-            is_entry = False
-            
-            for nid in nodes:
-                if nid not in pdg: continue
-                d = pdg.nodes[nid]
-                if d.get('type') in ('EXIT', 'MERGE', 'NO_OP'): continue
-                
-                line = d.get('start_line', 0)
-                if line > 0:
-                    if line < min_line:
-                        min_line = line
-                        is_entry = (d.get('type') == 'ENTRY')
-                        # Extract absolute line from first slice line
-                        if lines:
-                            m = re.match(r'^\[\s*(\d+)\]', lines[0])
-                            if m:
-                                min_line_abs = int(m.group(1))
-                    elif line == min_line:
-                        if d.get('type') == 'ENTRY':
-                            is_entry = True
-            
-            if not is_entry:
-                return slice_text
-
-            # 2. [FIX] Check if this line is an anchor - if so, don't strip it
-            if anchor_lines and min_line_abs and min_line_abs in anchor_lines:
-                # print(f"      [Stripper] Protecting anchor line {min_line_abs} from stripping")
-                return slice_text
-
-            # 3. Proceed with stripping logic
-            first_line = lines[0]
-            if "]" in first_line:
-                code_content = first_line.split("]", 1)[1].strip()
-                
-                # Check if there is modification of this line in diff
-                is_modified = False
-                clean_code = code_content.replace(" ", "")
-                
-                for dline in diff_text.splitlines():
-                    if dline.startswith(('+', '-')) and not dline.startswith(('+++', '---')):
-                        clean_diff = dline[1:].strip().replace(" ", "")
-                        if clean_code in clean_diff:
-                            is_modified = True
-                            break
-                
-                if not is_modified:
-                    # print(f"      [Stripper] Removing unmodified header: {code_content}")
-                    return "\n".join(lines[1:])
-            return slice_text
-
-        # Collect anchor lines (absolute) to protect from stripping
-        anchor_lines_abs = set()
-        for a in anchor_result.origin_anchors:
-            anchor_lines_abs.add(a.line)
-        for a in anchor_result.impact_anchors:
-            anchor_lines_abs.add(a.line)
-        
-        s_pri_text = strip_header_if_unmodified(s_pri_text, patch_diff, final_pri_nodes, pdg_pri, anchor_lines_abs)
-        
-        # Map anchor lines to shadow for shadow protection
-        shadow_anchor_lines_abs = set()
-        for pri_abs in anchor_lines_abs:
-            shadow_mapped = mapper.map_lines_to_shadow([pri_abs])
-            shadow_anchor_lines_abs.update(shadow_mapped)
-        
-        s_shadow_text = strip_header_if_unmodified(s_shadow_text, patch_diff, shadow_nodes, pdg_shadow, shadow_anchor_lines_abs)
-
         # ===== §3.3.2.5: Result Encapsulation =====
         header = f"// Function: {func}"
         final_s_pre = f"{header} (Pre-Patch/Vuln)\n{s_pri_text}"
@@ -2356,7 +2851,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             expanded_abs = set()
             
             for a in anchor_list:
-                a_rel = a.line - sl + 1
+                a_rel = a.line_number - sl + 1
                 
                 # [FIX] Only find nodes that START at this line, not nodes that merely cover it
                 # This prevents including entire control structures when anchor is inside a loop
@@ -2374,7 +2869,7 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                         # These would expand to include the entire block
                         if node_type in ('PREDICATE', 'SWITCH_HEAD', 'CASE_LABEL', 'DEFAULT_LABEL'):
                             # For predicates, only keep the single line (the condition)
-                            expanded_abs.add(a.line)
+                            expanded_abs.add(a.line_number)
                             node_expanded = True
                             continue
                         # Prefer STATEMENT nodes
@@ -2400,26 +2895,25 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                                 node_expanded = True
                             else:
                                 # Single line: just add it
-                                expanded_abs.add(a.line)
+                                expanded_abs.add(a.line_number)
                                 node_expanded = True
                 
                 # If no PDG node found, just add the anchor line directly
                 # [FIX] Removed aggressive parenthesis-based expansion which caused contamination
                 if not node_expanded:
-                    expanded_abs.add(a.line)
+                    expanded_abs.add(a.line_number)
             
             return sorted(list(expanded_abs))
         
         # Get code lines for source code analysis
         pri_code_lines = code_pri.splitlines()
         
-        pri_origin_abs = expand_anchor_lines(anchor_result.origin_anchors, pdg_pri, sl_pri, pri_code_lines)
-        pri_impact_abs = expand_anchor_lines(anchor_result.impact_anchors, pdg_pri, sl_pri, pri_code_lines)
+        # Expand ALL typed anchors (unified list instead of origin/impact split)
+        pri_anchor_abs = expand_anchor_lines(anchor_result.anchors, pdg_pri, sl_pri, pri_code_lines)
 
         # Map to Shadow Absolute (Exact + Modified Block Heuristic)
         # [FIX] Ensure these are always lists, never None
-        shadow_origin_abs = [] if pri_origin_abs else []
-        shadow_impact_abs = [] if pri_impact_abs else []
+        shadow_anchor_abs = []
         
         # Prepare for content matching
         all_pri_lines = code_pri.splitlines() if code_pri else []
@@ -2514,98 +3008,45 @@ def slicing_node(state: PatchExtractionState) -> Dict:
                 for fr in sorted(list(final_rel_lines)):
                     dest_list.append(fr - 1 + sl_shadow)
         
-        map_to_shadow(pri_origin_abs, shadow_origin_abs)
-        map_to_shadow(pri_impact_abs, shadow_impact_abs)
+        map_to_shadow(pri_anchor_abs, shadow_anchor_abs)
 
-        # Extract content from CLEANED text (s_pri_text, s_shadow_text)
-        # Note: Do NOT use final_s_pre/post as they have headers
-        pri_origin_txt = get_lines_by_abs_msg(s_pri_text, pri_origin_abs) if pri_origin_abs else []
-        pri_impact_txt = get_lines_by_abs_msg(s_pri_text, pri_impact_abs) if pri_impact_abs else []
-        shadow_origin_txt = get_lines_by_abs_msg(s_shadow_text, shadow_origin_abs) if shadow_origin_abs else []
-        shadow_impact_txt = get_lines_by_abs_msg(s_shadow_text, shadow_impact_abs) if shadow_impact_abs else []
+        # Use Anchor instances directly (zero information loss from AnchorAnalyzer)
+        # AnchorAnalyzer.identify() already populates file_path and func_name on each Anchor
+        pre_typed_anchors = list(anchor_result.anchors)
         
-        # Ensure all are lists (defensive)
-        pri_origin_txt = pri_origin_txt if isinstance(pri_origin_txt, list) else []
-        pri_impact_txt = pri_impact_txt if isinstance(pri_impact_txt, list) else []
-        shadow_origin_txt = shadow_origin_txt if isinstance(shadow_origin_txt, list) else []
-        shadow_impact_txt = shadow_impact_txt if isinstance(shadow_impact_txt, list) else []
+        # Build post-patch anchors via shadow mapping, inheriting all fields from pre-patch anchor
+        post_typed_anchors = []
+        for a in anchor_result.anchors:
+            shadow_mapped = mapper.map_lines_to_shadow([a.line_number])
+            if shadow_mapped:
+                # Use first mapped line
+                shadow_line = shadow_mapped[0]
+                found_lines = get_lines_by_abs_msg(s_shadow_text, [shadow_line])
+                shadow_content = found_lines[0] if found_lines else a.code_snippet
+                # model_copy preserves all fields (locatability, assumption_type, etc.)
+                post_anchor = a.model_copy(update={
+                    "line_number": shadow_line,
+                    "code_snippet": shadow_content,
+                    "reasoning": f"Mapped from pre-patch line {a.line_number}",
+                })
+                post_typed_anchors.append(post_anchor)
+            else:
+                print(f"      [SliceFeature] ⚠ Anchor L{a.line_number} [{a.type.value}]: "
+                      f"no shadow mapping found, skipping post-patch anchor")
         
-        # [FIX] If origin/impact lines are missing, add them directly from anchor_result
-        # This handles cases where anchors are outside the PDG range or not in slice text
-        if not pri_origin_txt and anchor_result.origin_anchors:
-            print(f"      [SliceFeature] Adding missing Pre Origins from anchors...")
-            pri_origin_txt = [f"[{a.line:4d}] {a.content}" for a in anchor_result.origin_anchors]
-        
-        if not pri_impact_txt and anchor_result.impact_anchors:
-            print(f"      [SliceFeature] Adding missing Pre Impacts from anchors...")
-            pri_impact_txt = [f"[{a.line:4d}] {a.content}" for a in anchor_result.impact_anchors]
-        
-        # [FIX] Add fallback for shadow anchors if mapping failed
-        # If shadow mapping produced empty results, try to generate them from anchors
-        # Ensure shadow_origin_txt is a list before proceeding
-        if not isinstance(shadow_origin_txt, list):
-            print(f"      [Warning] shadow_origin_txt is not a list ({type(shadow_origin_txt)}), converting...")
-            shadow_origin_txt = []
-        
-        if not isinstance(shadow_impact_txt, list):
-            print(f"      [Warning] shadow_impact_txt is not a list ({type(shadow_impact_txt)}), converting...")
-            shadow_impact_txt = []
-        
-        if not shadow_origin_txt and anchor_result.origin_anchors:
-            print(f"      [SliceFeature] Shadow Origins empty, attempting to generate from anchors...")
-            # Try to find corresponding shadow lines for each origin anchor
-            for a in anchor_result.origin_anchors:
-                shadow_mapped = mapper.map_lines_to_shadow([a.line])
-                if shadow_mapped:
-                    found_lines = get_lines_by_abs_msg(s_shadow_text, shadow_mapped)
-                    if found_lines:
-                        shadow_origin_txt.extend(found_lines)
-            # If still empty, keep it empty (post-patch may have removed origin entirely)
-            if not shadow_origin_txt:
-                print(f"      [SliceFeature] No shadow origins found (origin removed in patch)")
-        
-        if not shadow_impact_txt and anchor_result.impact_anchors:
-            print(f"      [SliceFeature] Shadow Impacts empty, attempting to generate from anchors...")
-            # Try to find corresponding shadow lines for each impact anchor
-            for a in anchor_result.impact_anchors:
-                shadow_mapped = mapper.map_lines_to_shadow([a.line])
-                if shadow_mapped:
-                    found_lines = get_lines_by_abs_msg(s_shadow_text, shadow_mapped)
-                    if found_lines:
-                        shadow_impact_txt.extend(found_lines)
-            # If still empty, keep it empty (post-patch may have removed impact entirely)
-            if not shadow_impact_txt:
-                print(f"      [SliceFeature] No shadow impacts found (impact removed in patch)")
-
-        # Primary = Pre (OLD), Shadow = Post (NEW)
-        # Ensure all variables are lists (never None)
-        final_pre_origin = pri_origin_txt if pri_origin_txt is not None else []
-        final_pre_impact = pri_impact_txt if pri_impact_txt is not None else []
-        final_post_origin = shadow_origin_txt if shadow_origin_txt is not None else []
-        final_post_impact = shadow_impact_txt if shadow_impact_txt is not None else []
-            
-        print(f"      [SliceFeature] Origin/Impact Lines:")
-        print(f"        Pre Origins: {final_pre_origin}")
-        print(f"        Pre Impacts: {final_pre_impact}")
-        print(f"        Post Origins: {final_post_origin}")
-        print(f"        Post Impacts: {final_post_impact}")
-        
-        # Final defensive check before creating SliceFeature
-        if final_pre_origin is None or final_pre_impact is None or final_post_origin is None or final_post_impact is None:
-            print(f"      [Warning] One or more anchor lists is None, replacing with empty lists")
-            final_pre_origin = final_pre_origin if final_pre_origin is not None else []
-            final_pre_impact = final_pre_impact if final_pre_impact is not None else []
-            final_post_origin = final_post_origin if final_post_origin is not None else []
-            final_post_impact = final_post_impact if final_post_impact is not None else []
+        print(f"      [SliceFeature] Typed Anchors:")
+        for label, anchor_list in [("Pre", pre_typed_anchors), ("Post", post_typed_anchors)]:
+            print(f"        {label}:")
+            for a in anchor_list:
+                assume_str = f", assumption={a.assumption_type.value}" if a.assumption_type else ""
+                print(f"          L{a.line_number} [{a.type.value}] loc={a.locatability.value}{assume_str}")
         
         generated_slices[func] = SliceFeature(
             func_name=func,
             s_pre=final_s_pre,
             s_post=final_s_post,
-            pre_origins=final_pre_origin,
-            pre_impacts=final_pre_impact,
-            post_origins=final_post_origin,
-            post_impacts=final_post_impact,
+            pre_anchors=pre_typed_anchors,
+            post_anchors=post_typed_anchors,
             validation_status=None,
             validation_reasoning=validation_result.reasoning if validation_result else None
         )
@@ -2630,8 +3071,8 @@ class SingleFunctionAgentSlice(BaseModel):
 class AgentExtractionOutput(BaseModel):
     functions: List[SingleFunctionAgentSlice]
     root_cause: str
-    attack_path: str
-    fix_mechanism: str
+    attack_chain: str
+    patch_defense: str
     vuln_type: str = Field(description="Specific vulnerability type from the predefined list")
     cwe_info: Optional[str] = Field(description="CWE ID and name if applicable (e.g. 'CWE-416: Use After Free').")
 
@@ -2940,20 +3381,37 @@ Functions to Analyze:
         s_pre = get_lines(p.old_code, sorted(list(all_pre_indices)))
         s_post = get_lines(p.new_code, sorted(list(all_post_indices)))
         
-        # Populate raw origin/impact lists if available
-        pre_origins = get_raw_lines(p.old_code, f_out.pre_origins)
-        pre_impacts = get_raw_lines(p.old_code, f_out.pre_impacts)
-        post_origins = get_raw_lines(p.new_code, f_out.post_origins)
-        post_impacts = get_raw_lines(p.new_code, f_out.post_impacts)
+        # Convert baseline origin/impact indices to Anchor instances
+        # Baseline doesn't have real anchor types, use CRITICAL as generic placeholder
+        from core.categories import AnchorType as _AnchorType
+        _pre_anchors = []
+        for idx in f_out.pre_origins + f_out.pre_impacts:
+            if p.old_code and 0 <= idx < len(p.old_code.splitlines()):
+                _pre_anchors.append(Anchor(
+                    type=_AnchorType.CRITICAL,
+                    line_number=idx,
+                    code_snippet=p.old_code.splitlines()[idx],
+                    func_name=f_out.func_name,
+                    file_path=p.file_path,
+                ))
+        
+        _post_anchors = []
+        for idx in f_out.post_origins + f_out.post_impacts:
+            if p.new_code and 0 <= idx < len(p.new_code.splitlines()):
+                _post_anchors.append(Anchor(
+                    type=_AnchorType.CRITICAL,
+                    line_number=idx,
+                    code_snippet=p.new_code.splitlines()[idx],
+                    func_name=f_out.func_name,
+                    file_path=p.file_path,
+                ))
 
         generated_slices[f_out.func_name] = SliceFeature(
             func_name=f_out.func_name,
             s_pre=s_pre,
             s_post=s_post,
-            pre_origins=pre_origins,
-            pre_impacts=pre_impacts,
-            post_origins=post_origins,
-            post_impacts=post_impacts,
+            pre_anchors=_pre_anchors,
+            post_anchors=_post_anchors,
             validation_status="AgentSlicing",
             validation_reasoning=f_out.reasoning
         )
@@ -2990,8 +3448,8 @@ Functions to Analyze:
         cwe_id=cwe_id,
         cwe_name=cwe_name,
         root_cause=output.root_cause,
-        attack_path=output.attack_path,
-        fix_mechanism=output.fix_mechanism,
+        attack_chain=output.attack_chain,
+        patch_defense=output.patch_defense,
         evidence_index={}
     )
 
@@ -3000,15 +3458,23 @@ Functions to Analyze:
     from core.models import TypeConfidence
     type_confidence = TypeConfidence.HIGH if (metadata and cwe_id_meta) else TypeConfidence.MEDIUM
     
+    # Map vuln_type to category_name (required field since §3.1.2 refactor)
+    _category_name = vuln_type.value if isinstance(vuln_type, GeneralVulnType) else str(vuln_type)
+    # Validate against KB; fall back to "Unknown" if not found
+    from core.categories import VulnerabilityKnowledgeBase as _KB
+    if _category_name not in _KB.get_all_category_names():
+        _category_name = "Unknown"
+    
     dummy_taxonomy = TaxonomyFeature(
+        category_name=_category_name,
         vuln_type=vuln_type,
         type_confidence=type_confidence,
         cwe_id=cwe_id,
         cwe_name=cwe_name,
         reasoning="Baseline Agent Inference (Skipped Taxonomy Phase)",
         root_cause=output.root_cause,
-        attack_path=output.attack_path,
-        fix_mechanism=output.fix_mechanism
+        attack_chain=output.attack_chain,
+        patch_defense=output.patch_defense
     )
 
     final_feat = PatchFeatures(
