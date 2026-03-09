@@ -2310,12 +2310,12 @@ def slicing_node(state: PatchExtractionState) -> Dict:
             print(f"      [Skip] Function {func} has empty old_code (likely ADDED), skipping...")
             continue
         
-        CODE_LINE_LIMIT = 1000
-        pri_line_count = len(code_pri.splitlines())
-        if pri_line_count > CODE_LINE_LIMIT:
-            print(f"      [Skip] Function {func} has {pri_line_count} lines (> {CODE_LINE_LIMIT}), "
-                  f"skipping to avoid oversized prompt (~{pri_line_count * 40 // 4} tokens).")
-            continue
+        # CODE_LINE_LIMIT = 1000
+        # pri_line_count = len(code_pri.splitlines())
+        # if pri_line_count > CODE_LINE_LIMIT:
+        #     print(f"      [Skip] Function {func} has {pri_line_count} lines (> {CODE_LINE_LIMIT}), "
+        #           f"skipping to avoid oversized prompt (~{pri_line_count * 40 // 4} tokens).")
+        #     continue
         
         try:
             # Use actual start line number from AtomicPatch
