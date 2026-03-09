@@ -1630,6 +1630,16 @@ class SliceValidator:
         # Count input slice lines for adaptive threshold
         input_line_count = len(slice_code.splitlines())
         
+        # Hard limit: if slice is too large (>100 lines), skip distillation entirely.
+        # Large slices indicate degraded static analysis quality; sending them to the
+        # Agent loop would produce a massive prompt (5w+ tokens) with little benefit.
+        # The caller will fall back to anchor-only nodes via the existing fallback path.
+        DISTILLATION_LINE_LIMIT = 100
+        if input_line_count > DISTILLATION_LINE_LIMIT:
+            print(f"      [Distillation] ⚠️  Slice too large ({input_line_count} lines > {DISTILLATION_LINE_LIMIT}), "
+                  f"skipping distillation to avoid oversized prompt. Caller will use anchor-only fallback.")
+            return None
+        
         # Adaptive line limit: base 10, +5 per 50 input lines, max 30
         max_output_lines = min(10 + (input_line_count // 50) * 5, 30)
         
