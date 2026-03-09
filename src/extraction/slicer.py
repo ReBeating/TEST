@@ -1634,11 +1634,11 @@ class SliceValidator:
         # Large slices indicate degraded static analysis quality; sending them to the
         # Agent loop would produce a massive prompt (5w+ tokens) with little benefit.
         # The caller will fall back to anchor-only nodes via the existing fallback path.
-        DISTILLATION_LINE_LIMIT = 100
-        if input_line_count > DISTILLATION_LINE_LIMIT:
-            print(f"      [Distillation] ⚠️  Slice too large ({input_line_count} lines > {DISTILLATION_LINE_LIMIT}), "
-                  f"skipping distillation to avoid oversized prompt. Caller will use anchor-only fallback.")
-            return None
+        # DISTILLATION_LINE_LIMIT = 100
+        # if input_line_count > DISTILLATION_LINE_LIMIT:
+        #     print(f"      [Distillation] ⚠️  Slice too large ({input_line_count} lines > {DISTILLATION_LINE_LIMIT}), "
+        #           f"skipping distillation to avoid oversized prompt. Caller will use anchor-only fallback.")
+        #     return None
         
         # Adaptive line limit: base 10, +5 per 50 input lines, max 30
         max_output_lines = min(10 + (input_line_count // 50) * 5, 30)
@@ -2308,6 +2308,13 @@ def slicing_node(state: PatchExtractionState) -> Dict:
         # ===== Improvement 1: Skip functions with empty old_code (ADDED functions) =====
         if not code_pri or code_pri.strip() == "":
             print(f"      [Skip] Function {func} has empty old_code (likely ADDED), skipping...")
+            continue
+        
+        CODE_LINE_LIMIT = 1000
+        pri_line_count = len(code_pri.splitlines())
+        if pri_line_count > CODE_LINE_LIMIT:
+            print(f"      [Skip] Function {func} has {pri_line_count} lines (> {CODE_LINE_LIMIT}), "
+                  f"skipping to avoid oversized prompt (~{pri_line_count * 40 // 4} tokens).")
             continue
         
         try:
