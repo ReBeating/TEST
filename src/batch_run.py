@@ -120,6 +120,24 @@ if __name__ == "__main__":
 
     print("\n=== All Tasks Completed ===")
 
+    # --- Filter out vulnerabilities with too many TPs (likely false positives) ---
+    if collected_findings:
+        from collections import Counter
+        tp_counts = Counter()
+        for f in collected_findings:
+            fid = f.vul_id if hasattr(f, "vul_id") else f.get("vul_id")
+            tp_counts[fid] += 1
+
+        suppressed_vuls = {vid for vid, count in tp_counts.items() if count >= 5}
+        if suppressed_vuls:
+            before = len(collected_findings)
+            collected_findings = [
+                f for f in collected_findings
+                if (f.vul_id if hasattr(f, "vul_id") else f.get("vul_id")) not in suppressed_vuls
+            ]
+            print(f"[*] Suppressed {len(suppressed_vuls)} vulnerabilities with >=5 TPs "
+                  f"(removed {before - len(collected_findings)} findings): {suppressed_vuls}")
+
     # --- Generate Summary CSV ---
     if collected_findings:
         print(f"[*] Post-processing {len(collected_findings)} findings...")

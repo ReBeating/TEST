@@ -471,6 +471,11 @@ if __name__ == "__main__":
         findings = result.get('final_findings', [])
         print(f"Findings: {len(findings)}")
 
+        # Filter: suppress if >=5 TPs for this vulnerability (likely false positives)
+        if len(findings) >= 5:
+            print(f"[!] Suppressed {args.vul_id}: {len(findings)} TPs (>=5, likely false positives)")
+            findings = []
+
         if findings:
             csv_path = os.path.join(args.output_dir, "findings.csv")
             
